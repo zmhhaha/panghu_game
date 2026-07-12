@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: server
+  template:
+    metadata:
+      labels:
+        app: server
+    spec:
+      containers:
+        - name: server
+          image: school-of-one/server:latest
+          ports:
+            - containerPort: 3001
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: url
+            - name: AI_SERVICE_URL
+              value: "http://ai-service:3002"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: secret
+          resources:
+            requests: { cpu: "200m", memory: "128Mi" }
+            limits: { cpu: "1", memory: "512Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-service
+spec:
+  selector:
+    app: server
+  ports:
+    - port: 3001
+      targetPort: 3001
