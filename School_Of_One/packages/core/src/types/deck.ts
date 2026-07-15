@@ -1,4 +1,4 @@
-import { FactionId } from "./card";
+import { FactionId } from "./card.js";
 
 export interface DeckCardEntry {
   cardId: string;

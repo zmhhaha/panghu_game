@@ -1,41 +1,11 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ai-service
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: ai-service
-  template:
-    metadata:
-      labels:
-        app: ai-service
-    spec:
-      containers:
-        - name: ai-service
-          image: school-of-one/ai-service:latest
-          ports:
-            - containerPort: 3002
-          env:
-            - name: LLM_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: llm-secret
-                  key: api-key
-            - name: LLM_ENDPOINT
-              value: "https://api.openai.com/v1"
-          resources:
-            requests: { cpu: "200m", memory: "256Mi" }
-            limits: { cpu: "2", memory: "1Gi" }
----
+# ============================================================
+#  Agent 通用配置（所有 Python FastAPI Agent 共用）
+#  通过 envFrom.configMapRef 注入
+# ============================================================
 apiVersion: v1
-kind: Service
+kind: ConfigMap
 metadata:
-  name: ai-service
-spec:
-  selector:
-    app: ai-service
-  ports:
-    - port: 3002
-      targetPort: 3002
+  name: agent-config
+  namespace: school-of-one
+data:
+  PROVIDER: "deepseek"

@@ -1,0 +1,65 @@
+# ============================================================
+#  Training Ground — 习武场 Agent（Python FastAPI）
+#  Redis session 存储，通过 REDIS_URL 连接到通用 Redis 服务
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: training-ground
+  namespace: school-of-one
+  labels:
+    app: training-ground
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: training-ground
+  template:
+    metadata:
+      labels:
+        app: training-ground
+    spec:
+      containers:
+        - name: training-ground
+          image: arm-cluster-master:5000/training-ground:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8005
+          envFrom:
+            - configMapRef:
+                name: agent-config
+                optional: true
+          env:
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-secret
+                  key: deepseek-api-key
+                  optional: true
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-secret
+                  key: openai-api-key
+                  optional: true
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: url
+                  optional: true
+          resources:
+            requests: { cpu: "200m", memory: "256Mi" }
+            limits: { cpu: "2", memory: "2Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: training-ground
+  namespace: school-of-one
+spec:
+  selector:
+    app: training-ground
+  ports:
+    - port: 8005
+      targetPort: 8005

@@ -1,0 +1,102 @@
+# ============================================================
+#  Duel Judge — API 服务（K8s 部署）
+#  duel_judge.py 通过 ConfigMap 注入（duel-judge-code），
+#  config 通过 ConfigMap 注入，secret 通过 Secret 注入
+#  用法: sed "s/__NAMESPACE__/duel-judge/g" k8s/deployment.yaml | kubectl apply -f -
+# ============================================================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: duel-judge
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: duel-judge
+  template:
+    metadata:
+      labels:
+        app: duel-judge
+    spec:
+      containers:
+      - name: api
+        image: arm-cluster-master:5000/duel-judge:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8003
+        envFrom:
+        - configMapRef:
+            name: duel-judge-config
+        env:
+        - name: DEEPSEEK_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: duel-judge-secret
+              key: DEEPSEEK_API_KEY
+              optional: true
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: duel-judge-secret
+              key: OPENAI_API_KEY
+              optional: true
+        - name: CUSTOM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: duel-judge-secret
+              key: CUSTOM_API_KEY
+              optional: true
+        - name: CUSTOM_API_BASE
+          valueFrom:
+            configMapKeyRef:
+              name: duel-judge-config
+              key: CUSTOM_API_BASE
+              optional: true
+        - name: CUSTOM_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: duel-judge-config
+              key: CUSTOM_MODEL
+              optional: true
+        volumeMounts:
+        - name: code
+          mountPath: /app/duel_judge.py
+          subPath: duel_judge.py
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: "2"
+            memory: 2Gi
+        livenessProbe:
+          httpGet:
+            path: /api/duel/health
+            port: 8003
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/duel/health
+            port: 8003
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      volumes:
+      - name: code
+        configMap:
+          name: duel-judge-code
+          defaultMode: 0644
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: duel-judge
+  namespace: __NAMESPACE__
+spec:
+  selector:
+    app: duel-judge
+  ports:
+  - port: 80
+    targetPort: 8003

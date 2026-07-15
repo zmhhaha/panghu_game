@@ -1,4 +1,4 @@
-import { Deck } from "../types";
+import { Deck } from "../types/index.js";
 
 export class DeckValidator {
   static readonly MIN_SIZE = 15;

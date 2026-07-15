@@ -1,4 +1,4 @@
-import { UserId } from "./card";
+import { UserId } from "./card.js";
 
 export interface User {
   id: UserId;

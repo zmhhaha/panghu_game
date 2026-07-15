@@ -1,0 +1,13 @@
+# ============================================================
+#  Combo Judge 通用配置
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: combo-judge-config
+  namespace: __NAMESPACE__
+data:
+  PROVIDER: "deepseek"
+  # PROVIDER: "openai"
+  # CUSTOM_API_BASE: "http://0.0.0.0"
+  # CUSTOM_MODEL: "deepseek-chat"

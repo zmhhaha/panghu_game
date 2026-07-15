@@ -1,3 +1,10 @@
+export interface SubStyle {
+  id: string;
+  name: string;
+  description: string;
+  cardIds: string[]; // 该分支下的卡牌 ID
+}
+
 export interface Faction {
   id: string;
   name: string;
@@ -14,4 +21,6 @@ export interface Faction {
   startingMoveId: string;
   startingMoveName: string;
   sortOrder: number;
+  group: "shaolin" | "wudang" | "northern" | "southern"; // 所属师门
+  subStyles: SubStyle[]; // 该师门下的分支拳种
 }

@@ -1,0 +1,21 @@
+# 减少构建上下文
+.git
+.gitmodules
+node_modules/
+.claude/
+.env
+*.md
+**/__pycache__/
+**/*.pyc
+*.pyo
+*.log
+.DS_Store
+Thumbs.db
+dist/
+
+# Python Agent 构建时不需要
+apps/agents/
+apps/duel-on-mount-hua/
+
+# TS 源码（Dockerfile 里显式 COPY）
+**/*.tsbuildinfo

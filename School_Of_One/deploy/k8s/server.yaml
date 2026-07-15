@@ -2,6 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: server
+  namespace: school-of-one
+  labels:
+    app: server
 spec:
   replicas: 2
   selector:
@@ -14,7 +17,8 @@ spec:
     spec:
       containers:
         - name: server
-          image: school-of-one/server:latest
+          image: arm-cluster-master:5000/school-server:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 3001
           env:
@@ -23,13 +27,19 @@ spec:
                 secretKeyRef:
                   name: db-secret
                   key: url
-            - name: AI_SERVICE_URL
-              value: "http://ai-service:3002"
+            - name: DUEL_JUDGE_URL
+              value: "http://duel-judge:8003"
+            - name: COMBO_JUDGE_URL
+              value: "http://combo-judge:8004"
+            - name: TRAINING_GROUND_URL
+              value: "http://training-ground:8005"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: jwt-secret
                   key: secret
+            - name: NODE_ENV
+              value: "production"
           resources:
             requests: { cpu: "200m", memory: "128Mi" }
             limits: { cpu: "1", memory: "512Mi" }
@@ -38,6 +48,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: server-service
+  namespace: school-of-one
 spec:
   selector:
     app: server

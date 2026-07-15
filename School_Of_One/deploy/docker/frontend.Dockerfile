@@ -1,14 +1,20 @@
 # ---- Build stage ----
-FROM node:20-alpine AS build
+FROM arm-cluster-master:5000/node20-ts-builder:latest AS build
 WORKDIR /app
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
-COPY packages/core ./packages/core
-COPY packages/ui-core ./packages/ui-core
-COPY packages/api-client ./packages/api-client
+
+# 1️⃣ 依赖层（不改 package.json 时可命中缓存）
+COPY pnpm-lock.yaml package.json pnpm-workspace.yaml ./
+COPY packages/core/package.json ./packages/core/package.json
+COPY packages/ui-core/package.json ./packages/ui-core/package.json
+COPY packages/api-client/package.json ./packages/api-client/package.json
+COPY apps/martial-hegemony/package.json ./apps/martial-hegemony/package.json
+RUN pnpm install --no-frozen-lockfile
+
+# 2️⃣ 源码层（经常变）
+COPY packages ./packages
 COPY apps/martial-hegemony ./apps/martial-hegemony
-RUN apk add --no-cache pnpm
-RUN pnpm install --filter martial-hegemony
-RUN pnpm --filter martial-hegemony build
+COPY tsconfig.base.json ./
+RUN cd apps/martial-hegemony && npx vite build
 
 # ---- Run stage ----
 FROM nginx:alpine

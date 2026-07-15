@@ -2,6 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
+  namespace: school-of-one
+  labels:
+    app: frontend
 spec:
   replicas: 2
   selector:
@@ -14,7 +17,8 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: school-of-one/frontend:latest
+          image: arm-cluster-master:5000/school-frontend:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
           resources:
@@ -25,6 +29,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: frontend-service
+  namespace: school-of-one
 spec:
   selector:
     app: frontend

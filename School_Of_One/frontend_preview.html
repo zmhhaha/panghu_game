@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>武林争霸 · 拳谱</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'KaiTi','STKaiti','Noto Serif SC','Source Han Serif SC','Microsoft YaHei',serif;
+  background: linear-gradient(180deg, #f2e6c9 0%, #e8d5a3 40%, #dcc29e 70%, #c4a46c 100%);
+  color:#2c1810;min-height:100vh;
+}
+/* 导航 */
+.navbar{
+  background:linear-gradient(180deg,#f2e6c9,#e8d5a3);border-bottom:1px solid #b8956a;
+  padding:6px 20px;display:flex;gap:4px;align-items:center;position:sticky;top:0;z-index:100;
+  box-shadow:0 1px 6px rgba(0,0,0,.08);
+}
+.navbar .logo{font-size:16px;font-weight:bold;letter-spacing:2px;margin-right:12px}
+.navbar a{color:#5a3a2a;text-decoration:none;font-size:13px;padding:5px 12px;cursor:pointer;border-radius:2px;transition:all .2s;letter-spacing:1px}
+.navbar a:hover,.navbar a.active{background:rgba(139,100,55,.1)}
+.page{display:none;max-width:1100px;margin:0 auto;padding:24px}
+.page.active{display:block}
+.section-title{font-size:20px;letter-spacing:3px;margin-bottom:16px;text-align:center}
+
+/* ===== 拳谱书 ===== */
+.bookshelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:20px;padding:20px 0}
+.book-spine{
+  height:280px;cursor:pointer;position:relative;
+  border:1px solid #a08050;
+  box-shadow:4px 4px 12px rgba(0,0,0,.15);
+  display:flex;flex-direction:column;align-items:center;
+  transition:all .2s;text-align:center;padding:20px;
+  background-size:contain;background-position:center;background-repeat:no-repeat;
+  font-family:'KaiTi','STKaiti','Noto Serif SC',serif;color:#2c1810;
+  justify-content:flex-start;padding-top:60px;
+}
+.book-spine:hover{transform:translateY(-4px);box-shadow:4px 6px 16px rgba(0,0,0,.2)}
+.book-spine .icon{font-size:28px;margin-bottom:6px;position:relative;z-index:1;}
+.book-spine .title{font-size:16px;font-weight:bold;letter-spacing:3px;text-shadow:0 1px 3px rgba(242,230,201,.6);writing-mode:vertical-rl;position:relative;z-index:1;}
+.book-spine .count{font-size:11px;color:#5a3a2a;opacity:.6;position:absolute;bottom:16px;z-index:1;}
+
+/* ===== 拳谱内页 ===== */
+.book-page{display:none;max-width:1000px;margin:0 auto;padding:20px}
+.book-page.active{display:block}
+.book-back{display:inline-block;margin-bottom:16px;padding:6px 16px;border:1px solid #b8956a;cursor:pointer;font-size:13px;letter-spacing:2px;transition:all .2s;color:#5a3a2a}
+.book-back:hover{background:rgba(139,100,55,.1)}
+.book-header{font-size:22px;font-weight:bold;letter-spacing:4px;margin-bottom:4px}
+.book-sub{font-size:13px;color:#5a3a2a;opacity:.7;margin-bottom:16px}
+.book-sections{display:flex;flex-direction:column;gap:20px}
+.book-section{border:1px solid #b8956a44;padding:16px}
+.book-section h3{font-size:16px;letter-spacing:2px;margin-bottom:8px}
+.section-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
+
+/* ===== 古籍拳谱卡牌（底图+覆盖层，无额外边框） ===== */
+.card-parchment{
+  width:180px;height:255px; /* 底图比例 3:4 */
+  position:relative;overflow:hidden;
+  cursor:pointer;transition:all .2s;
+}
+.card-parchment:hover{transform:translateY(-4px);box-shadow:2px 6px 16px rgba(0,0,0,.3)}
+/* 底图全铺 */
+.card-parchment .bg-img{
+  position:absolute;inset:0;z-index:0;
+  width:100%;height:100%;object-fit:cover;
+  pointer-events:none;
+}
+.card-parchment .figure-img{
+  position:absolute;left:0px;top:60px;z-index:1;
+  width: 120px;
+  object-fit:contain;
+  pointer-events:none;
+  opacity:0.88;
+}
+
+/* 招式名 */
+.card-parchment .move-name{
+  position:absolute;top:36px;right:20px;z-index:2;
+  writing-mode:vertical-rl;font-size:12px;font-weight:bold;color:#2c1810;letter-spacing:1px;
+}
+/* 中区：歌诀（每行是一列竖排） */
+.card-parchment .main-text{
+  position:absolute;top:36px;right:36px;bottom:60px;z-index:2;
+  display:flex;flex-direction:row;gap:1px;
+  writing-mode:horizontal-tb;
+  align-items:flex-start;
+}
+.card-parchment .main-text .verse-line{
+  writing-mode:vertical-rl;text-orientation:mixed;
+  font-size:7px;color:#2c1810;letter-spacing:1.5px;line-height:1.5;opacity:.7;
+  min-width:1.2em;white-space:nowrap;
+}
+/* 图说 */
+.card-parchment .fig-caption{
+  position:absolute;top:40px;left:12px;z-index:2;
+  writing-mode:vertical-rl;font-size:7px;color:#2c1810;opacity:.5;letter-spacing:1px;
+  border:1px solid #2c181060;padding:2px 4px;
+  display:flex;flex-direction:column;gap:0;align-items:center;
+}
+.card-parchment .fig-caption span{letter-spacing:0.5px;}
+
+/* ===== 演武场（书架模式） ===== */
+.deck-bookshelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px}
+.deck-side{
+  background:linear-gradient(135deg,#f2e6c9,#e8d5a3);border:1px solid #b8956a;
+  padding:16px;max-height:80vh;overflow-y:auto;min-width:200px;
+}
+.deck-slot{
+  padding:5px 8px;margin-bottom:3px;font-size:12px;font-family:inherit;
+  background:rgba(44,24,16,.04);border:1px solid #b8956a33;cursor:pointer;display:flex;justify-content:space-between;color:#2c1810;
+}
+.deck-slot:hover{background:rgba(44,24,16,.08)}
+
+/* 比武场 */
+.arena{
+  background:linear-gradient(145deg, #2d2320, #1a1414);
+  border:1px solid #4E342E;border-radius:12px;
+  padding:24px 60px;margin-bottom:16px;min-height:300px;
+  position:relative;overflow:hidden;color:#f5e6c8;
+}
+/* 地面透视线 — 表示从近到远的距离感 */
+.arena-floor{
+  position:absolute;bottom:0;left:0;right:0;height:80px;
+  background:linear-gradient(180deg, transparent 0%, rgba(60,40,20,0.3) 100%);
+  pointer-events:none;
+}
+/* 地面刻度线 */
+.arena-mark{
+  position:absolute;bottom:50px;height:1px;background:rgba(90,74,58,0.25);pointer-events:none;
+}
+.arena-mark-label{
+  position:absolute;bottom:56px;font-size:9px;color:rgba(90,74,58,0.4);pointer-events:none;
+  transform:translateX(-50%);
+}
+.arena-layout{position:relative;height:240px;margin-top:40px;z-index:1}
+.arena-side{position:absolute;bottom:0;text-align:center;transition:left 0.4s ease,right 0.4s ease}
+.arena-side img{height:150px;width:auto;object-fit:contain;display:block;margin:0 auto;opacity:0.9}
+/* 回合信息移至顶部 */
+.arena-top-info{
+  position:absolute;top:8px;left:0;right:0;text-align:center;z-index:2;
+}
+.arena-ground{position:absolute;bottom:36px;left:8%;right:8%;height:1px;background:linear-gradient(90deg,transparent,#5a4a3a,transparent)}
+.arena-dist{position:absolute;bottom:42px;left:50%;transform:translateX(-50%);font-size:12px;color:#8B7D6B;letter-spacing:4px;z-index:2}
+.log-box{background:rgba(44,24,16,.03);border:1px solid #b8956a33;padding:12px;max-height:140px;overflow-y:auto;font-size:12px;color:#5a3a2a;font-family:inherit}
+.log-item{margin-bottom:3px;opacity:.6}
+.log-item.new{opacity:1;color:#2c1810}
+.filter-btn{padding:4px 12px;font-size:12px;font-family:inherit;letter-spacing:1px;border:1px solid #b8956a;background:transparent;color:#5a3a2a;cursor:pointer;transition:all .2s}
+.filter-btn:hover{background:rgba(139,100,55,.1)}
+.filter-btn.active{background:#2c1810;color:#f2e6c9;border-color:#2c1810}
+.btn-primary{padding:10px 32px;font-size:14px;font-family:inherit;letter-spacing:2px;border:1px solid #2c1810;background:#2c1810;color:#f2e6c9;cursor:pointer}
+.btn-primary:hover{background:#5a3a2a}
+</style>
+</head>
+<body>
+
+<nav class="navbar">
+  <span class="logo">📜 武林爭霸</span>
+  <a href="#" onclick="showPage('home')" class="active" id="nav-home">首頁</a>
+  <a href="#" onclick="showPage('factions')" id="nav-factions">師門</a>
+  <a href="#" onclick="showPage('cards')" id="nav-cards">拳譜</a>
+  <a href="#" onclick="showPage('training')" id="nav-training">習武</a>
+  <a href="#" onclick="showPage('deck')" id="nav-deck">演武</a>
+  <a href="#" onclick="showPage('duel')" id="nav-duel">比武</a>
+</nav>
+
+<div id="page-home" class="page active">
+  <div style="text-align:center;margin-bottom:32px;padding:32px 0">
+    <div style="font-size:56px;margin-bottom:12px">📜</div>
+    <h1 style="font-size:28px;letter-spacing:6px;margin-bottom:6px">武林爭霸</h1>
+    <p style="font-size:13px;color:#5a3a2a;letter-spacing:2px;opacity:.7">赤手空拳 · 以身為器 · 拜師學藝 · 自成一家</p>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px">
+    <div class="book-spine" onclick="showPage('training')">
+      <div class="icon">🥋</div><div class="title">習武場</div>
+      <div class="count">拜師學藝獲取招式</div>
+    </div>
+    <div class="book-spine" onclick="showPage('deck')">
+      <div class="icon">📖</div><div class="title">演武場</div>
+      <div class="count">編排卡組演練套路</div>
+    </div>
+    <div class="book-spine" onclick="showPage('duel')">
+      <div class="icon">⚔️</div><div class="title">比武場</div>
+      <div class="count">擂台對決一決高下</div>
+    </div>
+  </div>
+</div>
+
+<!-- 师门页 -->
+<div id="page-factions" class="page">
+  <h2 class="section-title">🏛️ 四大師門</h2>
+  <div id="factions-container"></div>
+</div>
+
+<!-- 拳谱页（书籍模式） -->
+<div id="page-cards" class="page">
+  <div id="cards-bookshelf" class="bookshelf"></div>
+  <div id="cards-bookpage" class="book-page"></div>
+</div>
+
+<!-- 习武场 -->
+<div id="page-training" class="page">
+  <h2 class="section-title">🥋 習武場</h2>
+  <p style="text-align:center;font-size:13px;color:#5a3a2a;opacity:.7;margin-bottom:24px">選一位師父，描述你構想的招式，讓師父打磨糾偏</p>
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px" id="training-container"></div>
+  <div style="text-align:center;margin-top:20px;padding:24px;border:1px solid #8B6914;cursor:pointer" onclick="alert('世外高人：突破門派限制，自創獨門絕技（即將開放）')">
+    <div style="font-size:36px">🧙</div><div style="font-size:16px;font-weight:bold;margin-top:6px">世外高人</div>
+    <div style="font-size:12px;color:#5a3a2a;opacity:.6">突破門派限制，自創獨門絕技</div>
+  </div>
+</div>
+
+<!-- 演武场（书架模式） -->
+<div id="page-deck" class="page">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <h2 class="section-title" style="margin:0">📋 演武場</h2>
+    <div style="font-size:13px;color:#5a3a2a">卡組: <span id="deck-count" style="font-weight:bold;color:#8B6914">0</span>/30</div>
+  </div>
+  <div style="display:flex;gap:24px">
+    <div style="flex:2">
+      <div id="deck-bookshelf" class="deck-bookshelf"></div>
+      <div id="deck-bookpage" class="book-page"></div>
+    </div>
+    <div class="deck-side" id="deck-list"></div>
+  </div>
+</div>
+
+<!-- 比武场 -->
+<div id="page-duel" class="page">
+  <h2 class="section-title">⚔️ 比武場</h2>
+  <div id="duel-ready" style="text-align:center;padding:48px">
+    <div style="font-size:48px;margin-bottom:12px">⚔️</div>
+    <p style="font-size:14px;color:#5a3a2a;margin-bottom:20px;font-family:inherit">選擇你的起手式</p>
+    <button class="btn-primary" onclick="startDuel()">開始比武</button>
+  </div>
+  <div id="duel-arena" style="display:none">
+    <div class="arena" id="arena-box">
+      <!-- 回合信息在顶部 -->
+      <div class="arena-top-info">
+        <div id="round-display" style="font-size:18px;color:#8B7D6B;letter-spacing:2px">⚔️ 第 0 回合</div>
+        <div id="round-result" style="font-size:12px;color:#8B7D6B;font-style:italic;margin-top:2px"></div>
+      </div>
+      <!-- 地面透视线 -->
+      <div class="arena-floor"></div>
+      <!-- 地面刻度线 -->
+      <div class="arena-mark" style="left:10%;right:10%"></div>
+      <div class="arena-label" style="position:absolute;bottom:56px;left:25%;font-size:9px;color:rgba(90,74,58,0.4);transform:translateX(-50%)">1m</div>
+      <div class="arena-mark" style="left:45%;right:45%"></div>
+      <div class="arena-label" style="position:absolute;bottom:56px;left:50%;font-size:9px;color:rgba(90,74,58,0.4);transform:translateX(-50%)">0m</div>
+      <div class="arena-mark" style="left:75%;right:25%"></div>
+      <div class="arena-label" style="position:absolute;bottom:56px;left:75%;font-size:9px;color:rgba(90,74,58,0.4);transform:translateX(-50%)">1m</div>
+      <div class="arena-ground"></div>
+      <div class="arena-dist" id="distance-display">相距 2.0m</div>
+      <!-- 双方对位 — 距离从 0%~45% 映射，0m 时两边靠拢在中间 -->
+      <div class="arena-layout">
+        <div class="arena-side" id="player-side" style="left:5%">
+          <div class="arena-label" style="color:#d4a373;font-size:13px;margin-bottom:4px">玩家</div>
+          <div id="player-hearts" style="font-size:14px;line-height:1.15;letter-spacing:0"></div>
+          <div id="player-figure" style="margin-top:8px"></div>
+        </div>
+        <div class="arena-side" id="ai-side" style="right:5%">
+          <div class="arena-label" style="color:#EF5350;font-size:13px;margin-bottom:4px">對手</div>
+          <div id="ai-hearts" style="font-size:14px;line-height:1.15;letter-spacing:0"></div>
+          <div id="ai-figure" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:14px;color:#8B7D6B;margin-bottom:12px;letter-spacing:1px">選擇招式（點擊出牌）</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;justify-items:center" id="hand-container"></div>
+    </div>
+    <div class="log-box" id="log-container"><div style="font-size:12px;color:#8B7D6B;margin-bottom:8px">戰況記錄</div></div>
+  </div>
+</div>
+
+<script>
+// ========== 数据 ==========
+const VERSES={
+  "罗汉拳":"羅漢出洞·拳開山岳\n金剛怒目·降龍伏虎\n羅漢伏虎·降龍手\n金剛不壞·金身羅漢",
+  "金刚指":"一指出鞘·貫通金石\n氣聚指尖·點穴制敵\n金剛指力·穿雲裂石",
+  "铁布衫":"氣運周身·皮如鐵甲\n骨如鋼鑄·金剛不壞\n橫練功夫·刀槍不入",
+  "少林弹腿":"彈腿如鞭·連環不絕\n專攻下盤·掃蕩千軍\n彈腿連環·左右開弓",
+  "少林长拳":"長拳直貫·大開大闔\n攻防一體·勁力綿長\n少林長拳·太祖遺風",
+  "虎拳":"虎嘯山林·猛撲如風\n雙爪裂石·氣吞萬里\n虎形拳法·威震八方",
+  "擒拿手":"擒拿鎖扣·巧勁制敵\n三十六式·變化莫測\n分筋錯骨·鎖扣擒拿",
+  "金钟罩":"金鐘罩體·渾元一氣\n刀槍不入·萬法不侵\n少林絕學·金鐘護體",
+  "心意把":"意到氣到·氣到力到\n一發動身·勁力連綿\n少林秘傳·心意把功",
+  "达摩渡江":"一葦渡江·達摩絕技\n集少林大成·摧枯拉朽\n達摩祖師·一葦渡江",
+  "揽雀尾":"攬雀入懷·化勁無形\n捋擠按採·四兩撥千\n太極攬雀·化勁爲先",
+  "单鞭":"單鞭直推·中正安舒\n一鞭之勢·撼動山岳\n太極單鞭·舒展大氣",
+  "如封似闭":"雙手合圍·如關城門\n封敵來路·閉門打狗\n太極封閉·攻守兼備",
+  "野马分鬃":"野馬奔騰·鬃毛飛揚\n左右分展·勢如破竹\n野馬分鬃·舒展自如",
+  "云手":"行雲流水·雙手畫圓\n連綿不絕·進退自如\n太極雲手·連綿不斷",
+  "崩拳":"半步崩拳·勢如箭出\n路線最短·一往無前\n形意崩拳·如箭離弦",
+  "劈拳":"劈拳如斧·自上而下\n開山裂石·勢大力沉\n形意劈拳·勢如開山",
+  "钻拳":"鑽拳如浪·自下而上\n翻浪之勢·直擊下頜\n形意鑽拳·翻浪之勢",
+  "炮拳":"炮拳出膛·爆炸之力\n開山破石·威不可擋\n形意炮拳·炸裂之力",
+  "撑锤":"擰腰順肩·撐錘如箭\n勁達拳面·崩裂之勢\n八極撐錘·六開之首",
+  "顶肘":"沉肩墜肘·集力於肘\n貼身短打·凶悍無比\n八極頂肘·貼身短打",
+  "铁山靠":"以肩爲盾·以背爲牆\n靠山撞壁·勢不可擋\n八極鐵山·靠打精髓",
+  "日字冲拳":"中線出拳·寸勁爆發\n朝面追形·不脫不黏\n詠春日字·中線直擊",
+  "摊手":"攤手外卸·開敵中線\n防中帶攻·轉守爲攻\n詠春攤手·防中帶攻",
+  "膀手":"外旋上膀·卸力化勁\n詠春獨有·以柔克剛\n詠春膀手·化勁爲先",
+  "连环冲拳":"連環衝拳·左收右出\n密如雨點·壓制敵手\n詠春連環·密如雨點",
+  "工字伏虎拳":"工字扎馬·伏虎出洞\n橋手堅固·攻守兼備\n洪拳工字·伏虎之勢",
+  "虎鹤双形":"虎鶴雙形·一剛一柔\n剛柔並濟·變化莫測\n洪拳虎鶴·剛柔並濟",
+  "铁线拳":"鐵線穿針·外剛內柔\n穿透之力·直達骨髓\n洪拳鐵線·穿針之勁",
+};
+const FALLBACK=[
+  "蓄勁如弓·發勁如箭\n剛柔並濟·動靜相宜\n進退有度·攻守兼備",
+  "沉肩墜肘·氣沉丹田\n虛靈頂勁·周身一家\n眼到手到·身步合一",
+  "剛柔並濟·動靜相宜\n不即不離·不丟不頂\n隨機應變·變化莫測",
+  "以柔克剛·以靜制動\n借力打力·四兩撥千\n順勢而爲·自然而然",
+];
+const FACTIONS=[
+  {id:"shaolin-temple",name:"少林寺",icon:"🏯",master:"玄慈大師",desc:"天下武功出少林",
+    subs:[{id:"shaolin-sub",name:"少林拳",desc:"少林根基拳法",cards:["罗汉拳","金刚指","铁布衫","少林弹腿","少林长拳","虎拳","擒拿手","金钟罩","心意把","达摩渡江"]},
+      {id:"luohan-sub",name:"羅漢拳",desc:"少林入門拳法",cards:["罗汉出洞","罗汉捧经","罗汉撞钟","罗汉伏虎","罗汉连环掌","金身罗汉","降龙手","罗汉连环拳","十八罗汉阵"]},
+      {id:"wuxing-sub",name:"五形拳",desc:"龍蛇虎豹鶴",cards:["金龙探爪","白蛇吐信","猛虎扑食","豹子冲撞","白鹤亮翅","龙腾四海","灵蛇盘树","鹤立鸡群","五形合一"]}]},
+  {id:"wudang-sect",name:"武當派",icon:"☯️",master:"沖虛道長",desc:"以柔克剛四兩撥千斤",
+    subs:[{id:"taiji-sub",name:"太極拳",desc:"以柔克剛",cards:["揽雀尾","单鞭","如封似闭","野马分鬃","云手","左右蹬脚","白鹤亮翅","搂膝拗步","搬拦捶","太极推手"]},
+      {id:"bagua-sub",name:"八卦掌",desc:"走圈轉掌",cards:["八卦转掌","青龙探爪","叶底藏花","游身八卦","指天划地","双掌推山","绕后","八卦连环掌","六十四掌"]},
+      {id:"xingyi-sub",name:"形意拳",desc:"五行相生",cards:["崩拳","劈拳","钻拳","炮拳","横拳","箭拳","虎抱头","半步崩拳","五行连环"]}]},
+  {id:"northern-school",name:"北派",icon:"🥋",master:"北派宗師",desc:"北方拳種剛猛爆裂",
+    subs:[{id:"baji-sub",name:"八極拳",desc:"貼身靠打",cards:["撑锤","顶肘","铁山靠","崩肘","大缠丝","探马掌","伏虎","劈挂掌","贴山靠"]},
+      {id:"tongbei-sub",name:"通背拳",desc:"放長擊遠",cards:["劈山掌","猿猴出洞","冷急带环","引手","缠丝鞭手","双劈掌","白猿献果","透骨劲"]},
+      {id:"fanzi-sub",name:"翻子拳",desc:"雙拳密如雨",cards:["双拳密如雨","双挂拳","翻背拳","前劈后挂","连环脚","滚捆连环","绞手","一挂鞭"]},
+      {id:"chuojiao-sub",name:"戳腳",desc:"手是兩扇門",cards:["鸳鸯腿","四平腿","蹶腿","旋风腿","藏腿","穿心腿","北腿无双"]},
+      {id:"tanglang-sub",name:"螳螂拳",desc:"勾摟採掛",cards:["螳螂捕蝉","七星螳螂","铁环套","偷桃","连环腿","勾手","夺命连环"]},
+      {id:"mizong-sub",name:"迷蹤拳",desc:"步法多變",cards:["迷踪步","声东击西","左右逢源","偷袭","迷魂阵","幻影拳","虚实莫测"]}]},
+  {id:"southern-school",name:"南派",icon:"🐉",master:"南派宗師",desc:"南方拳種貼身短打",
+    subs:[{id:"yongchun-sub",name:"詠春拳",desc:"寸勁爆發",cards:["日字冲拳","摊手","膀手","连环冲拳","标指手","问手","耕拦手","寸劲","黐手"]},
+      {id:"hong-sub",name:"洪拳",desc:"扎馬穩固",cards:["工字伏虎拳","虎鹤双形","铁线拳","三展手","扎马功","劈挂拳","标手","十二桥","龙虎斗","猛虎下山"].slice(0,8)},
+      {id:"choylifut-sub",name:"蔡李佛",desc:"遠中近皆宜",cards:["穿桥手","鞭槌","扭马侧蹬","四面斗","十字拳","吊马","连环腿","开山拳"]}]},
+];
+const ALL_CARDS=[];
+FACTIONS.forEach(f=>{f.subs.forEach(sub=>{sub.cards.forEach((n,i)=>{ALL_CARDS.push({id:`${sub.id}-${i}`,factionId:f.id,factionName:f.name,subName:sub.name,name:n,desc:`${n}：${sub.name}之招式，${sub.desc}。`,displacement:i*0.2})})});});
+function showPage(n){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.navbar a').forEach(a=>a.classList.remove('active'));document.getElementById('page-'+n).classList.add('active');document.getElementById('nav-'+n).classList.add('active')}
+
+// ========== 卡牌渲染 ==========
+function renderCard(c,oc){
+  const v=(VERSES[c.name]||FALLBACK[Math.floor(Math.random()*FALLBACK.length)]).split('\n');
+  return`<div class="card-parchment" ${oc?'onclick="'+oc+'"':''}>
+    <img class="bg-img" src="assets/card-bg.png" alt="">
+    <img class="figure-img" src="assets/picture.png" alt="">
+    <div class="fig-caption"><span>圖</span><span>說</span></div>
+    <div class="move-name">${c.name}</div>
+    <div class="main-text">${v.map(l=>`<div class="verse-line">${l}</div>`).join('')}</div>
+  </div>`;
+}
+
+// ========== 书架渲染（每个拳种一本拳谱） ==========
+function renderBookshelf(containerId, clickHandler){
+  const c=document.getElementById(containerId);if(!c)return;
+  // 拍平：每个 subStyle 是一本书
+  const books=[];
+  FACTIONS.forEach(f=>{f.subs.forEach(sub=>{books.push({faction:f,sub:sub})})});
+  c.innerHTML=books.map(b=>`<div class="book-spine" onclick="${clickHandler.replace('{subId}',b.sub.id).replace('{factionIcon}',b.faction.icon)}" style="background-image:url(assets/slipcase.png)">
+    <div class="title">${b.sub.name}</div>
+    <div class="count">${b.faction.name} · ${b.sub.cards.length}式</div>
+  </div>`).join('');
+}
+
+// ========== 拳谱页（子拳种级别） ==========
+(function(){
+  const bp=document.getElementById('cards-bookpage');
+  renderBookshelf('cards-bookshelf',`showSubBook('{subId}','cards')`);
+  window.showSubBook=(subId,page)=>{
+    const allSubs=[];FACTIONS.forEach(f=>f.subs.forEach(s=>allSubs.push({faction:f,sub:s})));
+    const found=allSubs.find(x=>x.sub.id===subId);if(!found)return;
+    const {faction,sub}=found;
+    document.getElementById(page+'-bookshelf').style.display='none';
+    bp.classList.add('active');
+    bp.innerHTML=`<div class="book-back" onclick="hideSubBook('${page}')">← 返回書架</div>
+      <div class="book-header">${faction.icon} ${sub.name}</div>
+      <div class="book-sub">${faction.name} · ${sub.desc} · ${sub.cards.length}式</div>
+      <div style="margin-bottom:12px;font-size:12px;color:#5a3a2a;opacity:.6">${faction.desc}</div>
+      <div class="section-cards">${sub.cards.map((n,i)=>{const c=ALL_CARDS.find(x=>x.id===sub.id+'-'+i);return c?renderCard(c):''}).join('')}</div>`;
+  };
+  window.hideSubBook=(page)=>{
+    document.getElementById(page+'-bookshelf').style.display='grid';
+    document.getElementById(page+'-bookpage').classList.remove('active');
+  };
+})();
+
+// ========== 师门页 ==========
+(function(){const c=document.getElementById('factions-container');FACTIONS.forEach(f=>{c.innerHTML+=`<div style="border:1px solid #b8956a;padding:20px;margin-bottom:12px;background:linear-gradient(180deg,#f2e6c9,#e8d5a3)"><div style="display:flex;justify-content:space-between"><div><div style="font-size:20px">${f.icon} ${f.name}</div><div style="font-size:12px;color:#5a3a2a;margin-top:4px;opacity:.7">${f.desc}</div></div></div><div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">${f.subs.map(s=>`<div style="display:inline-block;padding:6px 12px;border:1px solid #b8956a44;font-size:12px"><div style="font-weight:bold">${s.name}</div><div style="font-size:10px;color:#5a3a2a;opacity:.6">${s.cards.length}式</div></div>`).join('')}</div></div>`})})();
+
+// ========== 习武场 ==========
+(function(){const c=document.getElementById('training-container');FACTIONS.forEach(f=>{c.innerHTML+=`<div style="border:1px solid #b8956a;padding:24px;cursor:pointer;background:linear-gradient(180deg,#f2e6c9,#e8d5a3)" onclick="alert('前往「${f.name}」拜師（AI 交互即將開放）')"><div style="font-size:24px">${f.icon}</div><div style="font-size:16px;font-weight:bold;margin-top:6px">${f.name}</div><div style="font-size:11px;color:#5a3a2a;opacity:.7;margin-top:4px">師父：${f.master}</div></div>`})})();
+
+// ========== 演武场（书架模式 — 每个拳种一本谱） ==========
+let deck=[];let deckSubId=null;
+(function(){
+  renderBookshelf('deck-bookshelf',`openDeckBook('{subId}')`);
+  window.openDeckBook=(subId)=>{
+    deckSubId=subId;
+    const allSubs=[];FACTIONS.forEach(f=>f.subs.forEach(s=>allSubs.push({faction:f,sub:s})));
+    const found=allSubs.find(x=>x.sub.id===subId);if(!found)return;
+    const {faction,sub}=found;
+    document.getElementById('deck-bookshelf').style.display='none';
+    const bp=document.getElementById('deck-bookpage');bp.classList.add('active');
+    bp.innerHTML=`<div class="book-back" onclick="closeDeckBook()">← 返回書架</div>
+      <div class="book-header">${faction.icon} ${sub.name}</div>
+      <div class="book-sub">${faction.name} · ${sub.desc} · ${sub.cards.length}式</div>
+      <div class="section-cards">${sub.cards.map((n,i)=>{const c=ALL_CARDS.find(x=>x.id===sub.id+'-'+i);return c?renderCard(c,`toggleDeckCard('${c.id}')`):''}).join('')}</div>`;
+    updateDeckUI();
+  };
+  window.closeDeckBook=()=>{
+    document.getElementById('deck-bookshelf').style.display='grid';
+    document.getElementById('deck-bookpage').classList.remove('active');
+  };
+  window.toggleDeckCard=(id)=>{
+    const i=deck.indexOf(id);
+    if(i>-1)deck.splice(i,1);else if(deck.length<30)deck.push(id);
+    updateDeckUI();
+  };
+  function updateDeckUI(){
+    document.getElementById('deck-count').textContent=deck.length;
+    const el=document.getElementById('deck-list');
+    if(!deck.length){el.innerHTML='<div style="font-size:12px;color:#5a3a2a;opacity:.5;text-align:center;padding:16px;font-family:inherit">從拳譜選招入組</div>';return;}
+    el.innerHTML=`<h3 style="font-size:13px;margin-bottom:8px;font-family:inherit">己方卡組</h3>`+
+      deck.map(id=>{const c=ALL_CARDS.find(x=>x.id===id);return c?`<div class="deck-slot" onclick="toggleDeckCard('${c.id}')"><span>${c.name}</span><span style="opacity:.5">${c.subName}</span></div>`:''}).join('');
+  }
+})();
+
+// ========== 比武场 ==========
+// 招式小人图
+const FIGURE_IMG = 'assets/picture.png';
+
+function figureImg(side){
+  const dir = side==='left' ? 'scaleX(1)' : 'scaleX(-1)';
+  return `<img src="${FIGURE_IMG}" style="height:200px;width:auto;transform:${dir};object-fit:contain;opacity:0.9">`;
+}
+
+// 出牌限制：位移不能超过当前距离
+function canPlay(card, dist) { return card.displacement <= dist; }
+
+let duel={hearts:[10,10],distance:2.0,round:0,hand:[],log:[],isFall:false};
+function startDuel(){
+  document.getElementById('duel-ready').style.display='none';
+  document.getElementById('duel-arena').style.display='block';
+  duel={hearts:[10,10],distance:2.0,round:0,hand:[],log:['比武開始！雙方相距 2米'],isFall:false};
+  duel.hand=ALL_CARDS.sort(()=>Math.random()-.5).slice(0,5);
+  ud();
+}
+function plc(id){
+  const c=ALL_CARDS.find(x=>x.id===id); if(!c) return;
+  // 出牌限制检查
+  if(!canPlay(c, duel.distance)) return;
+  const ai=ALL_CARDS[Math.floor(Math.random()*ALL_CARDS.length)];
+  const rawDist=duel.distance-c.displacement-(ai.displacement||0);
+
+  let newDist, isFall=false;
+  if(rawDist<0){ newDist=0; isFall=true; }
+  else newDist=rawDist;
+
+  const hit=Math.random()>0.4?1:0, aiHit=Math.random()>0.5?1:0;
+  duel.hearts[1]=Math.max(0,duel.hearts[1]-hit);
+  duel.hearts[0]=Math.max(0,duel.hearts[0]-aiHit);
+  const fallMsg=isFall?'雙方相撞摔倒在地！':'';
+  const hitMsg=hit&&aiHit?'互相命中！':hit?'命中！':aiHit?'被命中！':'未命中';
+  duel.log.unshift(`${duel.round+1}回：你出「${c.name}」(位移+${c.displacement})，對手出「${ai.name}」。距${duel.distance.toFixed(1)}→${newDist.toFixed(1)}m。${hitMsg}${fallMsg}`);
+  duel.distance=newDist; duel.round++; duel.isFall=isFall;
+  ud();
+  if(duel.hearts[0]<=0)setTimeout(()=>alert('你戰敗了！'),500);
+  if(duel.hearts[1]<=0)setTimeout(()=>alert('你獲勝了！'),500);
+}
+function ud(){
+  const p=duel;
+  document.getElementById('player-hearts').innerHTML=renderHearts(p.hearts[0]);
+  document.getElementById('ai-hearts').innerHTML=renderHearts(p.hearts[1]);
+  document.getElementById('round-display').innerHTML='⚔️ 第 '+p.round+' 回合';
+  document.getElementById('distance-display').textContent='相距 '+p.distance.toFixed(1)+'m';
+  document.getElementById('player-figure').innerHTML=figureImg('left');
+  document.getElementById('ai-figure').innerHTML=figureImg('right');
+  // 距离映射：distance 0~2.5m → 靠拢 0%~20%，2.5~5m → 固定在两端
+  const pct = Math.min(p.distance / 2.5 * 20, 20);
+  document.getElementById('player-side').style.left = (5 - pct/2) + '%';
+  document.getElementById('player-side').style.right = 'auto';
+  document.getElementById('ai-side').style.right = (5 - pct/2) + '%';
+  document.getElementById('ai-side').style.left = 'auto';
+  // 摔倒时对位叠在一起
+  if(p.isFall) {
+    document.getElementById('player-side').style.left = '35%';
+    document.getElementById('player-side').style.right = 'auto';
+    document.getElementById('ai-side').style.right = '35%';
+    document.getElementById('ai-side').style.left = 'auto';
+  }
+  // 手牌（灰显不可出的牌）
+  document.getElementById('hand-container').innerHTML=p.hand.map(c=>`<div onclick="plc('${c.id}')" style="cursor:pointer;opacity:${canPlay(c,p.distance)?1:0.35}">${renderCard(c)}<div style="font-size:11px;color:#8B7D6B;margin-top:4px;text-align:center">📍${c.displacement>=0?'+':''}${c.displacement}m</div></div>`).join('');
+  document.getElementById('log-container').innerHTML='<div style="font-size:12px;color:#8B7D6B;margin-bottom:8px">戰況記錄</div>'+p.log.map((m,i)=>`<div class="log-item ${i?'':'new'}">${m}</div>`).join('');
+  // 摔倒后重置距离
+  if(p.isFall){ setTimeout(()=>{ p.distance=1.0; p.isFall=false; ud(); }, 2000); }
+}
+// 血量显示：上下两排，每行最多 5 颗
+function renderHearts(n){
+  var r1=n>5?'❤️'.repeat(5):'❤️'.repeat(n);
+  r1+=n>5?'':'🖤'.repeat(5-n);
+  var r2='';
+  if(n>5){ r2='❤️'.repeat(n-5)+'🖤'.repeat(10-n); }
+  return r1+(r2?'<br>'+r2:'');
+}
+</script>
+</body>
+</html>

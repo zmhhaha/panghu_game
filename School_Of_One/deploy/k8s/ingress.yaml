@@ -1,12 +1,23 @@
+# Ingress 配置
+#
+# 前端 → /              → frontend-service:80
+# 后端 → /api/v1/       → server-service:3001
+# AI   → /api/ai/duel/   → duel-judge:8003
+# AI   → /api/ai/combo/  → combo-judge:8004
+# AI   → /api/ai/training/ → training-ground:8005
+#
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: school-of-one
+  namespace: school-of-one
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
 spec:
+  ingressClassName: nginx
   rules:
-    - host: wulinzhenba.example.com
+    - host: wulin.example.com
       http:
         paths:
           - path: /
@@ -16,3 +27,31 @@ spec:
                 name: frontend-service
                 port:
                   number: 80
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: server-service
+                port:
+                  number: 3001
+          - path: /api/ai/duel
+            pathType: Prefix
+            backend:
+              service:
+                name: duel-judge
+                port:
+                  number: 8003
+          - path: /api/ai/combo
+            pathType: Prefix
+            backend:
+              service:
+                name: combo-judge
+                port:
+                  number: 8004
+          - path: /api/ai/training
+            pathType: Prefix
+            backend:
+              service:
+                name: training-ground
+                port:
+                  number: 8005

@@ -1,18 +1,22 @@
 # ---- Build stage ----
-FROM node:20-alpine AS build
+FROM arm-cluster-master:5000/node20-ts-builder:latest AS build
 WORKDIR /app
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
-COPY packages/core ./packages/core
+
+# 1️⃣ 依赖层（不改 package.json 时可命中缓存）
+COPY pnpm-lock.yaml package.json pnpm-workspace.yaml ./
+COPY packages/core/package.json ./packages/core/package.json
+COPY packages/api-client/package.json ./packages/api-client/package.json
+COPY packages/ui-core/package.json ./packages/ui-core/package.json
+COPY apps/server/package.json ./apps/server/package.json
+RUN pnpm install --no-frozen-lockfile
+
+# 2️⃣ 源码层（经常变）
+COPY packages ./packages
 COPY apps/server ./apps/server
-RUN apk add --no-cache python3 make g++ pnpm
-RUN pnpm install --filter @school-of-one/server
-RUN pnpm --filter @school-of-one/server build
 
 # ---- Run stage ----
 FROM node:20-alpine
 WORKDIR /app
-COPY --from=build /app/apps/server/dist ./dist
-COPY --from=build /app/apps/server/package.json .
-RUN npm install --production
+COPY --from=build /app ./
 EXPOSE 3001
-CMD ["node", "dist/index.js"]
+CMD ["node_modules/.bin/tsx", "apps/server/src/index.ts"]

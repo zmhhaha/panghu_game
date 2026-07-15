@@ -1,58 +1,21 @@
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: postgres
-spec:
-  serviceName: postgres
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgres
-  template:
-    metadata:
-      labels:
-        app: postgres
-    spec:
-      containers:
-        - name: postgres
-          image: postgres:16-alpine
-          ports:
-            - containerPort: 5432
-          env:
-            - name: POSTGRES_DB
-              value: school_of_one
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: db-secret
-                  key: user
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: db-secret
-                  key: password
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/postgresql/data
-          resources:
-            requests: { cpu: "200m", memory: "512Mi" }
-            limits: { cpu: "1", memory: "2Gi" }
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 10Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-spec:
-  selector:
-    app: postgres
-  ports:
-    - port: 5432
-      targetPort: 5432
+# 删除 postgres.yaml（用你自己集群中已有的 PostgreSQL）
+# 你已经有 PostgreSQL 服务在运行，不需要部署这个 StatefulSet。
+#
+# 你的后端 server 通过环境变量 DATABASE_URL 连接你的 PostgreSQL。
+# 请先创建 secret:
+#
+# kubectl create secret generic db-secret -n school-of-one \
+#   --from-literal=url=postgresql://你的用户:你的密码@你的PostgreSQL服务名:5432/school_of_one
+#
+# 你的 PostgreSQL 需要手动创建数据库:
+#   CREATE DATABASE school_of_one;
+
+# 如果你希望把你的 PostgreSQL 信息也写成 secret 备查，参考格式:
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: db-secret
+#   namespace: school-of-one
+# stringData:
+#   url: "postgresql://user:password@postgres-service:5432/school_of_one"
+# ---

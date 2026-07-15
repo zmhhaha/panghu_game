@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.vscode/
+.idea/
+.claude/
+.env
+*.local
+.git/
+.gitignore
+*.tmp
+*.log
+*.swp
+*~
+.DS_Store
+Thumbs.db
+k8s/
+scripts/
+README.md

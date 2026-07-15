@@ -1,0 +1,58 @@
+# ============================================================
+#  Combo Judge — 连招可行性判定 Agent（Python FastAPI）
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: combo-judge
+  namespace: school-of-one
+  labels:
+    app: combo-judge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: combo-judge
+  template:
+    metadata:
+      labels:
+        app: combo-judge
+    spec:
+      containers:
+        - name: combo-judge
+          image: arm-cluster-master:5000/combo-judge:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8004
+          envFrom:
+            - configMapRef:
+                name: agent-config
+                optional: true
+          env:
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-secret
+                  key: deepseek-api-key
+                  optional: true
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-secret
+                  key: openai-api-key
+                  optional: true
+          resources:
+            requests: { cpu: "200m", memory: "256Mi" }
+            limits: { cpu: "2", memory: "2Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: combo-judge
+  namespace: school-of-one
+spec:
+  selector:
+    app: combo-judge
+  ports:
+    - port: 8004
+      targetPort: 8004
