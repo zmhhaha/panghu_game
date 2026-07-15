@@ -81,10 +81,10 @@ async function finalMatch(sessionId: string): Promise<{
 
 // Group icons
 const GROUP_ICONS: Record<string, string> = {
-  shaolin: "🏯",
-  wudang: "☯️",
-  northern: "🥋",
-  southern: "🐉",
+  shaolin: "",
+  wudang: "",
+  northern: "",
+  southern: "",
 };
 
 // ============================================================
@@ -172,13 +172,13 @@ export function TrainingGroundPage() {
       if (result.completed) {
         newMsgs.push({
           role: "system",
-          content: `✨ 大师觉得你的招式已趋成熟（confidence: ${(result.confidence * 100).toFixed(0)}%），习武完成！`,
+          content: ` 大师觉得你的招式已趋成熟（confidence: ${(result.confidence * 100).toFixed(0)}%），习武完成！`,
         });
         setCompleted(true);
       } else if (result.confidence > 0.5) {
         newMsgs.push({
           role: "system",
-          content: `💡 大师已有些许眉目（匹配度 ${(result.confidence * 100).toFixed(0)}%），继续打磨可更精确。`,
+          content: ` 大师已有些许眉目（匹配度 ${(result.confidence * 100).toFixed(0)}%），继续打磨可更精确。`,
         });
       }
 
@@ -250,7 +250,7 @@ export function TrainingGroundPage() {
             textAlign: "center",
           }}
         >
-          🥋 习武场
+           习武场
         </h2>
         <p
           style={{
@@ -363,7 +363,7 @@ export function TrainingGroundPage() {
           }}
           title="即将开放"
         >
-          <div style={{ fontSize: 48 }}>🧙</div>
+          <div style={{ fontSize: 48 }}></div>
           <div
             style={{
               fontSize: 20,
@@ -429,7 +429,7 @@ export function TrainingGroundPage() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 24 }}>
-              {selectedFaction ? GROUP_ICONS[selectedFaction.group] : "🥋"}
+              {selectedFaction ? GROUP_ICONS[selectedFaction.group] : ""}
             </span>
             <div>
               <div style={{ fontSize: 16, fontWeight: "bold", color: "#f5e6c8" }}>
@@ -448,7 +448,7 @@ export function TrainingGroundPage() {
               }}
             >
               {completed
-                ? "✅ 习武完成"
+                ? " 习武完成"
                 : `第 ${messages.filter((m) => m.role === "master").length}/${session?.maxRounds || 5} 轮`}
             </span>
             <button
@@ -524,7 +524,7 @@ export function TrainingGroundPage() {
                       flexShrink: 0,
                     }}
                   >
-                    🧘
+                    
                   </div>
                   <div
                     style={{
@@ -663,7 +663,7 @@ export function TrainingGroundPage() {
                   flexShrink: 0,
                 }}
               >
-                🧘
+                
               </div>
               <div
                 style={{
@@ -733,7 +733,7 @@ export function TrainingGroundPage() {
                   fontWeight: "bold",
                 }}
               >
-                🎯 查看匹配结果
+                 查看匹配结果
               </button>
               <button
                 onClick={handleReset}
@@ -812,7 +812,7 @@ export function TrainingGroundPage() {
           textAlign: "center",
         }}
       >
-        🎉 习武完成！
+         习武完成！
       </h2>
       <p
         style={{
@@ -925,7 +925,7 @@ export function TrainingGroundPage() {
               cursor: "pointer",
             }}
           >
-            📜 查看全部卡牌
+             查看全部卡牌
           </button>
         )}
         <button
@@ -941,7 +941,7 @@ export function TrainingGroundPage() {
             fontWeight: "bold",
           }}
         >
-          🥋 继续习武
+           继续习武
         </button>
         <button
           onClick={() => navigate("/")}

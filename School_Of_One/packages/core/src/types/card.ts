@@ -11,6 +11,7 @@ export interface CardBase {
   name: string;
   subtitle?: string;            // 所属分支（展示用），如"八极拳"
   description: string;          // 招式详细描述（供 LLM 判定用，不展示在 UI）
+  verses?: string[];            // 歌诀（古风诗句，竖排展示，每元素一行）
   displacement: number;         // 出招后位移（LLM 判定用）
   source: CardSource;
   artAssetId?: string;          // 招式小人图文件名

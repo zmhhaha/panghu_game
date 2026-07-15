@@ -53,10 +53,8 @@ kubectl apply -n school-of-one -f deploy/k8s/ai-service.yaml
 kubectl apply -n school-of-one -f deploy/k8s/frontend.yaml
 kubectl apply -n school-of-one -f deploy/k8s/server.yaml
 
-# 3. 部署三个 AI Agent
-kubectl apply -n school-of-one -f deploy/k8s/duel-judge.yaml
-kubectl apply -n school-of-one -f deploy/k8s/combo-judge.yaml
-kubectl apply -n school-of-one -f deploy/k8s/training-ground.yaml
+# 3. 部署三个 AI Agent 配置
+# Agent Deployment 在 apps/agents/*/k8s/ 下，按需部署
 
 # 查看状态
 kubectl get pods -n school-of-one -w
@@ -64,6 +62,52 @@ kubectl get pods -n school-of-one -w
 # ===== (可选) Ingress =====
 # 如果你用 K8s Ingress，改域名后执行:
 # kubectl apply -n school-of-one -f deploy/k8s/ingress.yaml
+
+# ──────────────────────────────────────────
+# 构建 Docker 镜像
+# ──────────────────────────────────────────
+
+# Server（Express 后端）
+docker build -f deploy/docker/server.Dockerfile \
+  -t arm-cluster-master:5000/school-server:latest .
+docker push arm-cluster-master:5000/school-server:latest
+
+# Frontend（React SPA）
+docker build -f deploy/docker/frontend.Dockerfile \
+  -t arm-cluster-master:5000/school-frontend:latest .
+docker push arm-cluster-master:5000/school-frontend:latest
+
+# 重启部署
+kubectl rollout restart deploy/server -n school-of-one
+kubectl rollout restart deploy/frontend -n school-of-one
+
+# ──────────────────────────────────────────
+# Docker 构建注意事项
+# ──────────────────────────────────────────
+#
+# 1. tsx 路径问题
+#    pnpm 的 node_modules 是嵌套结构（.pnpm store），构建后
+#    /app/node_modules/.bin/tsx 不存在。tsx 实际在子包目录下：
+#      apps/server/node_modules/.bin/tsx
+#    server.Dockerfile 的 CMD 已写为绝对路径:
+#      CMD ["apps/server/node_modules/.bin/tsx", "apps/server/src/index.ts"]
+#
+# 2. pnpm-lock.yaml 缺失
+#    项目无 lockfile（因为是多开发者协作，.gitignore 排除），
+#    COPY pnpm-lock.yaml 会导致构建失败。改为 COPY package.json，
+#    使用 pnpm install --no-frozen-lockfile。
+#
+# 3. better-sqlite3 原生编译
+#    better-sqlite3 需要 node-gyp + python3 + make + g++，
+#    构建阶段 FROM node:20-alpine 后必须安装:
+#      RUN apk add pnpm python3 make g++ && npm install -g node-gyp
+#
+#    Frontend 不需要这些依赖，只用 RUN apk add pnpm 即可。
+#
+# 4. 镜像体积（可选优化）
+#    Server: ~300MB（含 tsx + node_modules）
+#    Frontend: ~20MB（Nginx + 静态文件，不含 node_modules）
+#    Server 如果后续改用 tsc 编译 + node 直接运行，可降至 ~150MB。
 
 # ──────────────────────────────────────────
 # 前端调用 AI Agent 的方式

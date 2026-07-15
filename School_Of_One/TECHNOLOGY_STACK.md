@@ -126,7 +126,7 @@ PROVIDER=deepseek  # 默认，也可切换 openai / anthropic / custom
 
 ### 卡牌系统
 
-- 预设卡牌：约 136 张，分布于 4 大门派 15 个子分支
+- 预设卡牌：约 126 张，分布于 4 大门派 15 个子分支
 - 每张卡牌包含：名称、描述、位移值、关键词列表
 - **位移值**驱动战斗系统：代表招式使出后双方的相对距离变化
 - `keywords` 数组供 AI 语义匹配使用
@@ -179,34 +179,43 @@ School_Of_One/
 
 ## 部署架构
 
-采用 **Kubernetes** 部署：
+采用 **Kubernetes** 部署，前端通过 **oauth2-proxy + Casdoor OIDC** 统一 SSO 认证：
 
 ```
-K8s Namespace: school-of-one
-
-┌─────────────┐   ┌──────────────┐
-│  frontend   │   │    server    │
-│  (nginx:80) │   │ (Express:3001)│
-└──────┬──────┘   └──────┬───────┘
-       │                 │
-       └─────────────────┤
-                         │
-          ┌──────────────┼──────────────┐
-          │              │              │
-     ┌────▼────┐  ┌─────▼─────┐  ┌─────▼──────┐
-     │duel-judge│  │combo-judge│  │training-gr.│
-     │ :8003   │  │  :8004    │  │  :8005     │
-     └─────────┘  └───────────┘  │ (Redis)    │
-                                  └────────────┘
+公网用户
+    │
+    ▼
+Cloudflare Tunnel
+    │
+    ├── agent.panghuer.top          → portal.agent-portal:80（公开）
+    │
+    ├── research-agent.panghuer.top → oauth2-proxy-research-agent:4180 → Gradio UI:7860
+    ├── scientific-agent.panghuer.top → oauth2-proxy-scientific-agent:4180 → Gradio UI:7861
+    │
+    └── school-of-one.panghuer.top  → oauth2-proxy-school-of-one:4180 → ui-school-of-one:80（Nginx）
+                                           │
+                                           ▼
+                                   Casdoor OIDC (auth.panghuer.top:8000)
+                                           │
+                                           ▼
+                                   MySQL（用户数据）
 ```
+
+**K8s Namespace：**
+- `school-of-one` — 游戏服务（frontend、server、三个 AI Agent）
+- `oauth` — oauth2-proxy 实例 + Casdoor + MySQL
+
+**nginx.conf 不在该项目中**，由 `armbianbegin/` 根目录统一部署管理。
 
 **Ingress 统一路由：**
 
 | 路径前缀 | 后端服务 |
 |----------|----------|
-| `/` | frontend-service:80 |
+| `/` | ui-school-of-one:80（经 oauth2-proxy 认证） |
 | `/api/v1` | server-service:3001 |
 | `/api/ai/duel` | duel-judge:8003 |
+| `/api/ai/combo` | combo-judge:8004 |
+| `/api/ai/training` | training-ground:8005 |
 | `/api/ai/combo` | combo-judge:8004 |
 | `/api/ai/training` | training-ground:8005 |
 

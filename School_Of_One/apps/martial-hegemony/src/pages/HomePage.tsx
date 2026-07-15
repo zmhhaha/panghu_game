@@ -18,6 +18,7 @@ export function HomePage() {
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 24px" }}>
       <div style={{ textAlign: "center", marginBottom: 48 }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}></div>
         <h1 style={title}>武林争霸</h1>
         <p style={subtitle}>School of One · Martial Hegemony</p>
         <p style={{ fontSize: 14, color: "#8B7D6B", lineHeight: 1.8 }}>
@@ -28,26 +29,26 @@ export function HomePage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
         <Link to="/training" style={card}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>🥋</div>
+          <div style={{ fontSize: 48, marginBottom: 12 }}></div>
           <div style={{ fontSize: 20, fontWeight: "bold" }}>习武场</div>
           <div style={{ fontSize: 12, color: "#8B7D6B", marginTop: 8 }}>
             拜师学艺 · 门派习武 · 世外高人
           </div>
         </Link>
         <Link to="/cards" style={card}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>📖</div>
+          <div style={{ fontSize: 48, marginBottom: 12 }}></div>
           <div style={{ fontSize: 20, fontWeight: "bold" }}>演武场</div>
           <div style={{ fontSize: 12, color: "#8B7D6B", marginTop: 8 }}>
             编卡组 · 练招式 · 排兵布阵
           </div>
         </Link>
-        <div style={card}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>⚔️</div>
+        <Link to="/duel" style={card}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}></div>
           <div style={{ fontSize: 20, fontWeight: "bold" }}>比武场</div>
           <div style={{ fontSize: 12, color: "#8B7D6B", marginTop: 8 }}>
             PvP 对决 · PvAI 切磋 · 好友邀请
           </div>
-        </div>
+        </Link>
       </div>
     </div>
   );

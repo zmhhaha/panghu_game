@@ -7,35 +7,66 @@ interface CardProps {
   onClick?: () => void;
 }
 
-const S = { sm: {w:180,h:270}, md:{w:220,h:330}, lg:{w:280,h:420} };
+const S = { sm: {w:180,h:255}, md:{w:220,h:311}, lg:{w:280,h:396} };
 
-const VERSES: Record<string,string> = {
-  "罗汉拳":"羅漢出洞·拳開山岳\n金剛怒目·降龍伏虎",
-  "铁山靠":"以肩爲盾·以背爲牆\n靠山撞壁·勢不可擋",
-  "日字冲拳":"中線出拳·寸勁爆發\n朝面追形·不脫不黏",
-  "如封似闭":"雙手合圍·如關城門\n封敵來路·閉門打狗",
-};
-const FALLBACKS = ["蓄勁如弓·發勁如箭\n剛柔並濟·動靜相宜","沉肩墜肘·氣沉丹田\n虛靈頂勁·周身一家"];
+const FALLBACKS = [
+  ["蓄勁如弓·發勁如箭","剛柔並濟·動靜相宜","進退有度·攻守兼備"],
+  ["沉肩墜肘·氣沉丹田","虛靈頂勁·周身一家","眼到手到·身步合一"],
+  ["剛柔並濟·動靜相宜","不即不離·不丟不頂","隨機應變·變化莫測"],
+  ["以柔克剛·以靜制動","借力打力·四兩撥千","順勢而爲·自然而然"],
+];
 
-function getVerse(n:string){return VERSES[n]?.split('\n')||FALLBACKS[Math.floor(Math.random()*FALLBACKS.length)].split('\n')}
+function getVerse(card: CardBase): string[] {
+  if (card.verses && card.verses.length > 0) return card.verses;
+  return FALLBACKS[Math.floor(Math.random() * FALLBACKS.length)];
+}
 
 export function CardComponent({card,size="md",state="default",onClick}:CardProps){
-  const d=S[size];const v=getVerse(card.name);
-  const ink="#2c1810";const isDark=state==="disabled";const isSel=state==="selected";
+  const d=S[size];const v=getVerse(card);
+  const isDark=state==="disabled";const isSel=state==="selected";
+  const figureSrc = card.artAssetId ? `/assets/figures/${card.artAssetId}` : "/assets/picture.png";
   return <div onClick={onClick} style={{
-    opacity:isDark?.5:1,transform:isSel?"translateY(-6px)":"none",transition:"all .2s",cursor:onClick?"pointer":"default",
-    width:d.w,height:d.h,
-    background:"linear-gradient(180deg, #f5eacb 0%, #e8d5a3 40%, #dcc29e 70%, #d4b88a 100%)",
-    border:"1px solid #b8956a",position:"relative",overflow:"hidden",
-    boxShadow:"2px 3px 12px rgba(139,100,55,0.25), inset 0 0 40px rgba(139,100,55,0.08)",
-    fontFamily:"'KaiTi','STKaiti','Noto Serif SC',serif",color:ink,
+    opacity:isDark?0.4:1,transform:isSel?"translateY(-4px)":"none",transition:"all .2s",
+    cursor:onClick?"pointer":"default",
+    width:d.w,height:d.h,position:"relative",overflow:"hidden",flexShrink:0,
+    fontFamily:"'KaiTi','STKaiti','Noto Serif SC',serif",color:"#2c1810",
   }}>
-    <div style={{position:"absolute",right:6,top:12,bottom:12,width:1,
-      background:"repeating-linear-gradient(180deg,#b8956a 0px,#b8956a 3px,transparent 3px,transparent 7px)"}}/>
-    <div style={{position:"absolute",top:8,left:6,right:10,bottom:8,border:"1px solid #2c18101a",pointerEvents:"none"}}/>
-    <div style={{position:"absolute",right:16,top:32,width:80,bottom:32,writingMode:"vertical-rl",textOrientation:"mixed",display:"flex",flexDirection:"column",gap:1,zIndex:2}}>
-      <div style={{fontSize:18,fontWeight:"bold",color:"#1a0e08",letterSpacing:3,marginBottom:2}}>{card.name}</div>
-      {v.map((l,i)=><div key={i} style={{fontSize:11,color:"#5a3a2a",letterSpacing:1,lineHeight:1.7,opacity:.72}}>{l}</div>)}
+    {/* 底图 */}
+    <img src="/assets/card-bg.png" alt="" style={{
+      position:"absolute",inset:0,zIndex:0,width:"100%",height:"100%",objectFit:"cover",pointerEvents:"none",
+    }} />
+    {/* 人物图 */}
+    <img src={figureSrc} alt="" style={{
+      position:"absolute",left:0,top:Math.round(d.h*0.235),zIndex:1,
+      width:Math.round(d.w*0.667),objectFit:"contain",pointerEvents:"none",opacity:0.88,
+    }} />
+    {/* 图说 */}
+    <div style={{
+      position:"absolute",top:Math.round(d.h*0.157),left:Math.round(d.w*0.067),zIndex:2,
+      writingMode:"vertical-rl",fontSize:Math.round(d.w*0.039),color:"#2c1810",opacity:0.5,
+      letterSpacing:1,border:"1px solid #2c181060",padding:"2px 4px",
+      display:"flex",flexDirection:"column",gap:0,alignItems:"center",
+    }}>
+      <span>圖</span><span>說</span>
+    </div>
+    {/* 招式名 */}
+    <div style={{
+      position:"absolute",top:Math.round(d.h*0.141),right:Math.round(d.w*0.111),zIndex:2,
+      writingMode:"vertical-rl",fontSize:Math.round(d.w*0.067),fontWeight:"bold",
+      color:"#2c1810",letterSpacing:1,
+    }}>
+      {card.name}
+    </div>
+    {/* 歌诀 */}
+    <div style={{
+      position:"absolute",top:Math.round(d.h*0.141),right:Math.round(d.w*0.2),bottom:Math.round(d.h*0.235),zIndex:2,
+      display:"flex",flexDirection:"row",gap:1,alignItems:"flex-start",
+    }}>
+      {v.map((l,i)=><div key={i} style={{
+        writingMode:"vertical-rl",textOrientation:"mixed",
+        fontSize:Math.round(d.w*0.039),color:"#2c1810",letterSpacing:1.5,
+        lineHeight:1.5,opacity:0.7,minWidth:"1.2em",whiteSpace:"nowrap",
+      }}>{l}</div>)}
     </div>
   </div>;
 }

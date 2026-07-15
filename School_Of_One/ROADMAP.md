@@ -15,7 +15,7 @@
 | 品牌命名与设计 | 🟢 90% | ✅ 游戏名确定，视觉风格明确 |
 | monorepo 工程 | 🟢 90% | ✅ pnpm + TS 配置就绪 |
 | Core 类型定义 | 🟢 95% | ✅ 类型完整，无缺失字段 |
-| 预设卡牌数据 | 🟢 90% | ✅ 136 张卡牌，部分数值待填 |
+| 预设卡牌数据 | 🟢 90% | ✅ 126 张卡牌，全部 description 重写 |
 | UI 卡牌组件 | 🟢 90% | ✅ 古风渲染组件完成 |
 | 前端页面框架 | 🟢 95% | ✅ 7 个页面路由 + 全部页面就绪 |
 | 后端 Express | 🟡 70% | ✅ 路由 + 代理，❌ 数据库未用 |
@@ -27,7 +27,7 @@
 | 比武场对接 AI | 🟡 80% | ✅ 对接 DuelEngine，❌ 未调 duel-judge（部署后通） |
 | 兵器版前端 | 🔴 0% | ❌ 未开始 |
 | 测试 | 🔴 0% | ❌ 零测试 |
-| 数据库 + 用户系统 | 🟡 40% | ✅ SSO 集成就绪（oauth2-proxy + /me 端点），❌ 数据库未用 |
+| 数据库 + 用户系统 | 🟢 80% | ✅ SSO 已接入（oauth2-proxy + Casdoor + /me 端点） |
 | 部署 × 生产就绪 | 🟡 40% | ✅ 配置就绪，❌ 未实际部署 |
 
 **整体粗估：~45%**
@@ -188,6 +188,14 @@ Phase 1 核心框架 — 基本完成，准备部署验证：
 | frontend/public/index.html 存有完整 JS 版本的实现（双份代码） | 🟡 | `apps/martial-hegemony/public/index.html` |
 | 无 ESLint 和 Prettier 实际配置 | 🟡 | 根目录 |
 | 无任何测试 | 🟡 | 全项目 |
+
+### 🐳 Docker 构建已知问题
+
+| 问题 | 说明 | 解决方式 |
+|:---|:---|:---|
+| **pnpm --shamefully-hoist** | pnpm 默认创建嵌套 node_modules（.pnpm store），导致 `npx vite`/`.bin/tsx` 找不到可执行文件 | 安装时加 `--shamefully-hoist` 展平 node_modules，或直接用绝对路径 `/app/apps/server/node_modules/.bin/tsx` |
+| **pnpm-lock.yaml 缺失** | 项目无 lockfile，Dockerfile 中 `COPY pnpm-lock.yaml` 会导致构建失败 | 用 `COPY package.json` 替代，`pnpm install --no-frozen-lockfile` |
+| **better-sqlite3 + node-gyp** | 需要 `python3 make g++` + `node-gyp` 编译原生模块 | 构建阶段用 `FROM node:20-alpine` + `RUN apk add pnpm python3 make g++ && npm install -g node-gyp` |
 
 ---
 

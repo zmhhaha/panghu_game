@@ -50,7 +50,7 @@ function NavBar() {
       borderBottom: "1px solid #3b2f2f",
     }}>
       <span style={{ fontSize: 20, fontWeight: "bold", color: "#f5e6c8", marginRight: 20 }}>
-        🥋 武林争霸
+         武林争霸
       </span>
       <Link to="/" style={linkStyle}>首页</Link>
       <Link to="/factions" style={linkStyle}>师门</Link>
@@ -65,7 +65,9 @@ function NavBar() {
         ) : user ? (
           <>
             <span style={{ fontSize: 14, color: "#f5e6c8" }}>
-              🥷 {user.username}
+             <span style={{ fontSize: 14, color: "#f5e6c8" }}>
+              {user.username}
+            </span>
             </span>
             <a
               href="/oauth2/sign_out"

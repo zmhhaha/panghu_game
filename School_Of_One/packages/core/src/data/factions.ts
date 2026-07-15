@@ -13,9 +13,8 @@ export const FACTIONS: Faction[] = [
     sortOrder: 1, group: "shaolin",
     subStyles: [
       { id: "shaolin-sub", name: "少林拳", description: "少林根基拳法，朴实刚猛", cardIds: ["shaolin-1","shaolin-2","shaolin-3","shaolin-4","shaolin-5","shaolin-6","shaolin-7","shaolin-8","shaolin-9","shaolin-10","shaolin-11","shaolin-12"] },
-      { id: "luohan-sub", name: "罗汉拳", description: "少林入门拳法", cardIds: ["luohan-1","luohan-2","luohan-3","luohan-4","luohan-5","luohan-6","luohan-7","luohan-8","luohan-9"] },
-      { id: "wuxing-sub", name: "五形拳", description: "龙蛇虎豹鹤，形态变化", cardIds: ["wuxing-1","wuxing-2","wuxing-3","wuxing-4","wuxing-5","wuxing-6","wuxing-7","wuxing-8","wuxing-9"] },
-    ],
+      { id: "luohan-sub", name: "罗汉拳", description: "少林入门拳法", cardIds: ["luohan-1","luohan-2","luohan-3","luohan-4","luohan-5","luohan-6","luohan-7","luohan-8"] },
+      { id: "wuxing-sub", name: "五形拳", description: "龙蛇虎豹鹤，形态变化", cardIds: ["wuxing-1","wuxing-2","wuxing-3","wuxing-4","wuxing-5","wuxing-6","wuxing-7","wuxing-8"] }],
   },
   // ==================== 武当派 ====================
   {
@@ -29,9 +28,8 @@ export const FACTIONS: Faction[] = [
     sortOrder: 2, group: "wudang",
     subStyles: [
       { id: "taiji-sub", name: "太极拳", description: "以柔克刚，四两拨千斤", cardIds: ["taiji-1","taiji-2","taiji-3","taiji-4","taiji-5","taiji-6","taiji-7","taiji-8","taiji-9","taiji-10","taiji-11","taiji-12"] },
-      { id: "bagua-sub", name: "八卦掌", description: "走圈转掌，游走制敌", cardIds: ["bagua-1","bagua-2","bagua-3","bagua-4","bagua-5","bagua-6","bagua-7","bagua-8","bagua-9"] },
-      { id: "xingyi-sub", name: "形意拳", description: "五行相生，直进直打", cardIds: ["xingyi-1","xingyi-2","xingyi-3","xingyi-4","xingyi-5","xingyi-6","xingyi-7","xingyi-8","xingyi-9"] },
-    ],
+      { id: "bagua-sub", name: "八卦掌", description: "走圈转掌，游走制敌", cardIds: ["bagua-1","bagua-2","bagua-3","bagua-4","bagua-5","bagua-6","bagua-7","bagua-8"] },
+      { id: "xingyi-sub", name: "形意拳", description: "五行相生，直进直打", cardIds: ["xingyi-1","xingyi-2","xingyi-3","xingyi-4","xingyi-5","xingyi-6","xingyi-7","xingyi-8"] }],
   },
   // ==================== 北派 ====================
   {
@@ -44,13 +42,12 @@ export const FACTIONS: Faction[] = [
     startingMoveId: "baji-starting", startingMoveName: "北派·两仪桩",
     sortOrder: 3, group: "northern",
     subStyles: [
-      { id: "baji-sub", name: "八极拳", description: "贴身靠打，刚猛爆裂", cardIds: ["baji-1","baji-2","baji-3","baji-4","baji-5","baji-6","baji-7","baji-8","baji-9","baji-10"] },
+      { id: "baji-sub", name: "八极拳", description: "贴身靠打，刚猛爆裂", cardIds: ["baji-1","baji-2","baji-3","baji-4","baji-5","baji-6","baji-7","baji-8","baji-9"] },
       { id: "tongbei-sub", name: "通背拳", description: "放长击远，鞭劲透体", cardIds: ["tongbei-1","tongbei-2","tongbei-3","tongbei-4","tongbei-5","tongbei-6","tongbei-7","tongbei-8"] },
       { id: "fanzi-sub", name: "翻子拳", description: "双拳密如雨，脆快一挂鞭", cardIds: ["fanzi-1","fanzi-2","fanzi-3","fanzi-4","fanzi-5","fanzi-6","fanzi-7","fanzi-8"] },
-      { id: "chuojiao-sub", name: "戳脚", description: "手是两扇门，全凭腿打人", cardIds: ["chuojiao-1","chuojiao-2","chuojiao-3","chuojiao-4","chuojiao-5","chuojiao-6","chuojiao-7"] },
-      { id: "tanglang-sub", name: "螳螂拳", description: "勾搂采挂，快速连击", cardIds: ["tanglang-1","tanglang-2","tanglang-3","tanglang-4","tanglang-5","tanglang-6","tanglang-7"] },
-      { id: "mizong-sub", name: "迷踪拳", description: "步法多变，飘忽不定", cardIds: ["mizong-1","mizong-2","mizong-3","mizong-4","mizong-5","mizong-6","mizong-7"] },
-    ],
+      { id: "chuojiao-sub", name: "戳脚", description: "手是两扇门，全凭腿打人", cardIds: ["chuojiao-1","chuojiao-2","chuojiao-3","chuojiao-4","chuojiao-5","chuojiao-6"] },
+      { id: "tanglang-sub", name: "螳螂拳", description: "勾搂采挂，快速连击", cardIds: ["tanglang-1","tanglang-2","tanglang-3","tanglang-4","tanglang-5","tanglang-6"] },
+      { id: "mizong-sub", name: "迷踪拳", description: "步法多变，飘忽不定", cardIds: ["mizong-1","mizong-2","mizong-3","mizong-4","mizong-5","mizong-6"] }],
   },
   // ==================== 南派 ====================
   {
@@ -63,10 +60,9 @@ export const FACTIONS: Faction[] = [
     startingMoveId: "yongchun-starting", startingMoveName: "南派·二字钳羊马",
     sortOrder: 4, group: "southern",
     subStyles: [
-      { id: "yongchun-sub", name: "咏春拳", description: "贴身短打，寸劲爆发", cardIds: ["yongchun-1","yongchun-2","yongchun-3","yongchun-4","yongchun-5","yongchun-6","yongchun-7","yongchun-8","yongchun-9","yongchun-10"] },
-      { id: "hong-sub", name: "洪拳", description: "扎马稳固，龙虎齐鸣", cardIds: ["hong-1","hong-2","hong-3","hong-4","hong-5","hong-6","hong-7","hong-8","hong-9","hong-10"] },
-      { id: "choylifut-sub", name: "蔡李佛", description: "远中近皆宜，全面均衡", cardIds: ["choylifut-1","choylifut-2","choylifut-3","choylifut-4","choylifut-5","choylifut-6","choylifut-7","choylifut-8"] },
-    ],
+      { id: "yongchun-sub", name: "咏春拳", description: "贴身短打，寸劲爆发", cardIds: ["yongchun-1","yongchun-2","yongchun-3","yongchun-4","yongchun-5","yongchun-6","yongchun-7","yongchun-8","yongchun-9"] },
+      { id: "hong-sub", name: "洪拳", description: "扎马稳固，龙虎齐鸣", cardIds: ["hong-1","hong-2","hong-3","hong-4","hong-5","hong-6","hong-7","hong-8","hong-10"] },
+      { id: "choylifut-sub", name: "蔡李佛", description: "远中近皆宜，全面均衡", cardIds: ["choylifut-1","choylifut-2","choylifut-3","choylifut-4","choylifut-5","choylifut-6","choylifut-7","choylifut-8"] }],
   },
   // 世外高人不用门派配置，习武场特殊处理
 ];
