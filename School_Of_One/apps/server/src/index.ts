@@ -4,6 +4,9 @@ import { createProxyMiddleware } from "http-proxy-middleware";
 import { router as authRouter } from "./routes/auth.js";
 import { router as factionRouter } from "./routes/factions.js";
 import { router as cardRouter } from "./routes/cards.js";
+import { router as deckRouter } from "./routes/decks.js";
+import { router as duelRouter } from "./routes/duels.js";
+import { router as trainingRouter } from "./routes/training.js";
 import { errorHandler } from "./middleware/error.js";
 
 const app = express();
@@ -15,6 +18,24 @@ const COMBO_JUDGE_URL = process.env.COMBO_JUDGE_URL || "http://localhost:8004";
 const TRAINING_GROUND_URL = process.env.TRAINING_GROUND_URL || "http://localhost:8005";
 
 app.use(cors());
+
+// AI Agent 反向代理（必须在 express.json() 之前，避免 body 被消费）
+app.use("/api/ai/duel", createProxyMiddleware({
+  target: DUEL_JUDGE_URL,
+  changeOrigin: true,
+  pathRewrite: (path) => "/api/duel" + path,
+}));
+app.use("/api/ai/combo", createProxyMiddleware({
+  target: COMBO_JUDGE_URL,
+  changeOrigin: true,
+  pathRewrite: (path) => "/api/combo" + path,
+}));
+app.use("/api/ai/training", createProxyMiddleware({
+  target: TRAINING_GROUND_URL,
+  changeOrigin: true,
+  pathRewrite: (path) => "/api/training" + path,
+}));
+
 app.use(express.json());
 
 // 健康检查
@@ -26,23 +47,9 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/factions", factionRouter);
 app.use("/api/v1/cards", cardRouter);
-
-// AI Agent 反向代理
-app.use("/api/ai/duel", createProxyMiddleware({
-  target: DUEL_JUDGE_URL,
-  changeOrigin: true,
-  pathRewrite: { "^/api/ai/duel": "/api/duel" },
-}));
-app.use("/api/ai/combo", createProxyMiddleware({
-  target: COMBO_JUDGE_URL,
-  changeOrigin: true,
-  pathRewrite: { "^/api/ai/combo": "/api/combo" },
-}));
-app.use("/api/ai/training", createProxyMiddleware({
-  target: TRAINING_GROUND_URL,
-  changeOrigin: true,
-  pathRewrite: { "^/api/ai/training": "/api/training" },
-}));
+app.use("/api/v1/decks", deckRouter);
+app.use("/api/v1/duels", duelRouter);
+app.use("/api/v1/training", trainingRouter);
 
 // 错误处理
 app.use(errorHandler);

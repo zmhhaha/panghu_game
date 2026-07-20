@@ -83,11 +83,11 @@ class RoundResponse(BaseModel):
 class MatchResponse(BaseModel):
     finalCardId: str
     finalCardName: str
-    finalConfidence: float
-    matchExplanation: str
-    masterSummary: str
-    substyleName: str
-    totalRounds: int
+    finalConfidence: float = 0.0
+    matchExplanation: str = ""
+    masterSummary: str = ""
+    substyleName: str = ""
+    totalRounds: int = 0
     completed: bool
     provider: str
 
@@ -165,8 +165,13 @@ def training_round(req: RoundRequest):
         raise HTTPException(500, detail=str(e))
 
 
+class MatchRequest(BaseModel):
+    sessionId: str = Field(..., min_length=1)
+    description: str = Field("", min_length=0)
+
+
 @app.post("/api/training/match", response_model=MatchResponse)
-def match_result(req: RoundRequest):
+def match_result(req: MatchRequest):
     """获取最终匹配结果（如果未完成，强制完成）"""
     session = get_session(req.sessionId)
     if not session:

@@ -19,13 +19,19 @@ SYSTEM_FEEDBACK_TEMPLATE = """{master_personality}
 你的门派子分支和代表招式如下：
 {substyle_info}
 
-记住：你现在就是用 {master_name} 的身份在和弟子对话。保持门派大师的风范。"""
+记住：你现在就是用 {master_name} 的身份在和弟子对话。保持门派大师的风范。
+
+注意：你应该根据你的门派身份来称呼自己。
+- 如果你是少林寺达摩祖师，你是出家人，自称"老衲"或"贫僧"。
+- 如果你是武当派张三丰，你是修道之人，自称"贫道"或"老道"。
+- 如果你是北拳宗师或南拳宗师，你是民间武术家，自称"老夫"或"我"。
+"""
 
 
 TASK_FEEDBACK = """## 对话背景
 
-一个弟子正在「{faction_name}」向你描述他心目中的招式。
-这是第 {round_num} 轮描述（共 5 轮）。你已经听了他之前 {prev_count} 轮的描述。
+一个弟子正在「{faction_name}」向师父描述他心目中的招式。
+这是第 {round_num} 轮描述（共 5 轮）。师父已经听了他之前 {prev_count} 轮的描述。
 
 他的历史描述：
 {history}
@@ -38,11 +44,11 @@ TASK_FEEDBACK = """## 对话背景
 
 ### 1. 大师反馈
 
-以 {master_name} 的身份，用第一人称给弟子反馈和指导。你的反馈应该：
+以师父的身份，用第一人称给弟子反馈和指导。你的反馈应该：
 - 肯定弟子描述中用得好的部分
 - 指出可以改进的地方（从武术专业角度）
 - 给予具体的修改建议（动作细节、发力方式、姿态调整等）
-- 保持门派大师的语言风格
+- 保持门派大师的语言风格（和尚自称老衲/贫僧，道士自称贫道/老道，民间武师自称老夫/我）
 - 用 80-150 字
 
 ### 2. 卡牌匹配
@@ -100,6 +106,8 @@ TASK_FINAL_MATCH = """## 习武结束 — 最终匹配
 
 请给出最终的卡牌匹配结果。
 
+注意：保持门派大师的身份，用符合身份的口吻总结寄语。
+
 ## 输出格式（JSON）
 
 ```json
@@ -108,7 +116,7 @@ TASK_FINAL_MATCH = """## 习武结束 — 最终匹配
   "final_card_name": "最终匹配的卡牌名称",
   "final_confidence": 0.0,
   "match_explanation": "为什么最终匹配这张卡牌（20-60字）",
-  "master_summary": "大师对弟子习武过程的总结寄语（50-100字，第一人称）",
+  "master_summary": "大师对弟子习武过程的总结寄语（50-100字，第一人称，注意身份对应的自称）",
   "substyle_name": "匹配的子分支名称"
 }}
 ```
@@ -131,6 +139,7 @@ def build_feedback_user(
     prev_count: int,
     history: str,
     student_description: str,
+    master_name: str = "",
 ) -> str:
     """构建大师反馈的用户提示"""
     return TASK_FEEDBACK.format(
@@ -139,6 +148,7 @@ def build_feedback_user(
         prev_count=prev_count,
         history=history,
         student_description=student_description,
+        master_name=master_name,
     )
 
 

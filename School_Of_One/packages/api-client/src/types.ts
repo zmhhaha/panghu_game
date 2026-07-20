@@ -33,17 +33,24 @@ export interface DuelJudgeResponse {
 // ── Combo Judge ───────────────────────────────────────────
 
 export interface ComboJudgeRequest {
-  moves: string[];
-  distance: number;
+  moveA: string;
+  moveB: string;
+  context?: string;
 }
 
 export interface ComboJudgeResponse {
-  feasible: boolean;
-  comboName: string;
-  description: string;
-  totalDamage: number;
-  difficulty: number;
-  explanation: string;
+  moveA: string;
+  moveB: string;
+  feasibility: number;
+  difficulty: string;
+  key_limitation: string;
+  improvement_suggestion: string;
+  analysis: {
+    moveA_end_state: Record<string, string>;
+    moveB_requirements: Record<string, string>;
+    feasibility_analysis: Record<string, { score: number; reason: string }>;
+  };
+  provider: string;
 }
 
 // ── Training Ground ───────────────────────────────────────
@@ -87,4 +94,48 @@ export interface TrainingMatchResponse {
   masterSummary: string;
   substyleName: string;
   totalRounds: number;
+}
+
+// ── 用户 / 卡组 / 对战记录 ───────────────────────────────
+
+export interface UserProfileResponse {
+  id: string;
+  username: string;
+  email: string;
+  level: number;
+  xp: number;
+  createdAt: string;
+  lastLoginAt: string;
+}
+
+export interface DeckResponse {
+  id: string;
+  userId: string;
+  name: string;
+  starterCardId: string;
+  cardIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DuelRecordResponse {
+  id: string;
+  userId: string;
+  opponent: string;
+  winner: string;
+  rounds: number;
+  playerHearts: number;
+  aiHearts: number;
+  history: unknown[];
+  createdAt: string;
+}
+
+export interface TrainingSessionResponse {
+  id: string;
+  userId: string;
+  factionId: string | null;
+  masterName: string | null;
+  rounds: number;
+  matchedCardId: string | null;
+  createdAt: string;
 }

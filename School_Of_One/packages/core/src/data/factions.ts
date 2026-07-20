@@ -7,8 +7,8 @@ export const FACTIONS: Faction[] = [
     description: "天下武功出少林。以佛法为基，外练筋骨皮，内修一口气。",
     playStyle: "全面均衡", strength: "基础扎实，选择多样", weakness: "各分支精而不专",
     primaryColor: "#8B4513", secondaryColor: "#D4A017",
-    masterName: "玄慈大师",
-    masterPersonality: "你是少林寺玄慈大师，佛法高深，武学渊博。你性格沉稳慈悲，教导弟子时循循善诱，注重基本功和武德。你擅长从学生的描述中看出他们适合罗汉拳、五形拳还是少林拳。",
+    masterName: "达摩祖师",
+    masterPersonality: "你是少林寺达摩祖师，佛法高深，武学渊博。你性格沉稳慈悲，教导弟子时循循善诱，注重基本功和武德。你擅长从学生的描述中看出他们适合罗汉拳、五形拳还是少林拳。",
     startingMoveId: "shaolin-starting", startingMoveName: "少林·童子拜佛",
     sortOrder: 1, group: "shaolin",
     subStyles: [
@@ -22,8 +22,8 @@ export const FACTIONS: Faction[] = [
     description: "以柔克刚，四两拨千斤。重意境而非蛮力。",
     playStyle: "以柔克刚", strength: "化劲借力，防守反击", weakness: "主动爆发偏弱",
     primaryColor: "#2F4F4F", secondaryColor: "#C0C0C0",
-    masterName: "冲虚道长",
-    masterPersonality: "你是武当派冲虚道长，深得太极、八卦、形意三脉精髓。你性格恬淡自然，善于引导学生从天地自然中领悟武道真谛。",
+    masterName: "张三丰",
+    masterPersonality: "你是武当派张三丰，深得太极、八卦、形意三脉精髓。你性格恬淡自然，善于引导学生从天地自然中领悟武道真谛。",
     startingMoveId: "wudang-starting", startingMoveName: "武当·太极起势",
     sortOrder: 2, group: "wudang",
     subStyles: [
@@ -31,15 +31,15 @@ export const FACTIONS: Faction[] = [
       { id: "bagua-sub", name: "八卦掌", description: "走圈转掌，游走制敌", cardIds: ["bagua-1","bagua-2","bagua-3","bagua-4","bagua-5","bagua-6","bagua-7","bagua-8"] },
       { id: "xingyi-sub", name: "形意拳", description: "五行相生，直进直打", cardIds: ["xingyi-1","xingyi-2","xingyi-3","xingyi-4","xingyi-5","xingyi-6","xingyi-7","xingyi-8"] }],
   },
-  // ==================== 北派 ====================
+  // ==================== 北拳 ====================
   {
-    id: "northern-school", name: "北派", englishName: "Northern School",
+    id: "northern-school", name: "北拳", englishName: "Northern School",
     description: "北方拳种大开大合，刚猛爆裂，腿法出众。硬打硬进，气势磅礴。",
     playStyle: "刚猛为主", strength: "攻击力强，气势压人", weakness: "灵活性和技巧性稍逊",
     primaryColor: "#37474F", secondaryColor: "#C62828",
-    masterName: "北派宗师",
-    masterPersonality: "你是北派武术宗师，精通八极、通背、翻子、戳脚、螳螂、迷踪各派武学。你性格豪迈直爽，强调'练拳先练胆'。你善于从学生的描述中判断他们最适合北派哪个分支。",
-    startingMoveId: "baji-starting", startingMoveName: "北派·两仪桩",
+    masterName: "北拳宗师",
+    masterPersonality: "你是北拳武术宗师，精通八极、通背、翻子、戳脚、螳螂、迷踪各派武学。你性格豪迈直爽，强调'练拳先练胆'。你善于从学生的描述中判断他们最适合北拳哪个分支。",
+    startingMoveId: "baji-starting", startingMoveName: "北拳·两仪桩",
     sortOrder: 3, group: "northern",
     subStyles: [
       { id: "baji-sub", name: "八极拳", description: "贴身靠打，刚猛爆裂", cardIds: ["baji-1","baji-2","baji-3","baji-4","baji-5","baji-6","baji-7","baji-8","baji-9"] },
@@ -49,15 +49,15 @@ export const FACTIONS: Faction[] = [
       { id: "tanglang-sub", name: "螳螂拳", description: "勾搂采挂，快速连击", cardIds: ["tanglang-1","tanglang-2","tanglang-3","tanglang-4","tanglang-5","tanglang-6"] },
       { id: "mizong-sub", name: "迷踪拳", description: "步法多变，飘忽不定", cardIds: ["mizong-1","mizong-2","mizong-3","mizong-4","mizong-5","mizong-6"] }],
   },
-  // ==================== 南派 ====================
+  // ==================== 南拳 ====================
   {
-    id: "southern-school", name: "南派", englishName: "Southern School",
+    id: "southern-school", name: "南拳", englishName: "Southern School",
     description: "南方拳种短桥窄马，贴身短打。寸劲爆发，手法精妙。",
     playStyle: "灵巧短打", strength: "近身技巧精湛，攻防转换快", weakness: "远距离攻击手段有限",
     primaryColor: "#BF360C", secondaryColor: "#FF6F00",
-    masterName: "南派宗师",
-    masterPersonality: "你是南派武术宗师，精通咏春、洪拳、蔡李佛各派武学。你性格内敛务实，强调'实用至上'。你懂得从学生的身体条件和性格倾向判断最适合的南派武学。",
-    startingMoveId: "yongchun-starting", startingMoveName: "南派·二字钳羊马",
+    masterName: "南拳宗师",
+    masterPersonality: "你是南拳武术宗师，精通咏春、洪拳、蔡李佛各派武学。你性格内敛务实，强调'实用至上'。你懂得从学生的身体条件和性格倾向判断最适合的南拳武学。",
+    startingMoveId: "yongchun-starting", startingMoveName: "南拳·二字钳羊马",
     sortOrder: 4, group: "southern",
     subStyles: [
       { id: "yongchun-sub", name: "咏春拳", description: "贴身短打，寸劲爆发", cardIds: ["yongchun-1","yongchun-2","yongchun-3","yongchun-4","yongchun-5","yongchun-6","yongchun-7","yongchun-8","yongchun-9"] },

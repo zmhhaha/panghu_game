@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { FACTIONS, getAllPresetCards, PresetCard } from "@school-of-one/core";
 import { CardComponent } from "@school-of-one/ui-core";
+import { api } from "@school-of-one/api-client";
 
-/** 展开为书脊列表：每个子分支是一本拳谱 */
+/** 展开为书脊列表 */
 function buildBooks() {
   const allCards = getAllPresetCards() as PresetCard[];
   const books: {
@@ -41,6 +42,14 @@ function buildBooks() {
 export function CardsPage() {
   const books = useMemo(() => buildBooks(), []);
   const [activeSubId, setActiveSubId] = useState<string | null>(null);
+  const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set());
+
+  // 加载已解锁卡牌
+  useEffect(() => {
+    api.cards.mine()
+      .then((res) => setUnlockedIds(new Set(res.cardIds)))
+      .catch(() => { /* 离线也能看全卡牌 */ });
+  }, []);
 
   const activeBook = activeSubId ? books.find((b) => b.subId === activeSubId) : null;
 
@@ -56,52 +65,56 @@ export function CardsPage() {
           gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
           gap: 20, padding: "20px 0",
         }}>
-          {books.map((book) => (
-            <div
-              key={book.subId}
-              onClick={() => setActiveSubId(book.subId)}
-              style={{
-                height: 210, cursor: "pointer", position: "relative",
-                border: "1px solid #a08050",
-                boxShadow: "4px 4px 12px rgba(0,0,0,0.15)",
-                display: "flex", flexDirection: "column",
-                alignItems: "center", textAlign: "center",
-                transition: "all 0.2s",
-                fontFamily: "'KaiTi','STKaiti','Noto Serif SC',serif",
-                color: "#2c1810", justifyContent: "flex-start",
-                paddingTop: 40,
-                backgroundImage: "url(/assets/slipcase.png)",
-                backgroundSize: "contain",
-                backgroundPosition: "center",
-                backgroundRepeat: "no-repeat",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "translateY(-4px)";
-                e.currentTarget.style.boxShadow = "4px 6px 16px rgba(0,0,0,0.2)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "";
-                e.currentTarget.style.boxShadow = "4px 4px 12px rgba(0,0,0,0.15)";
-              }}
-            >
-              <div style={{ fontSize: 28, marginBottom: 6, position: "relative", zIndex: 1 }}>
-                {book.factionIcon}
+          {books.map((book) => {
+            // 统计该分支已解锁卡数
+            const bookUnlocked = book.cards.filter((c) => unlockedIds.has(c.id)).length;
+            return (
+              <div
+                key={book.subId}
+                onClick={() => setActiveSubId(book.subId)}
+                style={{
+                  height: 210, cursor: "pointer", position: "relative",
+                  border: "1px solid #a08050",
+                  boxShadow: "4px 4px 12px rgba(0,0,0,0.15)",
+                  display: "flex", flexDirection: "column",
+                  alignItems: "center", textAlign: "center",
+                  transition: "all 0.2s",
+                  fontFamily: "'KaiTi','STKaiti','Noto Serif SC',serif",
+                  color: "#2c1810", justifyContent: "flex-start",
+                  paddingTop: 40,
+                  backgroundImage: "url(/assets/slipcase.png)",
+                  backgroundSize: "contain",
+                  backgroundPosition: "center",
+                  backgroundRepeat: "no-repeat",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateY(-4px)";
+                  e.currentTarget.style.boxShadow = "4px 6px 16px rgba(0,0,0,0.2)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "";
+                  e.currentTarget.style.boxShadow = "4px 4px 12px rgba(0,0,0,0.15)";
+                }}
+              >
+                <div style={{ fontSize: 28, marginBottom: 6, position: "relative", zIndex: 1 }}>
+                  {book.factionIcon}
+                </div>
+                <div style={{
+                  fontSize: 16, fontWeight: "bold", letterSpacing: 3,
+                  writingMode: "vertical-rl", position: "relative", zIndex: 1,
+                  textShadow: "0 1px 3px rgba(242,230,201,0.6)",
+                }}>
+                  {book.subName}
+                </div>
+                <div style={{
+                  fontSize: 11, color: "#5a3a2a", opacity: 0.6,
+                  position: "absolute", bottom: 16, zIndex: 1,
+                }}>
+                  {book.factionName} · {bookUnlocked}/{book.cards.length}
+                </div>
               </div>
-              <div style={{
-                fontSize: 16, fontWeight: "bold", letterSpacing: 3,
-                writingMode: "vertical-rl", position: "relative", zIndex: 1,
-                textShadow: "0 1px 3px rgba(242,230,201,0.6)",
-              }}>
-                {book.subName}
-              </div>
-              <div style={{
-                fontSize: 11, color: "#5a3a2a", opacity: 0.6,
-                position: "absolute", bottom: 16, zIndex: 1,
-              }}>
-                {book.factionName} · {book.cards.length}式
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
@@ -135,9 +148,27 @@ export function CardsPage() {
         gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
         gap: 16, justifyItems: "center",
       }}>
-        {activeBook.cards.map((card) => (
-          <CardComponent key={card.id} card={card} size="sm" />
-        ))}
+        {activeBook.cards.map((card) => {
+          const owned = unlockedIds.has(card.id);
+          return owned ? (
+            <CardComponent key={card.id} card={card} size="sm" />
+          ) : (
+            <div key={card.id}
+              style={{
+                width: 180, height: 260,
+                background: "linear-gradient(145deg, #1a1414, #0d0a0a)",
+                border: "1px solid #3b2f2f", borderRadius: 12,
+                display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center",
+                gap: 8, opacity: 0.5,
+              }}>
+              <div style={{ fontSize: 32 }}>🔒</div>
+              <div style={{ fontSize: 11, color: "#5a4a3a" }}>
+                习武解锁
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

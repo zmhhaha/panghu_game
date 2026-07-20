@@ -1,6 +1,6 @@
 # 《自成一派》开发路线图
 
-> **更新日期**：2026-07-15 | **当前阶段**：Phase 1 — 核心框架
+> **更新日期**：2026-07-20 | **当前阶段**：Phase 2 — 用户系统 + 数据持久化
 
 ---
 
@@ -15,22 +15,22 @@
 | 品牌命名与设计 | 🟢 90% | ✅ 游戏名确定，视觉风格明确 |
 | monorepo 工程 | 🟢 90% | ✅ pnpm + TS 配置就绪 |
 | Core 类型定义 | 🟢 95% | ✅ 类型完整，无缺失字段 |
-| 预设卡牌数据 | 🟢 90% | ✅ 126 张卡牌，全部 description 重写 |
-| UI 卡牌组件 | 🟢 90% | ✅ 古风渲染组件完成 |
+| 预设卡牌数据 | 🟢 90% | ✅ 126 张卡牌，全部 description 重写，歌诀待填充 |
+| UI 卡牌组件 | 🟢 95% | ✅ 古风渲染组件完成（含底图/人物图/歌诀竖排）|
 | 前端页面框架 | 🟢 95% | ✅ 7 个页面路由 + 全部页面就绪 |
-| 后端 Express | 🟡 70% | ✅ 路由 + 代理，❌ 数据库未用 |
-| AI Agent (Python) | 🟢 85% | ✅ 三个 Agent 代码完整 |
-| 习武场前端 | 🟢 80% | ✅ multi-round 对话 UI 完成，需实际对接 Python Agent |
+| 后端 Express | 🟢 80% | ✅ 路由 + 代理（含反向代理问题修复），❌ 数据库未用 |
+| AI Agent (Python) | 🟢 90% | ✅ 三个 Agent 代码完整 + DeepSeek LLM 接入 |
+| 习武场前端 | 🟢 90% | ✅ multi-round 对话 UI + 对接 Python Agent（已跑通） |
 | game-logic 战斗引擎 | 🟢 100% | ✅ DuelEngine 完成 |
 | api-client | 🟢 100% | ✅ API 封装 + 类型导出 |
 | 卡牌 displacement | 🟢 100% | ✅ 136 张全赋值 |
-| 比武场对接 AI | 🟡 80% | ✅ 对接 DuelEngine，❌ 未调 duel-judge（部署后通） |
+| 比武场对接 AI | 🟢 90% | ✅ 对接 DuelEngine + duel-judge API（连招、换牌、跳过、结算） |
 | 兵器版前端 | 🔴 0% | ❌ 未开始 |
 | 测试 | 🔴 0% | ❌ 零测试 |
-| 数据库 + 用户系统 | 🟢 80% | ✅ SSO 已接入（oauth2-proxy + Casdoor + /me 端点） |
-| 部署 × 生产就绪 | 🟡 40% | ✅ 配置就绪，❌ 未实际部署 |
+| 数据库 + 用户系统 | 🟢 85% | ✅ PostgreSQL + Drizzle ORM 接入，用户自动注册，卡组/对战/习武 CRUD API |
+| 部署 × 生产就绪 | 🟢 85% | ✅ school-of-one.panghuer.top 已部署运行 |
 
-**整体粗估：~45%**
+**整体粗估：~55%**
 
 ---
 
@@ -54,13 +54,11 @@
 - [x] 比武场对接 DuelEngine（替代随机 mock）
 - [x] 演武场改用真实卡牌数据
 - [x] 习武场多轮对话 UI（三段式：选门派/对话/结果）
+- [x] 对接 Python Agent 习武场（DeepSeek LLM 已跑通）
 
-### ❌ Phase 1 剩余工作
+### ✅ Phase 1 已基本完成
 
-| # | 任务 | 优先级 | 预计工时 | 备注 |
-|:---:|:---|:---:|:---:|:---|
-| 1 | **习武场前端实际对接 Python Agent** | 🟡 | — | 前端 UI 已完成，部署后连上 Redis + LLM 即可跑通 |
-| 2 | **比武场对接 duel-judge** | 🟡 | — | 本地已用 DuelEngine 模拟，生产环境可切换为调用 AI Agent |
+Phase 1 核心框架代码和部署均已基本完成，项目已在 school-of-one.panghuer.top 上线运行。
 
 ---
 
@@ -68,15 +66,27 @@
 
 > **目标**：用户能注册登录，游戏进度可保存
 
+### ✅ 已完成
+
+- [x] 数据库表结构设计（PostgreSQL + Drizzle ORM）
+- [x] Drizzle ORM Schema（users / decks / training_sessions / duel_records）
+- [x] Auth middleware 自动注册用户
+- [x] 用户 /me API（含等级经验）
+- [x] 卡组持久化 API（保存/加载/删除）
+- [x] 对战记录 API
+- [x] 习武记录 API
+- [x] api-client 类型和方法更新
+- [x] 服务器 Dockerfile 更新（pg 替代 better-sqlite3）
+
+### 🟡 部分完成 / 待定
+
 | # | 任务 | 优先级 | 预计工时 | 备注 |
 |:---:|:---|:---:|:---:|:---|
-| 1 | **数据库表结构设计** | 🔴 | 2h | users / decks / cards / training_sessions |
-| 2 | **Drizzle ORM Schema** | 🔴 | 2h | `apps/server/src/db/` |
-| 3 | **Auth 路由完整实现** | 🔴 | 3h | 注册/登录/JWT |
-| 4 | **用户 CRUD API** | 🔴 | 2h | 个人信息/卡牌收藏 |
-| 5 | **卡组持久化** | 🟡 | 3h | 保存/加载/分享卡组 |
-| 6 | **习武记录持久化** | 🟡 | 2h | 保存习武历史 |
-| 7 | **前端登录注册页** | 🔴 | 3h | LoginPage / RegisterPage |
+| 1 | 前端 DeckBuilder 对接保存 API | 🟡 | 1h | 当前用 localStorage，可加云同步 |
+| 2 | 前端 DuelPage 结束时保存对战记录 | 🟡 | 1h | 可调用 api.duels.record() |
+| 3 | 前端 TrainingGround 结束时保存习武记录 | 🟡 | 1h | 可调用 api.training.sessions.create() |
+| 4 | 前端登录注册页 | 🟢 | 0h | SSO 已覆盖，暂不需要 |
+| 5 | 前端对战/习武历史展示页 | 🟡 | 2h | 查看历史记录 |
 
 ---
 
@@ -201,9 +211,12 @@ Phase 1 核心框架 — 基本完成，准备部署验证：
 
 ## ✅ 当前任务
 
-> **Phase 1 代码已基本完成**，下一步是部署和验证：
-
-1. **本地 pnpm dev 测试** — 确保完整链路可跑通
-2. **生产部署** — 构建 Docker 镜像 → 推送到私有 registry → K8s apply
-3. **SSO 接入** — 部署 oauth2-proxy-school-of-one，改 tunnel 路由，Casdoor 加回调
-4. **Python Agent 配置** — 部署 Redis + 写入 LLM 凭据，习武场/比武场对接 AI
+> **Phase 1 已基本完成**，项目已在 school-of-one.panghuer.top 部署运行中。
+> SSO 已接入，Python Agent 已接入 DeepSeek LLM 并正常运行。
+>
+> 后续可做：
+>
+> 1. **补充卡牌歌诀 verses 数据** — 给 136 张卡牌填充古风诗句
+> 2. **起手式选择** — 比武场开局从四门派起手中选一个
+> 3. **连招 UI 接入 combo-judge** — 选牌时显示连招匹配度
+> 4. **本地 pnpm dev 开发环境搭建** — 方便本地调试

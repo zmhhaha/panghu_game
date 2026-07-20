@@ -1,15 +1,8 @@
 import { Request, Response, NextFunction } from "express";
+import { getDb } from "../db/index.js";
+import { users } from "../db/schema.js";
+import { eq } from "drizzle-orm";
 
-/**
- * 从 oauth2-proxy 注入的 header 中提取用户信息。
- *
- * 生产环境（NODE_ENV=production）:
- *   - X-Forwarded-User 由 oauth2-proxy 注入
- *   - X-Forwarded-Email 由 oauth2-proxy 注入
- *
- * 开发环境:
- *   - header 不存在，回退为默认模拟用户
- */
 export interface AuthUser {
   id: string;
   username: string;
@@ -49,10 +42,50 @@ function extractUser(req: Request): AuthUser | null {
 }
 
 /**
- * 可选中间件：将用户信息挂到 req.user 上。
- * 不强制拦截请求 —— 未认证用户仍可访问（方便开发调试）。
+ * 自动注册用户到数据库（如果不存在的话）
+ */
+async function autoRegisterUser(req: Request) {
+  if (!req.user) return;
+
+  try {
+    const db = getDb();
+    const existing = await db.select().from(users).where(eq(users.id, req.user.id)).limit(1);
+
+    if (existing.length === 0) {
+      const now = new Date().toISOString();
+      await db.insert(users).values({
+        id: req.user.id,
+        username: req.user.username,
+        email: req.user.email,
+        level: 1,
+        xp: 0,
+        createdAt: now,
+        lastLoginAt: now,
+      });
+      console.log(`[Auth] 新用户自动注册: ${req.user.id}`);
+    } else {
+      // 更新登录时间
+      await db.update(users)
+        .set({ lastLoginAt: new Date().toISOString() })
+        .where(eq(users.id, req.user.id));
+    }
+  } catch (err) {
+    // 数据库不可用时不阻塞请求
+    console.warn("[Auth] autoRegisterUser 失败（数据库可能未就绪）:", err);
+  }
+}
+
+/**
+ * 可选中间件：将用户信息挂到 req.user 上，并自动注册。
  */
 export function authMiddleware(req: Request, _res: Response, next: NextFunction) {
-  req.user = extractUser(req) || undefined;
+  const user = extractUser(req);
+  req.user = user || undefined;
+
+  if (user) {
+    // 异步自动注册，不阻塞请求
+    autoRegisterUser(req).catch(console.warn);
+  }
+
   next();
 }

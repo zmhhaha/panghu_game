@@ -214,6 +214,155 @@ export class DuelEngine {
     return { result, newState: this.getState() };
   }
 
+  /**
+   * 应用外部 API 裁决结果到引擎状态
+   * 当使用 duel-judge Agent 时，用此方法将 API 返回的结果写入引擎，
+   * 保证引擎状态（血量、距离、历史）与前端显示一致。
+   */
+  applyExternalVerdict(
+    cardA: PresetCard,
+    cardB: PresetCard,
+    verdict: {
+      feasibilityA: number;
+      feasibilityB: number;
+      succeededA: boolean;
+      succeededB: boolean;
+      damageA: number;
+      damageB: number;
+      distanceAfter: number;
+      narration: string;
+    },
+  ): { result: DuelRoundResult; newState: Readonly<DuelState> } {
+    const round = this.state.round + 1;
+
+    // 更新血量
+    const heartsA = Math.max(0, this.state.heartsA - verdict.damageB);
+    const heartsB = Math.max(0, this.state.heartsB - verdict.damageA);
+
+    // 胜负判定
+    let winner: "A" | "B" | null = null;
+    let status: "in_progress" | "finished" = "in_progress";
+    if (heartsA <= 0 && heartsB <= 0) {
+      winner = round % 2 === 0 ? "A" : "B";
+      status = "finished";
+    } else if (heartsA <= 0) {
+      winner = "B";
+      status = "finished";
+    } else if (heartsB <= 0) {
+      winner = "A";
+      status = "finished";
+    }
+
+    const result: DuelRoundResult = {
+      round,
+      cardA,
+      cardB,
+      feasibilityA: verdict.feasibilityA,
+      feasibilityB: verdict.feasibilityB,
+      succeededA: verdict.succeededA,
+      succeededB: verdict.succeededB,
+      distanceAfter: verdict.distanceAfter,
+      damageA: verdict.damageA,
+      damageB: verdict.damageB,
+      narration: verdict.narration,
+    };
+
+    this.state = {
+      ...this.state,
+      distance: verdict.distanceAfter,
+      heartsA,
+      heartsB,
+      lastCardA: cardA.id,
+      lastCardB: cardB.id,
+      round,
+      status,
+      winner,
+      history: [...this.state.history, result],
+    };
+
+    return { result, newState: this.getState() };
+  }
+
+  /**
+   * 放弃本回合行动（跳过）
+   * 玩家不做动作，AI 独自出招。距离只受 AI 位移影响，命中率降低。
+   */
+  skipTurn(aiCard: PresetCard): { result: DuelRoundResult; newState: Readonly<DuelState> } {
+    const c = this.config;
+    const round = this.state.round + 1;
+
+    // 只算 AI 的位移（玩家没动）
+    const rawDistance = this.state.distance - aiCard.displacement;
+    const isFall = rawDistance < 0;
+    const distanceAfter = isFall ? c.fallResetDistance : Math.max(rawDistance, c.minDistance);
+
+    // 跳过时 AI 命中率降低（玩家全力防守/闪避）
+    const feasibilityB = Math.max(0, Math.min(1, c.hitRateBase * 0.4));
+    const succeededB = Math.random() < feasibilityB;
+
+    const damageB = succeededB
+      ? Math.max(1, Math.round(c.baseDamage * 0.6))  // 防御状态下伤害减半
+      : 0;
+    const totalDamageB = isFall ? damageB + c.fallDamage : damageB;
+
+    const heartsA = Math.max(0, this.state.heartsA - totalDamageB);
+
+    // 胜负判定
+    let winner: "A" | "B" | null = null;
+    let status: "in_progress" | "finished" = "in_progress";
+    if (heartsA <= 0) {
+      winner = "B";
+      status = "finished";
+    }
+
+    // 空的玩家卡牌标记
+    const skipCard: PresetCard = {
+      id: "__skip__",
+      factionId: "" as any,
+      gameId: "martial-hegemony",
+      name: "放弃行动",
+      description: "放弃本回合攻击，全力防守/闪避",
+      displacement: 0,
+      source: "preset",
+      isStarter: false,
+      keywords: [],
+      createdAt: new Date().toISOString(),
+    };
+
+    const result: DuelRoundResult = {
+      round,
+      cardA: skipCard,
+      cardB: aiCard,
+      feasibilityA: 0,
+      feasibilityB,
+      succeededA: false,
+      succeededB,
+      distanceAfter,
+      damageA: 0,
+      damageB: totalDamageB,
+      narration: isFall
+        ? `甲放弃攻击全力防守，乙追击时双方相撞摔倒，各自受${c.fallDamage}点伤。`
+        : succeededB
+        ? `甲放弃攻击，乙趁势进攻并命中，造成 ${totalDamageB} 点伤害。`
+        : `甲放弃攻击，乙的进攻被格挡化解，均未命中。`,
+    };
+
+    this.state = {
+      ...this.state,
+      distance: distanceAfter,
+      heartsA,
+      heartsB: this.state.heartsB,
+      lastCardA: null,
+      lastCardB: aiCard.id,
+      round,
+      status,
+      winner,
+      history: [...this.state.history, result],
+    };
+
+    return { result, newState: this.getState() };
+  }
+
   /** 多回合模拟（AI vs AI 快速战斗） */
   simulate(deckA: PresetCard[], deckB: PresetCard[], maxRounds: number = 20): Readonly<DuelState> {
     let handA = [...deckA];

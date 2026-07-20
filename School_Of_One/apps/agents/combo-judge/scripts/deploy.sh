@@ -7,7 +7,7 @@ set -e
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 cd "$script_dir/.."
 
-NAMESPACE="${NAMESPACE:-combo-judge}"
+NAMESPACE="${NAMESPACE:-school-of-one}"
 REGISTRY="${REGISTRY:-arm-cluster-master:5000}"
 K="${KUBECONFIG:+-kubeconfig=$KUBECONFIG}"
 

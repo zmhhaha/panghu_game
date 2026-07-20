@@ -53,7 +53,7 @@ function NavBar() {
          武林争霸
       </span>
       <Link to="/" style={linkStyle}>首页</Link>
-      <Link to="/factions" style={linkStyle}>师门</Link>
+      <Link to="/factions" style={linkStyle}>拜师</Link>
       <Link to="/cards" style={linkStyle}>卡牌</Link>
       <Link to="/training" style={linkStyle}>习武场</Link>
       <Link to="/deck" style={linkStyle}>演武场</Link>

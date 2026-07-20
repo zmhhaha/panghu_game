@@ -221,6 +221,7 @@ def process_round(session: TrainingSession, student_description: str) -> Trainin
         prev_count=len(session.rounds),
         history=session.history_text,
         student_description=student_description,
+        master_name=session.master_name,
     )
 
     raw = call_llm(system_prompt, user_prompt, temperature=0.6)

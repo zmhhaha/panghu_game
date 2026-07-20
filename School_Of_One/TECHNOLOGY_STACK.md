@@ -56,26 +56,34 @@ Nginx（前端静态服务器）
 |------|------|------|
 | **Express** | Web 框架 | ^4.19.0 |
 | **http-proxy-middleware** | 反向代理 AI Agent | ^3.0.0 |
-| **Drizzle ORM** | 数据库 ORM | ^0.30.0 |
-| **better-sqlite3** | 嵌入式数据库 | ^11.0.0 |
-| **jsonwebtoken** | JWT 认证 | ^9.0.2 |
+| **Drizzle ORM** | 数据库 ORM (PostgreSQL) | ^0.30.0 |
+| **pg** | PostgreSQL 驱动 | ^8.12.0 |
+| **jsonwebtoken** | JWT 认证（备用） | ^9.0.2 |
 | **Zod** | 输入验证 | ^3.23.0 |
 | **tsx** | TypeScript 开发热重载 | ^4.15.0 |
 
 **后端 API 路由：**
 
-| 端点 | 说明 | 状态 |
-|------|------|------|
-| `GET /api/health` | 健康检查 | ✅ |
-| `POST /api/v1/auth/register` | 用户注册 | 🚧 存根 |
-| `POST /api/v1/auth/login` | 用户登录 | 🚧 存根 |
-| `GET /api/v1/factions` | 门派列表 | ✅ |
-| `GET /api/v1/factions/:id` | 门派详情 | ✅ |
-| `GET /api/v1/cards/preset` | 卡牌列表（含过滤） | ✅ |
-| `GET /api/v1/cards/preset/:id` | 卡牌详情 | ✅ |
-| `GET /api/ai/duel/judge` | → 转发到 duel-judge | ✅ |
-| `GET /api/ai/combo/judge` | → 转发到 combo-judge | ✅ |
-| `GET /api/ai/training/*` | → 转发到 training-ground | ✅ |
+| 端点 | 方法 | 说明 | 状态 |
+|------|:---:|------|:----:|
+| `/api/health` | GET | 健康检查 | ✅ |
+| `/api/v1/auth/me` | GET | 用户信息（含等级经验） | ✅ |
+| `/api/v1/auth/register` | POST | 用户注册（自动） | ✅ |
+| `/api/v1/auth/login` | POST | 用户登录 | 🚧 SSO |
+| `/api/v1/factions` | GET | 门派列表 | ✅ |
+| `/api/v1/factions/:id` | GET | 门派详情 | ✅ |
+| `/api/v1/cards/preset` | GET | 卡牌列表（含过滤） | ✅ |
+| `/api/v1/cards/preset/:id` | GET | 卡牌详情 | ✅ |
+| `/api/v1/decks` | GET | 用户卡组列表 | ✅ |
+| `/api/v1/decks` | POST | 保存卡组 | ✅ |
+| `/api/v1/decks/:id` | DELETE | 删除卡组 | ✅ |
+| `/api/v1/duels` | GET | 对战历史 | ✅ |
+| `/api/v1/duels` | POST | 记录对战 | ✅ |
+| `/api/v1/training/sessions` | GET | 习武历史 | ✅ |
+| `/api/v1/training/sessions` | POST | 记录习武 | ✅ |
+| `/api/ai/duel/*` | GET/POST | → 转发到 duel-judge | ✅ |
+| `/api/ai/combo/*` | GET/POST | → 转发到 combo-judge | ✅ |
+| `/api/ai/training/*` | GET/POST | → 转发到 training-ground | ✅ |
 
 ### AI Agent（Python FastAPI）
 
@@ -119,10 +127,10 @@ PROVIDER=deepseek  # 默认，也可切换 openai / anthropic / custom
 
 | 门派 | 风格 | 子分支 | 掌门大师 |
 |------|------|--------|----------|
-| **少林寺** | 全面均衡 | 少林拳、罗汉拳、五形拳 | 玄慈大师 |
-| **武当派** | 以柔克刚 | 太极拳、八卦掌、形意拳 | 冲虚道长 |
-| **北派** | 刚猛爆裂 | 八极拳、通背拳、翻子拳、戳脚、螳螂拳、迷踪拳 | 北派宗师 |
-| **南派** | 灵巧短打 | 咏春拳、洪拳、蔡李佛 | 南派宗师 |
+| **少林寺** | 全面均衡 | 少林拳、罗汉拳、五形拳 | 达摩祖师 |
+| **武当派** | 以柔克刚 | 太极拳、八卦掌、形意拳 | 张三丰 |
+| **北拳** | 刚猛爆裂 | 八极拳、通背拳、翻子拳、戳脚、螳螂拳、迷踪拳 | 北拳宗师 |
+| **南拳** | 灵巧短打 | 咏春拳、洪拳、蔡李佛 | 南拳宗师 |
 
 ### 卡牌系统
 

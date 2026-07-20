@@ -19,6 +19,10 @@ import type {
   TrainingSessionStartResponse,
   TrainingRoundResponse,
   TrainingMatchResponse,
+  UserProfileResponse,
+  DeckResponse,
+  DuelRecordResponse,
+  TrainingSessionResponse,
 } from "./types.js";
 
 export * from "./types.js";
@@ -114,11 +118,20 @@ export const apiClient = {
     getPreset(id: string, signal?: AbortSignal) {
       return request<{ card: PresetCard }>("GET", `/api/v1/cards/preset/${encodeURIComponent(id)}`, undefined, { signal });
     },
+    mine(signal?: AbortSignal) {
+      return request<{ cardIds: string[] }>("GET", "/api/v1/cards/mine", undefined, { signal });
+    },
+    unlock(cardId: string, signal?: AbortSignal) {
+      return request<{ message: string; cardId: string }>("POST", "/api/v1/cards/unlock", { cardId }, { signal });
+    },
   },
 
   auth: {
     me(signal?: AbortSignal) {
-      return request<{ id: string; username: string; email: string }>("GET", "/api/v1/auth/me", undefined, { signal });
+      return request<UserProfileResponse>("GET", "/api/v1/auth/me", undefined, { signal });
+    },
+    register(signal?: AbortSignal) {
+      return request<{ message: string }>("POST", "/api/v1/auth/register", undefined, { signal });
     },
   },
 
@@ -133,7 +146,7 @@ export const apiClient = {
 
   combo: {
     judge(
-      params: { moves: string[]; distance: number },
+      params: { moveA: string; moveB: string; context?: string },
       signal?: AbortSignal,
     ) {
       return request<ComboJudgeResponse>("POST", "/api/ai/combo/judge", params, { signal });
@@ -149,6 +162,35 @@ export const apiClient = {
     },
     getMatch(params: { sessionId: string }, signal?: AbortSignal) {
       return request<TrainingMatchResponse>("POST", "/api/ai/training/match", params, { signal });
+    },
+    sessions: {
+      list(signal?: AbortSignal) {
+        return request<{ sessions: TrainingSessionResponse[] }>("GET", "/api/v1/training/sessions", undefined, { signal });
+      },
+      create(params: { factionId?: string; masterName?: string; rounds?: number; matchedCardId?: string }, signal?: AbortSignal) {
+        return request<{ id: string; message: string }>("POST", "/api/v1/training/sessions", params, { signal });
+      },
+    },
+  },
+
+  decks: {
+    list(signal?: AbortSignal) {
+      return request<{ decks: DeckResponse[] }>("GET", "/api/v1/decks", undefined, { signal });
+    },
+    save(params: { id?: string; name?: string; starterCardId: string; cardIds: string[] }, signal?: AbortSignal) {
+      return request<{ id: string; message: string }>("POST", "/api/v1/decks", params, { signal });
+    },
+    delete(id: string, signal?: AbortSignal) {
+      return request<{ message: string }>("DELETE", `/api/v1/decks/${encodeURIComponent(id)}`, undefined, { signal });
+    },
+  },
+
+  duels: {
+    list(signal?: AbortSignal) {
+      return request<{ duels: DuelRecordResponse[] }>("GET", "/api/v1/duels", undefined, { signal });
+    },
+    record(params: { opponent?: string; winner: string; rounds: number; playerHearts: number; aiHearts: number; history?: unknown[] }, signal?: AbortSignal) {
+      return request<{ id: string; message: string }>("POST", "/api/v1/duels", params, { signal });
     },
   },
 };

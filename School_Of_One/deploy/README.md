@@ -122,3 +122,28 @@ kubectl rollout restart deploy/frontend -n school-of-one
 #   /api/ai/duel/judge       → duel-judge:8003
 #   /api/ai/combo/judge      → combo-judge:8004
 #   /api/ai/training/start   → training-ground:8005
+
+# ──────────────────────────────────────────
+# Express 反向代理已知问题（2026-07-16）
+# ──────────────────────────────────────────
+#
+# AI Agent 反向代理通过 http-proxy-middleware v3 转发。
+# Express 注册中间件 app.use("/api/ai/training", ...) 时，会自动
+# 剥离匹配的前缀，转发给 target 的剩余路径是 "/factions" 而不是
+# "/api/training/factions"。因此 pathRewrite 必须用 "^/": "/api/training/"
+# 而非 "^/api/ai/training": "/api/training"。
+#
+# 当前配置（apps/server/src/index.ts）:
+#   app.use("/api/ai/training", createProxyMiddleware({
+#     target: TRAINING_GROUND_URL,     # http://training-ground:8005
+#     changeOrigin: true,
+#     pathRewrite: { "^/": "/api/training/" },   # 重写整个路径
+#   }));
+#
+# 同理 duel / combo:
+#   pathRewrite: { "^/": "/api/duel/" },
+#   pathRewrite: { "^/": "/api/combo/" },
+#
+# 注意: 这个改动尚未验证是否生效，部署后需要测试:
+#   curl http://server-service:3001/api/ai/training/factions
+#   期望返回 JSON 数组（门派列表），而非 {"detail":"Not Found"}

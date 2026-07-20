@@ -1,15 +1,18 @@
 # ============================================================
-#  Duel Judge — API 服务（K8s 部署）
-#  duel_judge.py 通过 ConfigMap 注入（duel-judge-code），
-#  config 通过 ConfigMap 注入，secret 通过 Secret 注入
-#  用法: sed "s/__NAMESPACE__/duel-judge/g" k8s/deployment.yaml | kubectl apply -f -
+#  Duel Judge — API 服务（K8s 部署 - school-of-one 命名空间）
+#  通过 deploy/k8s/ai-service.yaml 注入 agent-config（PROVIDER）
+#  通过 llm-secret 注入 LLM 凭据
+#  部署:
+#    kubectl apply -n school-of-one -f k8s/deployment.yaml
 # ============================================================
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: duel-judge
-  namespace: __NAMESPACE__
+  namespace: school-of-one
+  labels:
+    app: duel-judge
 spec:
   replicas: 1
   selector:
@@ -28,49 +31,42 @@ spec:
         - containerPort: 8003
         envFrom:
         - configMapRef:
-            name: duel-judge-config
+            name: agent-config
+            optional: true
         env:
         - name: DEEPSEEK_API_KEY
           valueFrom:
             secretKeyRef:
-              name: duel-judge-secret
-              key: DEEPSEEK_API_KEY
+              name: llm-secret
+              key: deepseek-api-key
               optional: true
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
-              name: duel-judge-secret
-              key: OPENAI_API_KEY
+              name: llm-secret
+              key: openai-api-key
               optional: true
         - name: CUSTOM_API_KEY
           valueFrom:
             secretKeyRef:
-              name: duel-judge-secret
-              key: CUSTOM_API_KEY
+              name: llm-secret
+              key: custom-api-key
               optional: true
         - name: CUSTOM_API_BASE
           valueFrom:
             configMapKeyRef:
-              name: duel-judge-config
+              name: agent-config
               key: CUSTOM_API_BASE
               optional: true
         - name: CUSTOM_MODEL
           valueFrom:
             configMapKeyRef:
-              name: duel-judge-config
+              name: agent-config
               key: CUSTOM_MODEL
               optional: true
-        volumeMounts:
-        - name: code
-          mountPath: /app/duel_judge.py
-          subPath: duel_judge.py
         resources:
-          requests:
-            cpu: 250m
-            memory: 512Mi
-          limits:
-            cpu: "2"
-            memory: 2Gi
+          requests: { cpu: "200m", memory: "256Mi" }
+          limits: { cpu: "2", memory: "2Gi" }
         livenessProbe:
           httpGet:
             path: /api/duel/health
@@ -83,20 +79,15 @@ spec:
             port: 8003
           initialDelaySeconds: 10
           periodSeconds: 10
-      volumes:
-      - name: code
-        configMap:
-          name: duel-judge-code
-          defaultMode: 0644
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: duel-judge
-  namespace: __NAMESPACE__
+  namespace: school-of-one
 spec:
   selector:
     app: duel-judge
   ports:
-  - port: 80
+  - port: 8003
     targetPort: 8003

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { FACTIONS, getAllPresetCards, PresetCard } from "@school-of-one/core";
 import { CardComponent } from "@school-of-one/ui-core";
+import { api } from "@school-of-one/api-client";
 
 // Types
 type PagePhase = "select" | "training" | "result";
@@ -75,7 +76,12 @@ async function finalMatch(sessionId: string): Promise<{
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sessionId }),
   });
-  if (!res.ok) throw new Error((await res.json()).detail || "获取结果失败");
+  if (!res.ok) {
+    const body = await res.text();
+    let msg: string;
+    try { msg = JSON.parse(body).detail || "获取结果失败"; } catch { msg = body || "获取结果失败"; }
+    throw new Error(msg);
+  }
   return res.json();
 }
 
@@ -127,10 +133,18 @@ export function TrainingGroundPage() {
       const info = await startTraining(faction.id);
       setSession(info);
       setPhase("training");
+      // 各门派的称呼前缀
+      const honorifics: Record<string, string> = {
+        "shaolin-temple": "贫僧",
+        "wudang-sect": "贫道",
+        "northern-school": "老夫",
+        "southern-school": "老夫",
+      };
+      const prefix = honorifics[faction.id] || "我";
       setMessages([
         {
           role: "master",
-          content: `贫僧${info.masterName}。既入我${info.factionName}门下，且说来听听——你心中构想的招式，是怎样的？`,
+          content: `${prefix}${info.masterName}。既入我${info.factionName}门下，且说来听听——你心中构想的招式，是怎样的？`,
         },
         {
           role: "system",
@@ -148,6 +162,47 @@ export function TrainingGroundPage() {
   const handleSubmitDescription = async () => {
     const text = inputText.trim();
     if (!text || !session || completed) return;
+
+    // 各门派的称呼前缀
+    const honorifics: Record<string, string> = {
+      "shaolin-temple": "贫僧",
+      "wudang-sect": "贫道",
+      "northern-school": "老夫",
+      "southern-school": "老夫",
+    };
+    const honor = honorifics[session.factionId] || "我";
+
+    // 已达最大轮数：不让再提交，显示退场语
+    const trainingRounds = messages.filter((m) => m.role === "master" && m !== messages[0]).length;
+    if (trainingRounds >= session.maxRounds) {
+      // 退场语
+      const farewells: Record<string, string[]> = {
+        "shaolin-temple": ["阿弥陀佛，施主与我佛无缘，请回吧。",
+          `老衲观施主心性未定，强练无益。待他日明心见性，再来不迟。`,
+          "孺子不可教也！少林功夫讲究根基，施主还需多加磨炼。"],
+        "wudang-sect": ["道法自然，不可强求。贫道观施主缘分未到。",
+          "太极无形，心中有物。施主执念太重，暂且放下吧。",
+          "无为而治，非不治也。施主回去再悟悟。"],
+        "northern-school": ["哈哈哈！小子资质尚浅，先回去练练基本功！",
+          "北拳刚猛但不是蛮打！你这样不行，回去重练！",
+          `老夫看你学费还没交够，先把马步扎稳了再来！`],
+        "southern-school": ["练拳先练心。你心浮气躁，难成大事。",
+          "实用至上，你连基本的二字钳羊马都站不稳，谈何习武？",
+          "省省吧，你这样学十年也是花架子。"],
+      };
+      const fId = session.factionId || "";
+      const pool = farewells[fId] || farewells["shaolin-temple"];
+      const farewell = pool[Math.floor(Math.random() * pool.length)];
+      setMessages((prev) => [...prev, {
+        role: "master" as const,
+        content: farewell,
+      }, {
+        role: "system" as const,
+        content: " 习武结束，本次未获得任何招式，请少侠他日再来。",
+      }]);
+      setCompleted(true);
+      return;
+    }
 
     setMessages((prev) => [...prev, { role: "player", content: text }]);
     setInputText("");
@@ -209,6 +264,17 @@ export function TrainingGroundPage() {
         totalRounds: result.totalRounds,
       });
       setPhase("result");
+      // 保存习武记录到数据库
+      if (matchedCard) {
+        api.training.sessions.create({
+          factionId: session.factionId || undefined,
+          masterName: session.masterName,
+          rounds: result.totalRounds,
+          matchedCardId: matchedCard.id,
+        }).catch(() => {});
+        // 解锁卡牌
+        api.cards.unlock(matchedCard.id).catch(() => {});
+      }
     } catch (err: any) {
       setError(err.message || "获取最终结果失败");
     }
@@ -250,7 +316,7 @@ export function TrainingGroundPage() {
             textAlign: "center",
           }}
         >
-           习武场
+          习武场
         </h2>
         <p
           style={{
@@ -400,10 +466,10 @@ export function TrainingGroundPage() {
   }
 
   if (phase === "training") {
-    const remaining = session
-      ? session.maxRounds -
-        messages.filter((m) => m.role === "master").length
-      : 0;
+    // 仅统计真正的训练轮次：排除首条 master 招呼语和 system 消息
+    const trainingRounds = messages.filter((m) => m.role === "master" && m !== messages[0]).length;
+    const remaining = session ? session.maxRounds - trainingRounds : 0;
+    const maxedOut = remaining <= 0;
 
     return (
       <div
@@ -718,23 +784,31 @@ export function TrainingGroundPage() {
         >
           {completed ? (
             <div style={{ display: "flex", gap: 12 }}>
-              <button
-                onClick={handleViewResult}
-                disabled={isLoading}
-                style={{
-                  flexGrow: 1,
-                  padding: "12px",
-                  fontSize: 15,
-                  borderRadius: 8,
-                  border: "2px solid #d4a373",
-                  background: "#4E342E",
-                  color: "#f5e6c8",
-                  cursor: isLoading ? "wait" : "pointer",
-                  fontWeight: "bold",
-                }}
-              >
-                 查看匹配结果
-              </button>
+              {matchResult === null ? (
+                <button
+                  onClick={handleViewResult}
+                  disabled={isLoading}
+                  style={{
+                    flexGrow: 1,
+                    padding: "12px",
+                    fontSize: 15,
+                    borderRadius: 8,
+                    border: "2px solid #d4a373",
+                    background: "#4E342E",
+                    color: "#f5e6c8",
+                    cursor: isLoading ? "wait" : "pointer",
+                    fontWeight: "bold",
+                  }}
+                >
+                   查看匹配结果
+                </button>
+              ) : (
+                <div style={{ flexGrow: 1, textAlign: "center", padding: 8 }}>
+                  <a href="/cards" style={{
+                    color: "#d4a373", fontSize: 13, textDecoration: "underline",
+                  }}>查看我的卡牌</a>
+                </div>
+              )}
               <button
                 onClick={handleReset}
                 style={{
@@ -758,7 +832,7 @@ export function TrainingGroundPage() {
                 onKeyDown={handleKeyDown}
                 placeholder={`描述你构想的招式（还可输入 ${remaining} 轮）...`}
                 maxLength={500}
-                disabled={isLoading}
+                disabled={isLoading || completed}
                 style={{
                   flexGrow: 1,
                   padding: "10px 14px",
@@ -776,16 +850,16 @@ export function TrainingGroundPage() {
               />
               <button
                 onClick={handleSubmitDescription}
-                disabled={!inputText.trim() || isLoading}
+                disabled={!inputText.trim() || isLoading || completed}
                 style={{
                   padding: "10px 20px",
                   fontSize: 14,
                   borderRadius: 8,
                   border: "2px solid #d4a373",
                   background:
-                    inputText.trim() && !isLoading ? "#4E342E" : "#2d2320",
+                    inputText.trim() && !isLoading && !completed ? "#4E342E" : "#2d2320",
                   color:
-                    inputText.trim() && !isLoading ? "#f5e6c8" : "#6a5a4a",
+                    inputText.trim() && !isLoading && !completed ? "#f5e6c8" : "#6a5a4a",
                   cursor:
                     inputText.trim() && !isLoading ? "pointer" : "not-allowed",
                   fontWeight: "bold",
@@ -869,7 +943,7 @@ export function TrainingGroundPage() {
             </div>
           )}
           <div style={{ fontSize: 13, color: "#d4a373", marginBottom: 12 }}>
-            {matchResult?.substyle || matchResult?.card?.factionId}
+            {matchResult?.substyle || (matchResult?.card as any)?.subtitle || ""}
           </div>
           <div
             style={{
@@ -885,7 +959,7 @@ export function TrainingGroundPage() {
           >
             匹配度 {((matchResult?.confidence ?? 0) * 100).toFixed(0)}%
           </div>
-          {matchResult?.summary && (
+          {matchResult?.summary ? (
             <div
               style={{
                 fontSize: 14,
@@ -900,7 +974,7 @@ export function TrainingGroundPage() {
             >
               "{matchResult.summary}"
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -926,6 +1000,34 @@ export function TrainingGroundPage() {
             }}
           >
              查看全部卡牌
+          </button>
+        )}
+        {matchResult?.card && (
+          <button onClick={() => {
+            const data = {
+              version: "school-of-one.v1.training",
+              recordedAt: new Date().toISOString(),
+              session: {
+                factionId: session?.factionId,
+                masterName: session?.masterName,
+                rounds: matchResult.totalRounds,
+                matchedCardId: matchResult.card?.id,
+                matchedCardName: matchResult.card?.name,
+              },
+              dialogue: messages.filter((m) => m.role !== "system"),
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `习武记录_${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+            style={{ padding: "10px 24px", fontSize: 14, borderRadius: 8,
+              border: "1px solid #b8956a", background: "#3b2f2f",
+              color: "#d4a373", cursor: "pointer" }}>
+            下载记录 (JSON)
           </button>
         )}
         <button

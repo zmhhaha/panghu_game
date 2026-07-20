@@ -22,5 +22,6 @@ RUN npx --yes vite build apps/martial-hegemony
 # ---- Run stage ----
 FROM nginx:alpine
 COPY --from=build /app/apps/martial-hegemony/dist /usr/share/nginx/html
+COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
