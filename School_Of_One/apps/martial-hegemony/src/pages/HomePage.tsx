@@ -35,7 +35,7 @@ export function HomePage() {
             拜师学艺 · 门派习武 · 世外高人
           </div>
         </Link>
-        <Link to="/cards" style={card}>
+        <Link to="/deck" style={card}>
           <div style={{ fontSize: 48, marginBottom: 12 }}></div>
           <div style={{ fontSize: 20, fontWeight: "bold" }}>演武场</div>
           <div style={{ fontSize: 12, color: "#8B7D6B", marginTop: 8 }}>

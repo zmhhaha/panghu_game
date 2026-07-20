@@ -58,7 +58,7 @@ export function CardsPage() {
     return (
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 24px" }}>
         <h2 style={{ fontSize: 24, color: "#f5e6c8", marginBottom: 24, textAlign: "center" }}>
-           武术秘籍
+           藏经阁
         </h2>
         <div style={{
           display: "grid",
