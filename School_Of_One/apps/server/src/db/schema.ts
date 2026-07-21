@@ -48,3 +48,13 @@ export const userCards = pgTable("user_cards", {
   cardId: text("card_id").notNull(),
   unlockedAt: text("unlocked_at").notNull(),
 });
+
+export const comboCache = pgTable("combo_cache", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  cacheKey: text("cache_key").notNull().unique(),
+  moveA: text("move_a").notNull(),
+  moveB: text("move_b").notNull(),
+  result: jsonb("result").notNull(),
+  createdAt: text("created_at").notNull(),
+  hitCount: integer("hit_count").notNull().default(1),
+});

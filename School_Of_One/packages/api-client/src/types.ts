@@ -139,3 +139,27 @@ export interface TrainingSessionResponse {
   matchedCardId: string | null;
   createdAt: string;
 }
+
+/** POST /api/v1/training/complete 响应 */
+export interface TrainingCompleteResponse {
+  success: boolean;
+  matched: boolean;
+  finalCardId: string;
+  finalCardName: string;
+  finalConfidence: number;
+  masterSummary: string;
+  substyleName: string;
+  totalRounds: number;
+  cardDescription?: string;
+  cardDisplacement?: number;
+  trainingType?: string;
+}
+
+/** POST /api/training/hermit/start 响应 */
+export interface HermitStartResponse {
+  sessionId: string;
+  factionName: string;
+  masterName: string;
+  maxRounds: number;
+  trainingType: string;
+}

@@ -247,7 +247,6 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
           const res = await api.combo.judge({
             moveA: cardToMoveDescription(prevCard),
             moveB: cardToMoveDescription(card),
-            context: `当前距离 ${distance.toFixed(1)}m，上一招是「${prevCard.name}」。`,
           });
           return { cardId: card.id, feasibility: res.feasibility, difficulty: res.difficulty };
         }),

@@ -316,3 +316,238 @@ kubectl exec -n school-of-one deploy/server -- \
   sh -c "wget -qO- http://localhost:3001/api/v1/auth/me"
 # 应返回用户信息（SSO 环境）或 {"id":"dev-user",...}
 ```
+
+---
+
+## Phase 3 综合问题
+
+### 问题 1：Python / TypeScript 卡牌数据不同步
+
+**现象**：习武场 AI Agent 返回的 `finalCardId`（如 `lan_que_wei`）在前端 `getAllPresetCards()` 中找不到，`matchedCard` 为 null，导致卡牌不展示且不执行 unlock。
+
+**根本原因**：`apps/agents/training-ground/judge/data.py` 是硬编码的**独立副本**，与 `packages/core/src/data/` 下的 TypeScript 卡牌数据长期不同步。Python 多了 21 张已在 TS 中删除的卡牌，且卡牌命名/ID 不一致。
+
+**解决**（方案 B — HTTP 同步）：
+- `data.py` 改为启动时从 Server 的 `GET /api/v1/factions` 和 `GET /api/v1/cards/preset` 拉取数据
+- 使用 Python 内置 `urllib` 替代 `requests`，不额外增加依赖
+- 所有原有 API（`get_factions()`、`get_cards_by_substyle()` 等）签名不变
+- FastAPI `startup` event 中调用 `data.reload()` 预加载
+
+```python
+SERVER_URL = os.getenv("SERVER_URL", "http://server-service:3001")
+
+def _load():
+    factions_data = _http_get(f"{SERVER_URL}/api/v1/factions")
+    FACTIONS = factions_data["factions"]
+    card_data = _http_get(f"{SERVER_URL}/api/v1/cards/preset")
+    PRESET_CARDS = card_data["cards"]
+```
+
+**教训**：AI Agent 和 Server 之间的共享数据必须有一个唯一数据源，Python 侧不应维护硬编码副本。
+
+---
+
+### 问题 2：LLM 瞎编不存在的卡牌 ID
+
+**现象**：即使数据同步了，LLM 返回的 `finalCardId` 仍是 `lan_que_wei` 等不存在的 ID。
+
+**根本原因**：两个地方缺少卡牌 ID 信息：
+1. **每轮匹配 prompt**（`_build_substyle_info`）：只传了卡牌名称（`罗汉连环掌`），没有传 ID
+2. **最终匹配 prompt**（`TASK_FINAL_MATCH`）：完全没有卡牌目录，LLM 只能自己编造
+
+**解决**：
+- `_build_substyle_info()`：名称改为 `罗汉连环掌(id=luohan-1)` 的格式
+- `finalize_match()` 新增 `_build_card_catalog()`：传完整的子分支→卡牌列表（含真实 ID）
+- `TASK_FINAL_MATCH` 添加 `{card_catalog}` 占位符，明确要求 LLM 必须使用列表中的真实 ID
+
+---
+
+### 问题 3：combo-cache 在 express.json() 之前注册导致 Server 崩溃
+
+**现象**：浏览器 5 个 `combo/judge` 全部返回 502，combo-judge 日志只有 health check 没有任何 POST 请求。Nginx 日志报 `upstream prematurely closed connection` / `Connection reset by peer`。
+
+**根本原因**：Server 中间件顺序：
+```javascript
+app.use("/api/ai/combo", ...);   // combo-cache 在这里，访问 req.body
+app.use(express.json());         // body 解析在后面
+```
+
+`comboCacheRouter` 的 `handler` 里 `const { moveA, moveB } = req.body` 在 `req.body` 为 `undefined` 时引发 `TypeError` → Server 进程崩溃。
+
+**解决**：在 `index.ts` 中给 combo-cache 路由单独加 `express.json()`：
+```javascript
+if (req.method === "POST" && req.path === "/judge") {
+  return express.json()(req, res, () => comboCacheRouter(req, res, next));
+}
+```
+
+**教训**：所有访问 `req.body` 的中间件都需要确保 `express.json()` 在前面。AI Agent 代理（forward-only）不需要 body 解析，所以放在前面是 OK 的，但 combo-cache 是个特例。
+
+---
+
+### 问题 4：combo/judge 请求被 oauth2-proxy 拦截返回登录页
+
+**现象**：Network 标签页看到 combo/judge 请求响应是 oauth2-proxy 的登录 HTML 页面。
+
+**根本原因**：`api-client` 的 `request()` 函数中 `fetch()` 默认不带 cookie（`credentials: "same-origin"`）。当请求并发发送时，某些请求的 cookie 可能未正确携带，导致 oauth2-proxy 认为是未认证请求。
+
+**解决**：`api-client/src/index.ts` 中的 `fetch()` 调用添加 `credentials: "include"`：
+```typescript
+const res = await fetch(url, {
+  method,
+  headers: config.headers,
+  body: body ? JSON.stringify(body) : undefined,
+  credentials: "include",  // ← 添加
+  signal: opts?.signal,
+});
+```
+
+---
+
+### 问题 5：最终匹配不达标（confidence < 0.7）也给卡牌
+
+**现象**：5 轮对话都没有超过 70% 匹配度，点"查看匹配结果"仍然获得了卡牌和解锁。
+
+**根本原因**：`finalize_match()` 无条件接受 LLM 返回的任何卡牌，无 confidence 门槛。
+
+**解决**：
+- `finalize_match()` 在 `final_confidence < 0.7` 时清空 `final_card_id`/`final_card_name`，设置 `matched: False`
+- `MatchResponse` 新增 `matched: bool` 字段
+- Server `complete` 端点根据 `match.matched` 决定是否写入 `userCards`
+- 前端 `TrainingGroundPage` 根据 `result.matched` 显示"少侠请重新修炼再来！"
+
+**匹配逻辑**：
+```
+每轮 confidence > 0.7 → 自动标记 completed（原有逻辑，不变）
+满 5 轮点击查看结果 → LLM 重新分析全部对话
+  → confidence >= 0.7 → 给卡牌，写入 DB，解锁
+  → confidence < 0.7 → 不给卡牌，只记录习武历史
+```
+
+---
+
+### 问题 6：生产环境 Ingress 直接路由 AI Agent 绕过 Server
+
+**现象**：`deploy/k8s/ingress.yaml` 配置了多个 path 分别路由到不同后端：
+```yaml
+/api/ai/combo   → combo-judge:8004
+/api/ai/duel    → duel-judge:8003
+/api/ai/training → training-ground:8005
+```
+
+而 Ingress 有 `rewrite-target: /` 注解，会把所有路径前缀吞掉。`POST /api/ai/combo/judge` → Ingress rewrite → `POST /` → combo-judge 收到路径不匹配 → 502。
+
+**当前状态**：生产流量实际走的是 `Cloudflare Tunnel → oauth2-proxy → Nginx → server-service`，完全**不经过 Ingress**，因此该问题未在生产环境出现。Ingress 文件仅作为参考。如需将来启用 Ingress，需将所有 `/api/` 路由统一指向 `server-service`。
+
+---
+
+## 习武场 complete 请求 502 Bad Gateway（2026-07-21 修复）
+
+### 问题描述
+
+习武场多轮对话正常进行（选择门派、描述招式、获得反馈），但点击"查看匹配结果"按钮后，浏览器直接跳到 Cloudflare 502 Bad Gateway 页面，Network 标签显示 `POST /api/v1/training/complete` 返回 502。
+
+### 架构链路：complete 请求走的是内部 fetch，不是反向代理
+
+```
+浏览器 → Cloudflare → oauth2-proxy → Nginx → server-service:3001
+  POST /api/v1/training/complete
+    ↓
+  server 内部 fetch("http://training-ground:8005/api/training/match")
+    ↓
+  training-ground agent → get_session(sessionId) → 找不到 → 404
+    ↓
+  server 收到非 200 → 直接返回 502
+    ↓
+  Cloudflare 展示 502 Bad Gateway 页面
+```
+
+**关键区分**：训练轮次中（`/api/ai/training/round`）是浏览器 → **反向代理**直达 training-ground；而 complete 是 server **内部 fetch**到 training-ground。前者不受 pod 重启影响，后者每次都要查 session。
+
+### 根因：Agent session 存在进程内存中，pod 重启即丢失
+
+`apps/agents/training-ground/judge/orchestrator.py` 默认用进程内 dict 存 session：
+
+```python
+_fallback_store: dict[str, TrainingSession] = {}
+```
+
+training-ground pod 重启后（滚动更新、OOM、liveness 探测失败等），所有 session 丢失。`/api/training/match` 查询不到 session → 返回 404 → server 包装为 502。
+
+**另外发现的 Bug**：`apps/server/src/routes/training.ts` 在计算世外高人自定义卡牌序号时，条件写成了列自比较：
+
+```typescript
+// 恒为 true，没有实际过滤效果
+.where(and(eq(userCards.userId, req.user.id), eq(userCards.cardId, userCards.cardId)));
+```
+
+### 修复内容
+
+#### 1. Session 持久化 — 引入 Redis
+
+- `apps/agents/training-ground/k8s/deployment.yaml`：从已有的 `redis-secret` 注入 `REDIS_URL`
+
+```yaml
+env:
+- name: REDIS_URL
+  valueFrom:
+    secretKeyRef:
+      name: redis-secret
+      key: url
+```
+
+- `judge/redis_client.py` 已实现：`REDIS_URL` 存在时自动使用 Redis，不存在时回退内存存储
+- `deploy/k8s/redis.yaml`：可选的新建 Redis standalone 部署（已有公用 Redis 时无需部署，已删除）
+3. Agent session 存储必须持久化：任何 AI Agent 的会话状态都应存在 Redis/DB，而非进程内存
+
+#### 2. 增强 /complete 容错
+
+`apps/server/src/routes/training.ts` 区分 Agent 错误类型，返回前端可读的错误：
+
+| Agent 返回 | 现在返回前端 |
+|---|---|
+| 404（session 过期） | `400 { error: "习武会话已过期（AI 服务重启导致），请重新开始习武", code: "SESSION_EXPIRED" }` |
+| 500+（LLM 异常） | `502 { error: "AI 训练服务暂时不可用，请稍后再试", code: "AI_SERVICE_ERROR" }` |
+
+#### 3. 修复列自比较 Bug
+
+合并两次无用的查询为一次正确查询：
+
+```typescript
+// 修复前：两条查询 + 列自比较
+const existingCustom = await db.select().from(userCards)
+  .where(and(eq(userCards.userId, req.user.id), eq(userCards.cardId, userCards.cardId)));
+const existingCards = await db.select().from(userCards)
+  .where(and(eq(userCards.userId, req.user.id), eq(userCards.cardId, userCards.cardId)));
+
+// 修复后：一次查询，正确条件
+const existingCards = await db.select().from(userCards)
+  .where(eq(userCards.userId, req.user.id));
+```
+
+### 修改的文件
+
+| 文件 | 改动 |
+|---|---|
+| `apps/server/src/routes/training.ts` | 错误区分 + 修复列自比较 Bug |
+| `apps/agents/training-ground/k8s/deployment.yaml` | 注入 `REDIS_URL` 从 `redis-secret` |
+
+### 验证方法
+
+部署后新开始一次完整的习武流程（从选择门派 → 多轮描述 → 查看匹配结果），完成后任意重启 training-ground pod：
+
+```bash
+kubectl rollout restart -n school-of-one deployment/training-ground
+```
+
+再新开始一次习武 flow，点"查看匹配结果"不应再出现 502。同时检查 server 日志确认 Agent session 存储在 Redis 中：
+
+```bash
+kubectl logs -n school-of-one deploy/server --tail=50 | grep -i "session\|redis\|match"
+```
+
+### 教训
+
+1. **训练轮次和 complete 走了两条不同的路径**：轮次走 proxy（浏览器 → nginx → agent），complete 走 server 内部 fetch（`TRAINING_GROUND_URL`）——调试时要分别对待
+2. **Agent session 存储必须持久化**：任何 AI Agent 的会话状态都应存在 Redis/DB，而非进程内存
+3. **列自比较是隐式 Bug**：`eq(col, col)` 生成 SQL 恒为 true，TypeScript 编译器不会报错，单元测试才能发现

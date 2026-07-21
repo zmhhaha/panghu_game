@@ -51,6 +51,7 @@ class TrainingSession:
     faction_id: str
     faction_name: str
     master_name: str
+    training_type: str = "faction"  # "faction" | "hermit"
     rounds: list[TrainingRound] = field(default_factory=list)
     started_at: float = 0.0
     current_round: int = 0
@@ -60,6 +61,9 @@ class TrainingSession:
     final_card_name: str = ""
     final_confidence: float = 0.0
     master_summary: str = ""
+    # hermit 模式字段
+    card_description: str = ""
+    card_displacement: float = 0.0
 
     @property
     def history_text(self) -> str:
@@ -93,6 +97,9 @@ def _session_to_dict(s: TrainingSession) -> dict:
         "final_card_name": s.final_card_name,
         "final_confidence": s.final_confidence,
         "master_summary": s.master_summary,
+        "training_type": s.training_type,
+        "card_description": s.card_description,
+        "card_displacement": s.card_displacement,
     }
 
 
@@ -155,21 +162,36 @@ def create_session(faction_id: str) -> TrainingSession:
     return session
 
 
+def create_hermit_session() -> TrainingSession:
+    """创建世外高人习武会话"""
+    session = TrainingSession(
+        session_id=str(uuid.uuid4())[:8],
+        faction_id="hermit",
+        faction_name="世外高人",
+        master_name="世外高人",
+        training_type="hermit",
+        started_at=time.time(),
+    )
+    _save_session(session)
+    logger.info(f"创建世外高人会话: {session.session_id}")
+    return session
+
+
 def get_session(session_id: str) -> TrainingSession | None:
     """获取习武会话"""
     return _load_session(session_id)
 
 
 def _build_substyle_info(faction_id: str) -> str:
-    """构建子分支信息文本"""
+    """构建子分支信息文本（含卡牌 ID，供 LLM 返回真实 ID）"""
     faction = get_faction(faction_id)
     if not faction:
         return ""
     lines = []
     for ss in faction.get("subStyles", []):
         cards = get_cards_by_substyle(ss["id"])
-        card_names = ", ".join(c["name"] for c in cards[:5])
-        lines.append(f"- {ss['name']}（{ss['description']}）代表招式：{card_names}...")
+        card_infos = ", ".join(f"{c['name']}(id={c['id']})" for c in cards)
+        lines.append(f"- {ss['name']}（{ss['description']}）招式：{card_infos}")
     return "\n".join(lines)
 
 
@@ -199,85 +221,171 @@ def process_round(session: TrainingSession, student_description: str) -> Trainin
     session.current_round += 1
     round_num = session.current_round
 
-    master = get_master(session.faction_id)
-    faction = get_faction(session.faction_id)
-    if not master or not faction:
-        raise ValueError(f"未找到门派或大师: {session.faction_id}")
-
-    substyle_info = _build_substyle_info(session.faction_id)
-
-    logger.info(f"--- 习武第 {round_num} 轮 ---")
+    logger.info(f"--- {'世外高人' if session.training_type == 'hermit' else '习武'}第 {round_num} 轮 ---")
     logger.info(f"  描述: {student_description[:60]}...")
 
-    system_prompt = tasks.build_feedback_system(
-        master_personality=faction.get("masterPersonality", ""),
-        faction_name=session.faction_name,
-        master_name=session.master_name,
-        substyle_info=substyle_info,
-    )
-    user_prompt = tasks.build_feedback_user(
-        faction_name=session.faction_name,
-        round_num=round_num,
-        prev_count=len(session.rounds),
-        history=session.history_text,
-        student_description=student_description,
-        master_name=session.master_name,
-    )
+    if session.training_type == "hermit":
+        # 世外高人：引导用户细化描述，不匹配卡牌
+        system_prompt = tasks.build_hermit_system()
+        user_prompt = tasks.build_hermit_user(
+            round_num=round_num,
+            prev_count=len(session.rounds),
+            history=session.history_text,
+            student_description=student_description,
+        )
 
-    raw = call_llm(system_prompt, user_prompt, temperature=0.6)
-    data = _extract_json(raw)
+        raw = call_llm(system_prompt, user_prompt, temperature=0.7)
+        data = _extract_json(raw)
 
-    t_round = TrainingRound(
-        round_num=round_num,
-        student_description=student_description,
-        master_feedback=data.get("master_feedback", "（大师正在思考...）"),
-        matched_card_id=data.get("matched_card_id", ""),
-        matched_card_name=data.get("matched_card_name", ""),
-        confidence=float(data.get("confidence", 0)),
-        match_reason=data.get("match_reason", ""),
-        recommended_substyle=data.get("recommended_substyle", ""),
-        recommended_substyle_id=data.get("recommended_substyle_id", ""),
-    )
+        t_round = TrainingRound(
+            round_num=round_num,
+            student_description=student_description,
+            master_feedback=data.get("master_feedback", "（高人正在思考...）"),
+            matched_card_id="",
+            matched_card_name="",
+            confidence=0.0,
+            match_reason="",
+            recommended_substyle="",
+            recommended_substyle_id="",
+        )
 
-    session.rounds.append(t_round)
-
-    # 持久化（每次轮次后立即写入 Redis）
-    _save_session(session)
-
-    logger.info(f"  大师反馈: {t_round.master_feedback[:50]}...")
-    logger.info(f"  匹配: {t_round.matched_card_name} (confidence={t_round.confidence:.2f})")
-
-    if t_round.confidence > 0.7:
-        session.completed = True
-        session.final_card_id = t_round.matched_card_id
-        session.final_card_name = t_round.matched_card_name
-        session.final_confidence = t_round.confidence
+        session.rounds.append(t_round)
         _save_session(session)
-        logger.info(f"  ✅ confidence > 0.7，自动完成匹配")
+
+    else:
+        master = get_master(session.faction_id)
+        faction = get_faction(session.faction_id)
+        if not master or not faction:
+            raise ValueError(f"未找到门派或大师: {session.faction_id}")
+
+        substyle_info = _build_substyle_info(session.faction_id)
+
+        system_prompt = tasks.build_feedback_system(
+            master_personality=faction.get("masterPersonality", ""),
+            faction_name=session.faction_name,
+            master_name=session.master_name,
+            substyle_info=substyle_info,
+        )
+        user_prompt = tasks.build_feedback_user(
+            faction_name=session.faction_name,
+            round_num=round_num,
+            prev_count=len(session.rounds),
+            history=session.history_text,
+            student_description=student_description,
+            master_name=session.master_name,
+        )
+
+        raw = call_llm(system_prompt, user_prompt, temperature=0.6)
+        data = _extract_json(raw)
+
+        t_round = TrainingRound(
+            round_num=round_num,
+            student_description=student_description,
+            master_feedback=data.get("master_feedback", "（大师正在思考...）"),
+            matched_card_id=data.get("matched_card_id", ""),
+            matched_card_name=data.get("matched_card_name", ""),
+            confidence=float(data.get("confidence", 0)),
+            match_reason=data.get("match_reason", ""),
+            recommended_substyle=data.get("recommended_substyle", ""),
+            recommended_substyle_id=data.get("recommended_substyle_id", ""),
+        )
+
+        if t_round.confidence > 0.7:
+            session.completed = True
+            session.final_card_id = t_round.matched_card_id
+            session.final_card_name = t_round.matched_card_name
+            session.final_confidence = t_round.confidence
+            logger.info(f"  ✅ confidence > 0.7，自动完成匹配")
+
+        session.rounds.append(t_round)
+        _save_session(session)
 
     return t_round
 
 
+def _build_card_catalog(faction_id: str) -> str:
+    """构建卡牌目录文本（含 ID）"""
+    faction = get_faction(faction_id)
+    if not faction:
+        return ""
+    lines = []
+    for ss in faction.get("subStyles", []):
+        cards = get_cards_by_substyle(ss["id"])
+        if cards:
+            lines.append(f"【{ss['name']}】")
+            for c in cards:
+                lines.append(f"  {c['name']}（id={c['id']}）")
+    return "\n".join(lines)
+
+
 def finalize_match(session: TrainingSession) -> dict:
     """最终匹配 — 基于全部对话历史给出最终卡牌"""
+    card_catalog = _build_card_catalog(session.faction_id)
+
     system_prompt = tasks.build_final_match_system()
     user_prompt = tasks.build_final_match_user(
         total_rounds=len(session.rounds),
         full_history=session.history_text,
+        card_catalog=card_catalog,
     )
 
     logger.info(f"--- 最终匹配 ---")
     raw = call_llm(system_prompt, user_prompt, temperature=0.3)
     data = _extract_json(raw)
 
-    session.final_card_id = data.get("final_card_id", session.final_card_id)
-    session.final_card_name = data.get("final_card_name", session.final_card_name)
-    session.final_confidence = float(data.get("final_confidence", session.final_confidence))
+    final_confidence = float(data.get("final_confidence", 0))
+    session.final_confidence = final_confidence
     session.master_summary = data.get("master_summary", "")
     session.completed = True
 
+    # 只有 confidence >= 0.7 才算真正匹配上
+    if final_confidence >= 0.7:
+        session.final_card_id = data.get("final_card_id", session.final_card_id)
+        session.final_card_name = data.get("final_card_name", session.final_card_name)
+        data["matched"] = True
+        logger.info(f"  ✅ 最终匹配: {session.final_card_name} (confidence={final_confidence:.2f})")
+    else:
+        session.final_card_id = ""
+        session.final_card_name = ""
+        data["matched"] = False
+        logger.info(f"  ❌ 匹配不达标: confidence={final_confidence:.2f} < 0.7，未获得招式")
+
     _save_session(session)
 
-    logger.info(f"  最终匹配: {session.final_card_name} (confidence={session.final_confidence:.2f})")
-
     return data
+
+
+def finalize_hermit(session: TrainingSession) -> dict:
+    """世外高人 — 基于全部对话生成自定义卡牌"""
+    system_prompt = tasks.build_hermit_finalize_system()
+    user_prompt = tasks.build_hermit_finalize_user(
+        total_rounds=len(session.rounds),
+        full_history=session.history_text,
+    )
+
+    logger.info(f"--- 世外高人最终生成 ---")
+    raw = call_llm(system_prompt, user_prompt, temperature=0.4)
+    data = _extract_json(raw)
+
+    is_reasonable = data.get("is_reasonable", False) and data.get("has_sufficient_detail", False)
+    session.final_confidence = 1.0 if is_reasonable else 0.0
+    session.card_description = data.get("card_description", "")
+    session.card_displacement = float(data.get("displacement", 0.3))
+    session.master_summary = data.get("master_summary", "")
+    session.completed = True
+
+    if is_reasonable:
+        session.final_card_id = "hermit-placeholder"
+        session.final_card_name = data.get("card_name", "自创招式")
+        data["matched"] = True
+        logger.info(f"  ✅ 世外高人: {session.final_card_name}")
+    else:
+        session.final_card_id = ""
+        session.final_card_name = ""
+        data["matched"] = False
+        logger.info(f"  ❌ 世外高人: 描述不够具体，未生成卡牌")
+
+    _save_session(session)
+    return data
+
+

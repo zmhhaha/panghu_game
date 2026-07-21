@@ -24,6 +24,7 @@ type Message = MasterMsg | PlayerMsg | SystemMsg;
 
 interface SessionInfo {
   sessionId: string;
+  factionId: string;
   factionName: string;
   masterName: string;
   maxRounds: number;
@@ -158,6 +159,37 @@ export function TrainingGroundPage() {
     setIsLoading(false);
   };
 
+  // Step 1b: Hermit training
+  const handleHermitStart = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const info = await api.training.hermitStart();
+      setSession({
+        sessionId: info.sessionId,
+        factionId: "hermit",
+        factionName: info.factionName,
+        masterName: info.masterName,
+        maxRounds: info.maxRounds,
+      });
+      setPhase("training");
+      setMessages([
+        {
+          role: "master",
+          content: `老夫云游四海，见你颇有习武之缘。且说来听听——你心中构想的独门绝技，是什么样子的？`,
+        },
+        {
+          role: "system",
+          content: `共可习武 ${info.maxRounds} 轮。描述你自创的招式，老夫帮你完善。「世外高人」不匹配已有招式，而是助你开创独门武功。`,
+        },
+      ]);
+    } catch (err: any) {
+      setError(err.message || "高人云游未归，请稍后再试");
+    }
+    setIsLoading(false);
+  };
+
   // Step 2: Submit a round
   const handleSubmitDescription = async () => {
     const text = inputText.trim();
@@ -175,8 +207,19 @@ export function TrainingGroundPage() {
     // 已达最大轮数：不让再提交，显示退场语
     const trainingRounds = messages.filter((m) => m.role === "master" && m !== messages[0]).length;
     if (trainingRounds >= session.maxRounds) {
-      // 退场语
-      const farewells: Record<string, string[]> = {
+      if (session.factionId === "hermit") {
+        setMessages((prev) => [...prev, {
+          role: "master" as const,
+          content: "老夫已经明了你的想法。是时候看看你自创的招式能否成型了。",
+        }, {
+          role: "system" as const,
+          content: " 描述已足够，点击查看结果完成自创。",
+        }]);
+        setCompleted(true);
+        return;
+      } else {
+        // 门派退场语
+        const farewells: Record<string, string[]> = {
         "shaolin-temple": ["阿弥陀佛，施主与我佛无缘，请回吧。",
           `老衲观施主心性未定，强练无益。待他日明心见性，再来不迟。`,
           "孺子不可教也！少林功夫讲究根基，施主还需多加磨炼。"],
@@ -202,6 +245,7 @@ export function TrainingGroundPage() {
       }]);
       setCompleted(true);
       return;
+      }
     }
 
     setMessages((prev) => [...prev, { role: "player", content: text }]);
@@ -211,11 +255,12 @@ export function TrainingGroundPage() {
 
     try {
       const result = await submitRound(session.sessionId, text);
+      const isHermit = session.factionId === "hermit";
 
       const masterMsg: MasterMsg = {
         role: "master",
         content: result.masterFeedback,
-        matchedCard: {
+        matchedCard: isHermit ? undefined : {
           id: result.matchedCardId,
           name: result.matchedCardName,
           confidence: result.confidence,
@@ -227,10 +272,11 @@ export function TrainingGroundPage() {
       if (result.completed) {
         newMsgs.push({
           role: "system",
-          content: ` 大师觉得你的招式已趋成熟（confidence: ${(result.confidence * 100).toFixed(0)}%），习武完成！`,
+          content: isHermit ? " 高人觉得你的招式雏形已现，可以看看成果了！"
+            : ` 大师觉得你的招式已趋成熟（confidence: ${(result.confidence * 100).toFixed(0)}%），习武完成！`,
         });
         setCompleted(true);
-      } else if (result.confidence > 0.5) {
+      } else if (!isHermit && result.confidence > 0.5) {
         newMsgs.push({
           role: "system",
           content: ` 大师已有些许眉目（匹配度 ${(result.confidence * 100).toFixed(0)}%），继续打磨可更精确。`,
@@ -252,29 +298,59 @@ export function TrainingGroundPage() {
     setError(null);
 
     try {
-      const result = await finalMatch(session.sessionId);
-      const cards = getAllPresetCards() as PresetCard[];
-      const matchedCard = cards.find((c) => c.id === result.finalCardId) || null;
-
-      setMatchResult({
-        card: matchedCard,
-        confidence: result.finalConfidence,
-        summary: result.masterSummary,
-        substyle: result.substyleName,
-        totalRounds: result.totalRounds,
+      // 一次性调用 Server 完成 match + 保存记录 + 解锁卡牌
+      const result = await api.training.complete({
+        sessionId: session.sessionId,
+        factionId: session.factionId,
+        masterName: session.masterName,
+        trainingType: session.factionId === "hermit" ? "hermit" : undefined,
       });
-      setPhase("result");
-      // 保存习武记录到数据库
-      if (matchedCard) {
-        api.training.sessions.create({
-          factionId: session.factionId || undefined,
-          masterName: session.masterName,
-          rounds: result.totalRounds,
-          matchedCardId: matchedCard.id,
-        }).catch(() => {});
-        // 解锁卡牌
-        api.cards.unlock(matchedCard.id).catch(() => {});
+
+      if (result.matched) {
+        if (result.trainingType === "hermit" || session.factionId === "hermit") {
+          // 世外高人：用返回的自定义卡牌信息显示
+          const hermitCard = result.finalCardId ? {
+            id: result.finalCardId,
+            name: result.finalCardName,
+            description: result.cardDescription || "自创招式，独门绝技",
+            factionId: "hermit",
+            isStarter: false,
+            displacement: result.cardDisplacement || 0,
+            gameId: "martial-hegemony" as const,
+            keywords: [],
+            source: "preset" as const,
+            createdAt: new Date().toISOString(),
+          } as PresetCard : null;
+
+          setMatchResult({
+            card: hermitCard,
+            confidence: 1,
+            summary: result.masterSummary || "自创招式，独步天下",
+            substyle: "自创武功",
+            totalRounds: result.totalRounds,
+          });
+        } else {
+          const cards = getAllPresetCards() as PresetCard[];
+          const matchedCard = cards.find((c) => c.id === result.finalCardId) || null;
+
+          setMatchResult({
+            card: matchedCard,
+            confidence: result.finalConfidence,
+            summary: result.masterSummary,
+            substyle: result.substyleName,
+            totalRounds: result.totalRounds,
+          });
+        }
+      } else {
+        setMatchResult({
+          card: null,
+          confidence: result.finalConfidence,
+          summary: result.masterSummary,
+          substyle: "",
+          totalRounds: result.totalRounds,
+        });
       }
+      setPhase("result");
     } catch (err: any) {
       setError(err.message || "获取最终结果失败");
     }
@@ -418,6 +494,7 @@ export function TrainingGroundPage() {
 
         {/* Hermit */}
         <div
+          onClick={handleHermitStart}
           style={{
             textAlign: "center",
             background: "linear-gradient(145deg, #1a1a2e, #0d0d1a)",
@@ -425,9 +502,17 @@ export function TrainingGroundPage() {
             borderRadius: 12,
             padding: 32,
             cursor: "pointer",
-            opacity: 0.6,
+            opacity: isLoading ? 0.5 : 1,
+            transition: "all 0.2s",
           }}
-          title="即将开放"
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "#b388ff";
+            e.currentTarget.style.background = "linear-gradient(145deg, #2a2a4e, #1a1a2e)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "#4A0080";
+            e.currentTarget.style.background = "linear-gradient(145deg, #1a1a2e, #0d0d1a)";
+          }}
         >
           <div style={{ fontSize: 48 }}></div>
           <div
@@ -441,7 +526,7 @@ export function TrainingGroundPage() {
             世外高人
           </div>
           <div style={{ fontSize: 13, color: "#7c4dff88", marginTop: 4 }}>
-            突破门派限制，自创独门绝技（即将开放）
+            突破门派限制，自创独门绝技
           </div>
         </div>
 
@@ -876,6 +961,7 @@ export function TrainingGroundPage() {
   }
 
   // Result view
+  const noMatch = matchResult && !matchResult.card;
   return (
     <div style={{ maxWidth: 700, margin: "0 auto", padding: "32px 24px" }}>
       <h2
@@ -886,7 +972,7 @@ export function TrainingGroundPage() {
           textAlign: "center",
         }}
       >
-         习武完成！
+        {noMatch ? " 习武未成" : " 习武完成！"}
       </h2>
       <p
         style={{
@@ -896,7 +982,9 @@ export function TrainingGroundPage() {
           marginBottom: 32,
         }}
       >
-        经过 {matchResult?.totalRounds || "数"} 轮打磨，大师为你选定了招式
+        {noMatch
+          ? `经过 ${matchResult?.totalRounds || "数"} 轮习武，大师认为你的功夫尚未成型`
+          : `经过 ${matchResult?.totalRounds || "数"} 轮打磨，大师为你选定了招式`}
       </p>
 
       <div
@@ -908,26 +996,34 @@ export function TrainingGroundPage() {
           marginBottom: 32,
         }}
       >
-        {matchResult?.card ? (
-          <CardComponent card={matchResult.card} size="lg" />
-        ) : (
+        {noMatch ? (
           <div
             style={{
               width: 280,
               height: 420,
-              background: "linear-gradient(180deg, #2d2320, #1a1414)",
-              border: "2px solid #d4a373",
+              background: "linear-gradient(180deg, #2d1a1a, #1a1414)",
+              border: "2px solid #8B0000",
               borderRadius: 12,
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
               color: "#8B7D6B",
               fontSize: 14,
+              gap: 12,
             }}
           >
-            卡牌数据加载中...
+            <div style={{ fontSize: 48 }}>😤</div>
+            <div style={{ color: "#ef9a9a", fontSize: 16, fontWeight: "bold" }}>
+              少侠请重新修炼再来！
+            </div>
+            <div style={{ fontSize: 12, color: "#5a4a3a", textAlign: "center", padding: "0 24px" }}>
+              大师对你的描述把握不准，还需多加磨炼
+            </div>
           </div>
-        )}
+        ) : matchResult?.card ? (
+          <CardComponent card={matchResult.card} size="lg" />
+        ) : null}
 
         <div style={{ textAlign: "center", maxWidth: 400 }}>
           {matchResult?.card && (

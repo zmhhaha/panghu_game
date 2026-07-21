@@ -7,6 +7,7 @@ import { router as cardRouter } from "./routes/cards.js";
 import { router as deckRouter } from "./routes/decks.js";
 import { router as duelRouter } from "./routes/duels.js";
 import { router as trainingRouter } from "./routes/training.js";
+import { router as comboCacheRouter } from "./routes/combo-cache.js";
 import { errorHandler } from "./middleware/error.js";
 
 const app = express();
@@ -25,11 +26,19 @@ app.use("/api/ai/duel", createProxyMiddleware({
   changeOrigin: true,
   pathRewrite: (path) => "/api/duel" + path,
 }));
-app.use("/api/ai/combo", createProxyMiddleware({
-  target: COMBO_JUDGE_URL,
-  changeOrigin: true,
-  pathRewrite: (path) => "/api/combo" + path,
-}));
+// combo 走缓存路由，不直接代理到 combo-judge
+app.use("/api/ai/combo", (req, res, next) => {
+  // POST /api/ai/combo/judge 走缓存逻辑（需要先解析 body）
+  if (req.method === "POST" && req.path === "/judge") {
+    return express.json()(req, res, () => comboCacheRouter(req, res, next));
+  }
+  // 其他（如 GET /health）直接转发
+  createProxyMiddleware({
+    target: COMBO_JUDGE_URL,
+    changeOrigin: true,
+    pathRewrite: (path) => "/api/combo" + path,
+  })(req, res, next);
+});
 app.use("/api/ai/training", createProxyMiddleware({
   target: TRAINING_GROUND_URL,
   changeOrigin: true,

@@ -63,6 +63,16 @@ CREATE TABLE IF NOT EXISTS user_cards (
   card_id TEXT NOT NULL,
   unlocked_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS combo_cache (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cache_key TEXT NOT NULL UNIQUE,
+  move_a TEXT NOT NULL,
+  move_b TEXT NOT NULL,
+  result JSONB NOT NULL,
+  created_at TEXT NOT NULL,
+  hit_count INTEGER NOT NULL DEFAULT 1
+);
 "
 
 case "${1:-}" in

@@ -23,6 +23,8 @@ import type {
   DeckResponse,
   DuelRecordResponse,
   TrainingSessionResponse,
+  TrainingCompleteResponse,
+  HermitStartResponse,
 } from "./types.js";
 
 export * from "./types.js";
@@ -91,6 +93,16 @@ async function request<T>(
 
 // ── API 模块 ──────────────────────────────────────────────
 
+/**
+ * 连招判定缓存
+ * key = "${moveA}|${moveB}" 的 MD5 简化版
+ */
+const comboCache = new Map<string, ComboJudgeResponse>();
+
+function comboCacheKey(params: { moveA: string; moveB: string }): string {
+  return `${params.moveA.slice(0, 80)}|${params.moveB.slice(0, 80)}`;
+}
+
 export const apiClient = {
   health: {
     check(signal?: AbortSignal) {
@@ -146,10 +158,22 @@ export const apiClient = {
 
   combo: {
     judge(
-      params: { moveA: string; moveB: string; context?: string },
+      params: { moveA: string; moveB: string },
       signal?: AbortSignal,
     ) {
-      return request<ComboJudgeResponse>("POST", "/api/ai/combo/judge", params, { signal });
+      const key = comboCacheKey(params);
+      const cached = comboCache.get(key);
+      if (cached) return Promise.resolve(cached);
+
+      return request<ComboJudgeResponse>("POST", "/api/ai/combo/judge", params, { signal })
+        .then((res) => {
+          comboCache.set(key, res);
+          return res;
+        });
+    },
+    /** 清除连招缓存（换卡组或起手式变化时调用） */
+    clearCache() {
+      comboCache.clear();
     },
   },
 
@@ -170,6 +194,14 @@ export const apiClient = {
       create(params: { factionId?: string; masterName?: string; rounds?: number; matchedCardId?: string }, signal?: AbortSignal) {
         return request<{ id: string; message: string }>("POST", "/api/v1/training/sessions", params, { signal });
       },
+    },
+    /** 习武完成（Server 内部调用 AI match + 写 DB + 解锁卡牌） */
+    complete(params: { sessionId: string; factionId?: string; masterName?: string; trainingType?: string }, signal?: AbortSignal) {
+      return request<TrainingCompleteResponse>("POST", "/api/v1/training/complete", params, { signal });
+    },
+    /** 世外高人开始习武 */
+    hermitStart(signal?: AbortSignal) {
+      return request<HermitStartResponse>("POST", "/api/ai/training/hermit/start", undefined, { signal });
     },
   },
 

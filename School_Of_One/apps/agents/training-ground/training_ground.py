@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from judge.orchestrator import create_session, get_session, process_round, finalize_match
+from judge.orchestrator import create_session, get_session, process_round, finalize_match, finalize_hermit, create_hermit_session
 from judge.data import get_factions
 from judge.llm import get_provider
 
@@ -50,6 +50,20 @@ app.add_middleware(
 
 
 # ============================================================
+#  Startup — 启动时从 Server 同步卡牌数据
+# ============================================================
+
+@app.on_event("startup")
+async def load_data():
+    logger.info("正在从 Server 同步门派与卡牌数据...")
+    try:
+        from judge.data import reload
+        reload()
+    except Exception as e:
+        logger.warning(f"首次同步失败，请求时自动重试: {e}")
+
+
+# ============================================================
 #  Schemas
 # ============================================================
 
@@ -59,9 +73,18 @@ class StartRequest(BaseModel):
 
 class StartResponse(BaseModel):
     sessionId: str
+    factionId: str
     factionName: str
     masterName: str
     maxRounds: int
+
+
+class HermitStartResponse(BaseModel):
+    sessionId: str
+    factionName: str = "世外高人"
+    masterName: str = "世外高人"
+    maxRounds: int = 5
+    trainingType: str = "hermit"
 
 
 class RoundRequest(BaseModel):
@@ -81,8 +104,8 @@ class RoundResponse(BaseModel):
 
 
 class MatchResponse(BaseModel):
-    finalCardId: str
-    finalCardName: str
+    finalCardId: str = ""
+    finalCardName: str = ""
     finalConfidence: float = 0.0
     matchExplanation: str = ""
     masterSummary: str = ""
@@ -90,6 +113,11 @@ class MatchResponse(BaseModel):
     totalRounds: int = 0
     completed: bool
     provider: str
+    matched: bool = False
+    # 世外高人
+    cardDescription: str = ""
+    cardDisplacement: float = 0.0
+    trainingType: str = "faction"
 
 
 class FactionItem(BaseModel):
@@ -127,12 +155,22 @@ def start_training(req: StartRequest):
         session = create_session(req.factionId)
         return StartResponse(
             sessionId=session.session_id,
+            factionId=session.faction_id,
             factionName=session.faction_name,
             masterName=session.master_name,
             maxRounds=session.max_rounds,
         )
     except ValueError as e:
         raise HTTPException(400, detail=str(e))
+
+
+@app.post("/api/training/hermit/start", response_model=HermitStartResponse)
+def start_hermit():
+    """开始世外高人习武"""
+    session = create_hermit_session()
+    return HermitStartResponse(
+        sessionId=session.session_id,
+    )
 
 
 @app.post("/api/training/round", response_model=RoundResponse)
@@ -179,10 +217,29 @@ def match_result(req: MatchRequest):
 
     if not session.completed:
         try:
-            finalize_match(session)
+            if session.training_type == "hermit":
+                finalize_hermit(session)
+            else:
+                finalize_match(session)
         except Exception as e:
             logger.error(f"最终匹配失败: {e}", exc_info=True)
             raise HTTPException(500, detail=str(e))
+
+    # 世外高人直接返回
+    if session.training_type == "hermit":
+        return MatchResponse(
+            finalCardId=session.final_card_id,
+            finalCardName=session.final_card_name,
+            finalConfidence=session.final_confidence,
+            masterSummary=session.master_summary,
+            totalRounds=len(session.rounds),
+            completed=session.completed,
+            provider=get_provider(),
+            matched=session.final_confidence >= 0.7,
+            cardDescription=session.card_description,
+            cardDisplacement=session.card_displacement,
+            trainingType="hermit",
+        )
 
     # 从卡牌数据获取子分支信息
     substyle = ""
@@ -200,9 +257,14 @@ def match_result(req: MatchRequest):
                     break
 
     # 生成总结
+    # matched 标记来自 finalize_match 返回的 data（已写入 session）
+    matched = session.final_confidence >= 0.7
+    final_card_id = session.final_card_id if matched else ""
+    final_card_name = session.final_card_name if matched else ""
+
     return MatchResponse(
-        finalCardId=session.final_card_id,
-        finalCardName=session.final_card_name,
+        finalCardId=final_card_id,
+        finalCardName=final_card_name,
         finalConfidence=session.final_confidence,
         matchExplanation=session.rounds[-1].match_reason if session.rounds else "",
         masterSummary=session.master_summary,
@@ -210,6 +272,7 @@ def match_result(req: MatchRequest):
         totalRounds=len(session.rounds),
         completed=session.completed,
         provider=get_provider(),
+        matched=matched,
     )
 
 
