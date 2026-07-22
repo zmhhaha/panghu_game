@@ -1,6 +1,6 @@
 # 《自成一派》游戏设计文档 (GDD)
 
-> **版本**：v0.2 | **更新日期**：2026-07-20 | **状态**：Phase 2 开发中
+> **版本**：v0.3 | **更新日期**：2026-07-22 | **状态**：Phase 3 开发中
 
 ---
 
@@ -14,9 +14,11 @@
 6. [战斗系统](#六战斗系统)
 7. [习武场（AI 训练系统）](#七习武场ai-训练系统)
 8. [连招系统](#八连招系统)
-9. [玩家成长系统](#九玩家成长系统)
-10. [两作差异化设计](#十两作差异化设计)
-11. [技术架构](#十一技术架构)
+9. [以武会友（PvP 约战系统）](#九以武会友pvp-约战系统)
+10. [玩家成长系统](#十玩家成长系统)
+11. [两作差异化设计](#十一两作差异化设计)
+12. [技术架构](#十二技术架构)
+13. [缓存系统](#十三缓存系统)
 
 ---
 
@@ -305,9 +307,70 @@ AI 大师给出反馈：
 
 ---
 
-## 九、玩家成长系统
+## 九、以武会友（PvP 约战系统）
 
-### 9.1 等级与经验
+### 9.1 玩法概述
+
+玩家可以创建房间邀请好友进行实时对战。当前为异步回合制（双方各出一招后才判定），无需 WebSocket，通过轮询实现。
+
+### 9.2 对战模式
+
+| 模式 | 名称 | 说明 |
+|:---|:---|:---|
+| **切磋武艺** | PvAI | 与 AI 对战，磨练招式 |
+| **以武会友** | PvP | 邀请好友，创建或加入房间对战 |
+
+### 9.3 房间流程
+
+```
+比武场首页 → 点击「以武会友」
+  ├── 创建房间
+  │     → 生成 4 位房间码 + 分享链接
+  │     → 进入等待页面，显示房间码
+  │     → 自动复制分享链接到剪贴板
+  │
+  └── 加入房间
+        → 输入房间码
+        → 调 POST /room/lookup 查 roomId
+        → 调 POST /room/:id/join 加入
+
+双方就绪 → 自动开始对战
+  └── 回合制：
+        ├── 玩家选牌出招 → 等待对手
+        ├── 对手出招后 → 双方出招数据发到 duel-judge 裁决
+        └── 展示结果 → 下一回合
+
+一方 30 秒未出招 → 自动视为放弃本回合（退回起手式）
+```
+
+### 9.4 API 接口
+
+| 端点 | 方法 | 说明 |
+|:---|:---:|:---|
+| `/api/v1/duels/room` | POST | 创建房间，返回 roomId + code + shareLink |
+| `/api/v1/duels/room/lookup` | POST | 通过房间码查找 roomId |
+| `/api/v1/duels/room/:id/join` | POST | 加入房间 |
+| `/api/v1/duels/room/:id` | GET | 轮询房间状态（含对手出招信息） |
+| `/api/v1/duels/room/:id/action` | POST | 提交出招 |
+| `/api/v1/duels/room/:id/finish` | POST | 结束对战（保存双方记录） |
+
+### 9.5 技术实现
+
+- **房间存储**：服务端进程内存 `Map<string, DuelRoom>`（当前 1 pod，后续需迁到 Redis）
+- **通信方式**：前端每 2s 轮询 GET /room/:id 获取状态
+- **出招判断**：双方各自提交出招到 room，双方都提交后才调用 duel-judge
+- **超时机制**：GET /room/:id 中检测 `roundStartTime + 30s`，超时自动替未出招方填入 `__timeout__`
+- **房间码**：4 位 `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` 随机生成
+
+### 9.6 对战记录
+
+对战结束后，双方各存一条 `duel_records` 记录，包含对手用户名和胜负结果。
+
+---
+
+## 十、玩家成长系统
+
+### 10.1 等级与经验
 
 | 属性 | 设计 |
 |:---|:---|
@@ -315,7 +378,7 @@ AI 大师给出反馈：
 | 经验 (xp) | 通过比武、习武获取。比武获胜 +10xp，习武完成 +5xp |
 | 门派等级 | 每个门派独立进度 |
 
-### 9.2 收集要素
+### 10.2 收集要素
 
 - 136+ 张预设卡牌
 - 自定义卡牌（世外高人模式）
@@ -327,9 +390,9 @@ AI 大师给出反馈：
 
 ---
 
-## 十、两作差异化设计
+## 十一、两作差异化设计
 
-### 10.1 通用核心（共享）
+### 11.1 通用核心（共享）
 
 - 四大师门架构
 - 卡牌构筑玩法（15-30 张卡组）
@@ -338,7 +401,7 @@ AI 大师给出反馈：
 - 用户/账户系统
 - 品牌视觉体系
 
-### 10.2 差异化设计
+### 11.2 差异化设计
 
 | 维度 | 🗡️ 兵器版 | ✊ 拳脚版 |
 |:---|:---|:---|
@@ -350,9 +413,9 @@ AI 大师给出反馈：
 
 ---
 
-## 十一、技术架构
+## 十二、技术架构
 
-### 11.1 整体架构图
+### 12.1 整体架构图
 
 ```
 用户浏览器 (React SPA)
@@ -369,7 +432,7 @@ Nginx（前端静态服务器）
       └── / ───────────► React SPA（Vite 构建）
 ```
 
-### 11.2 Monorepo 结构
+### 12.2 Monorepo 结构
 
 ```
 School_Of_One/
@@ -388,7 +451,7 @@ School_Of_One/
 └── deploy/                  # Docker + K8s 部署配置
 ```
 
-### 11.3 数据流
+### 12.3 数据流
 
 ```
 前端（mock/API 调用）
@@ -397,7 +460,7 @@ School_Of_One/
   └─ 生产期：通过 api-client → Express → 数据库 / AI Agent
 ```
 
-### 11.4 数据库结构 (PostgreSQL)
+### 12.4 数据库结构 (PostgreSQL)
 
 通过 **Drizzle ORM** 管理，数据库地址由环境变量 `DATABASE_URL` 指定。
 
@@ -407,10 +470,14 @@ School_Of_One/
 | `decks` | 卡组 | id (uuid), user_id, name, starter_card_id, card_ids (jsonb) |
 | `training_sessions` | 习武记录 | id (uuid), user_id, faction_id, master_name, rounds, matched_card_id |
 | `duel_records` | 对战记录 | id (uuid), user_id, opponent, winner, rounds, player_hearts, ai_hearts, history (jsonb) |
+| `user_cards` | 用户已解锁卡牌 | id (uuid), user_id, card_id, unlocked_at |
+| `custom_cards` | 自定义卡牌元数据 | id (uuid), user_id, card_id, name, faction_id, description, displacement, ... |
+| `combo_cache` | 连招判定缓存 | id (uuid), cache_key, move_a, move_b, result (jsonb), hit_count |
+| `duel_cache` | 比武判定缓存 | id (uuid), cache_key, move_a, move_b, distance, result (jsonb), hit_count |
 
 **用户认证**：生产环境通过 oauth2-proxy + Casdoor OIDC SSO 认证，首次访问时自动注册到数据库。本地开发可通过 `NODE_ENV!=production` 回退为默认开发者用户。
 
-### 11.5 API 路由一览
+### 12.5 API 路由一览
 
 | 端点 | 方法 | 说明 | 状态 |
 |:---|:---:|:---|:---:|
@@ -423,13 +490,48 @@ School_Of_One/
 | `/api/v1/decks/:id` | DELETE | 删除卡组 | ✅ |
 | `/api/v1/duels` | GET/POST | 对战记录 | ✅ |
 | `/api/v1/training/sessions` | GET/POST | 习武记录 | ✅ |
+| `/api/v1/cards/mine` | GET | 已解锁卡牌 ID 列表 | ✅ |
+| `/api/v1/cards/unlock` | POST | 解锁卡牌 | ✅ |
+| `/api/v1/cards/custom` | GET | 自定义卡牌列表 | ✅ |
 | `/api/ai/duel/judge` | POST | → duel-judge Agent | ✅ |
 | `/api/ai/combo/judge` | POST | → combo-judge Agent | ✅ |
 | `/api/ai/training/*` | POST | → training-ground Agent | ✅ |
 
-### 11.6 Monorepo 结构更新
+### 12.6 缓存系统
+
+#### combo_cache
+
+- **cache_key**: `md5(moveA | moveB)`
+- 命中时递增 hit_count，直接返回缓存的 JSON
+- 未命中时转发 combo-judge，异步写入缓存
+
+#### duel_cache
+
+- **cache_key**: `md5(moveA | moveB | distance | cardA | cardB)`
+- 和 combo_cache 结构一致，但多了 distance/cardA/cardB 参与 key
 
 ---
+
+## 十三、缓存系统
+
+### 13.1 combo_cache（连招判定缓存）
+
+- **cache_key**: `md5(moveA | moveB)`
+- 命中时递增 hit_count，直接返回缓存的 JSON
+- 未命中时转发 combo-judge，异步写入缓存
+- 对应表：`combo_cache`，路由：`apps/server/src/routes/combo-cache.ts`
+
+### 13.2 duel_cache（比武判定缓存）
+
+- **cache_key**: `md5(moveA | moveB | distance | cardA | cardB)`
+- 结构和 combo_cache 一致，但多了 distance/cardA/cardB 参与 key 计算
+- 对应表：`duel_cache`，路由：`apps/server/src/routes/duel-cache.ts`
+
+### 13.3 清理脚本
+
+```bash
+bash cleanup-db.sh --apply   # 清空 combo_cache + duel_cache
+```
 
 ## 附录 A：术语表
 

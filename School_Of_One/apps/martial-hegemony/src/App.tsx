@@ -31,6 +31,7 @@ function AppInner() {
         <Route path="/training" element={<TrainingGroundPage />} />
         <Route path="/deck" element={<DeckBuilderPage />} />
         <Route path="/duel" element={<DuelPage />} />
+        <Route path="/duel/room/:id" element={<DuelPage />} />
       </Routes>
     </div>
   );

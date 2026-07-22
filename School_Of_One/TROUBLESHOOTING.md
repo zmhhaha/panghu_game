@@ -1,6 +1,6 @@
 # School Of One — 问题排查记录
 
-> **最后更新**：2026-07-20
+> **最后更新**：2026-07-22
 
 ## Express 反向代理问题
 
@@ -438,6 +438,83 @@ const res = await fetch(url, {
 而 Ingress 有 `rewrite-target: /` 注解，会把所有路径前缀吞掉。`POST /api/ai/combo/judge` → Ingress rewrite → `POST /` → combo-judge 收到路径不匹配 → 502。
 
 **当前状态**：生产流量实际走的是 `Cloudflare Tunnel → oauth2-proxy → Nginx → server-service`，完全**不经过 Ingress**，因此该问题未在生产环境出现。Ingress 文件仅作为参考。如需将来启用 Ingress，需将所有 `/api/` 路由统一指向 `server-service`。
+
+---
+
+## 以武会友房间（服端内存存储）跨 Pod 问题（2026-07-22 修复）
+
+### 问题描述
+
+点击「以武会友」→「创建房间」创建成功后，朋友输入房间码加入时却提示「房间不存在或已结束」。直接在浏览器 Network 中可以看到 `/room/lookup` 返回 404。
+
+### 架构链路
+
+```
+创建房间请求 → nginx → server pod A → rooms.set(id, room)  ✅
+查询房间请求 → nginx → server pod B → rooms.get(id) → undefined ❌
+```
+
+`deploy/k8s/server.yaml` 配置了 `replicas: 2`，两个 server pod 共享 nginx 轮询。
+
+### 根因
+
+`duels.ts` 中的房间存储使用**进程内存**：
+
+```typescript
+const rooms = new Map<string, DuelRoom>();
+```
+
+Pod A 创建的房间，Pod B 看不到。两个 pod 各有各的 `rooms` Map。
+
+### 修复
+
+临时方案：缩容到 1 个 pod，保证所有请求落到同一进程。
+
+```bash
+kubectl scale -n school-of-one deployment/server --replicas=1
+```
+
+长期方案：把房间存储搬到 Redis（复用已有的 `redis-secret`），与习武场 session 持久化走同一套基础设施。
+
+### 教训
+
+1. **进程内存状态在多副本下不共享**：任何用 `new Map()` / 内存变量存的状态，多副本部署时都会出问题
+2. **Server replica 数与状态存储方式要匹配**：有状态的服务要么 1 副本，要么用外部存储（Redis/DB）
+3. **日志排查方法**：`kubectl logs -n school-of-one deploy/server` 会随机选一个 pod，看不出是哪个 pod 处理的请求；需要用 `kubectl logs -n school-of-one -l app=server --tail=20 --prefix=true` 同时看两个 pod
+
+---
+
+## 以武会友：加入房间流程设计（2026-07-22）
+
+### 场景：有分享链接
+
+```
+玩家 A 创建房间 → 获得房间码 + 分享链接
+分享链接格式：/duel/room/:roomId
+
+玩家 B 点链接进入 → URL 携带 roomId → 自动识别
+  → 显示加入房间界面（只需要输入 4 位房间码验证）
+```
+
+### 场景：无分享链接（直接在比武场点击加入房间）
+
+```
+玩家 B 在比武场点击「以武会友」→「加入房间」
+  → 输入房间码
+  → 前端调用 POST /api/v1/duels/room/lookup { code }
+  → 后端遍历 rooms Map，按 code 找到 roomId
+  → 返回 roomId
+  → 前端拿到 roomId 后再调 POST /api/v1/duels/room/:id/join 加入
+```
+
+### 关键设计决策
+
+| 问题 | 选择 | 理由 |
+|---|---|---|
+| 前端如何输入房间码 | 4 字符输入框，字母大写+数字 | 容易口述/打字分享 |
+| 查找房间支持无分享链接场景 | 新增 `/room/lookup` 接口 | 用户可能直接从朋友圈看到房间码就来加入，没有分享链接 |
+| 房间码重复 | `generateCode()` 生成随机 4 位，理论上可能重复 | 房间是临时的（进程内存），同时存在几千个房间才可能撞，当前场景不会 |
+| 加入后提示创建房间者 | 通过轮询 | 保持简单，无需 WebSocket |
 
 ---
 

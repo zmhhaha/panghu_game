@@ -1,3 +1,4 @@
+import { useNavigate, useParams } from "react-router-dom";
 import { PresetCard, DuelEngine, getAllPresetCards } from "@school-of-one/core";
 import { CardComponent } from "@school-of-one/ui-core";
 import { api } from "@school-of-one/api-client";
@@ -5,6 +6,7 @@ import type { CustomCardResponse } from "@school-of-one/api-client";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 
 type DuelPhase = "selecting" | "result" | "finished";
+type DuelMode = "ai" | "pvp" | null;
 
 interface DuelPlayer {
   name: string;
@@ -76,13 +78,26 @@ function loadDeck(): { starterId: string | null; normalIds: string[] } {
 }
 
 export function DuelPage() {
+  const navigate = useNavigate();
+  const params = useParams();
+  const roomIdFromUrl = params.id;
+  const [mode, setMode] = useState<DuelMode>(null);
+  const [roomCode, setRoomCode] = useState("");
+  const [myRoomId, setMyRoomId] = useState<string | null>(null);
+  const [mySide, setMySide] = useState<"A" | "B" | null>(null);
+  const [createdCode, setCreatedCode] = useState("");
+  const [showRoomInput, setShowRoomInput] = useState(false);
+
+  useEffect(() => {
+    if (roomIdFromUrl) setMyRoomId(roomIdFromUrl);
+  }, [roomIdFromUrl]);
+
   const { starterId: rawStarter, normalIds: rawNormals } = useMemo(() => loadDeck(), []);
   const starterId = useMemo(
     () => rawStarter ?? rawNormals.find((id) => allPresetCards.find((c) => c.id === id)?.isStarter) ?? null,
     [rawStarter, rawNormals],
   );
   const deckNormalIds = useMemo(() => {
-    // 如果起手式混在 normalIds 里，剔除出去
     const starter = rawStarter ?? rawNormals.find((id) => allPresetCards.find((c) => c.id === id)?.isStarter);
     return rawNormals.filter((id) => id !== starter);
   }, [rawNormals, rawStarter]);
@@ -91,38 +106,144 @@ export function DuelPage() {
     [starterId, deckNormalIds],
   );
 
-  // 如果卡组不合法，显示提示页面
+  const handleCreateRoom = async () => {
+    if (!starterId) return;
+    try {
+      const res = await fetch("/api/v1/duels/room", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deckIds: deckNormalIds, starterId }),
+      });
+      const data = await res.json();
+      setMyRoomId(data.roomId);
+      setMySide("A");
+      setCreatedCode(data.code);
+      navigator.clipboard.writeText(data.shareLink).catch(() => {});
+    } catch { alert("创建房间失败"); }
+  };
+
+  const handleJoinRoom = async () => {
+    if (!starterId || !roomCode.trim()) return;
+    try {
+      // 先查房间码对应的 roomId
+      const lookupRes = await fetch("/api/v1/duels/room/lookup", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: roomCode.trim() }),
+      });
+      if (!lookupRes.ok) { const e = await lookupRes.json(); alert(e.error || "房间不存在"); return; }
+      const lookup = await lookupRes.json();
+      const targetRoomId = myRoomId || lookup.roomId;
+      if (!targetRoomId) { alert("房间不存在"); return; }
+
+      const res = await fetch(`/api/v1/duels/room/${targetRoomId}/join`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: roomCode.trim(), deckIds: deckNormalIds, starterId }),
+      });
+      if (!res.ok) { const e = await res.json(); alert(e.error || "加入失败"); return; }
+      const data = await res.json();
+      setMyRoomId(targetRoomId);
+      setMySide(data.side);
+    } catch { alert("加入房间失败"); }
+  };
+
   if (!deckValid) {
     return (
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 24px", textAlign: "center" }}>
-        <h2 style={{ fontSize: 24, color: "#f5e6c8", marginBottom: 24 }}>
-           比武场
-        </h2>
-        <div style={{ fontSize: 14, color: "#8B7D6B", marginBottom: 16 }}>
-          需要一套有效的卡组才能比武
-        </div>
+        <h2 style={{ fontSize: 24, color: "#f5e6c8", marginBottom: 24 }}>比武场</h2>
+        <div style={{ fontSize: 14, color: "#8B7D6B", marginBottom: 16 }}>需要一套有效的卡组才能比武</div>
         <div style={{ fontSize: 12, color: "#5a4a3a", marginBottom: 24 }}>
           请先在演武场配好卡组（1 张起手式 + 14~29 张招式卡牌）
         </div>
-        <a
-          href="/deck"
-          style={{
-            display: "inline-block", padding: "10px 32px", fontSize: 14,
-            border: "2px solid #d4a373", borderRadius: 8,
-            background: "#4E342E", color: "#f5e6c8",
-            textDecoration: "none", fontFamily: "inherit",
-          }}
-        >
-          去组卡
-        </a>
+        <a href="/deck" style={{
+          display: "inline-block", padding: "10px 32px", fontSize: 14,
+          border: "2px solid #d4a373", borderRadius: 8,
+          background: "#4E342E", color: "#f5e6c8", textDecoration: "none", fontFamily: "inherit",
+        }}>去组卡</a>
       </div>
     );
   }
 
-  return <DuelArena starterId={starterId!} normalIds={deckNormalIds} />;
+  if (myRoomId && mySide) {
+    return <DuelArenaPvP roomId={myRoomId} side={mySide} starterId={starterId!} normalIds={deckNormalIds} createdCode={createdCode}
+      onExit={() => { setMyRoomId(null); setMySide(null); setCreatedCode(""); navigate("/duel"); }} />;
+  }
+
+  if (mode === "ai") {
+    return <DuelArenaAi starterId={starterId!} normalIds={deckNormalIds}
+      onExit={() => { setMode(null); navigate("/duel"); }} />;
+  }
+
+  if (mode === "pvp") {
+    return (
+      <div style={{ maxWidth: 600, margin: "0 auto", padding: "32px 24px", textAlign: "center" }}>
+        <div onClick={() => setMode(null)} style={{
+          display: "inline-block", marginBottom: 20, padding: "6px 16px",
+          border: "1px solid #b8956a", cursor: "pointer", fontSize: 13, color: "#d4a373",
+        }}>← 返回</div>
+        <h2 style={{ fontSize: 24, color: "#f5e6c8", marginBottom: 24 }}>以武会友</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+          <div onClick={handleCreateRoom} style={{
+            background: "linear-gradient(145deg, #2a2a4e, #1a1a2e)",
+            border: "1px solid #7c4dff", borderRadius: 12, padding: 40, cursor: "pointer",
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🆕</div>
+            <div style={{ fontSize: 20, fontWeight: "bold", color: "#b388ff" }}>创建房间</div>
+            <div style={{ fontSize: 13, color: "#7c4dff88", marginTop: 8 }}>生成房间码邀请好友</div>
+          </div>
+          <div onClick={() => setShowRoomInput(true)} style={{
+            background: "linear-gradient(145deg, #1a1a2e, #0d0d1a)",
+            border: "1px solid #7c4dff", borderRadius: 12, padding: 40, cursor: "pointer",
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🔑</div>
+            <div style={{ fontSize: 20, fontWeight: "bold", color: "#b388ff" }}>加入房间</div>
+            <div style={{ fontSize: 13, color: "#7c4dff88", marginTop: 8 }}>输入好友的房间码</div>
+          </div>
+        </div>
+        {showRoomInput ? (
+          <div style={{ marginTop: 24, padding: 20, background: "#1a1a2e", borderRadius: 12, border: "1px solid #7c4dff" }}>
+            <div style={{ fontSize: 16, color: "#b388ff", marginBottom: 12 }}>加入房间</div>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center" }}>
+              <input value={roomCode} onChange={(e) => setRoomCode(e.target.value)}
+                placeholder="输入房间码"
+                style={{ padding: "8px 14px", fontSize: 16, borderRadius: 8, border: "1px solid #7c4dff",
+                  background: "#0d0d1a", color: "#f5e6c8", width: 160, textAlign: "center",
+                  fontFamily: "inherit", letterSpacing: 4 }}
+                maxLength={4} />
+              <button onClick={handleJoinRoom}
+                style={{ padding: "8px 24px", fontSize: 14, borderRadius: 8,
+                  border: "1px solid #7c4dff", background: "#7c4dff", color: "#fff", cursor: "pointer" }}>
+                加入
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 700, margin: "0 auto", padding: "32px 24px", textAlign: "center" }}>
+      <h2 style={{ fontSize: 24, color: "#f5e6c8", marginBottom: 24 }}>比武场</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 32 }}>
+        <div onClick={() => setMode("ai")} style={{
+          background: "linear-gradient(145deg, #2d2320, #1a1414)",
+          border: "1px solid #4E342E", borderRadius: 12, padding: 32, cursor: "pointer",
+        }}>
+          <div style={{ fontSize: 20, fontWeight: "bold", color: "#f5e6c8" }}>切磋武艺</div>
+          <div style={{ fontSize: 13, color: "#8B7D6B", marginTop: 8 }}>与 AI 对战 · 磨练招式</div>
+        </div>
+        <div onClick={() => setMode("pvp")} style={{
+          background: "linear-gradient(145deg, #1a1a2e, #0d0d1a)",
+          border: "1px solid #7c4dff", borderRadius: 12, padding: 32, cursor: "pointer",
+        }}>
+          <div style={{ fontSize: 20, fontWeight: "bold", color: "#b388ff" }}>以武会友</div>
+          <div style={{ fontSize: 13, color: "#7c4dff88", marginTop: 8 }}>邀请好友 · 创建或加入房间</div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: string[] }) {
+function DuelArenaAi({ starterId, normalIds, onExit }: { starterId: string; normalIds: string[]; onExit: () => void }) {
   const [phase, setPhase] = useState<DuelPhase>("selecting");
   const [distance, setDistance] = useState(2.0);
   const [round, setRound] = useState(0);
@@ -691,6 +812,235 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
           <div key={i} style={{ fontSize: 12, color: i === 0 ? "#f5e6c8" : "#5a4a3a",
             marginBottom: 6, opacity: i === 0 ? 1 : 0.6,
             whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{msg}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DuelArenaPvP({ roomId, side, starterId, normalIds, createdCode = "", onExit }: {
+  roomId: string; side: "A" | "B" | null; starterId: string; normalIds: string[]; createdCode?: string; onExit: () => void;
+}) {
+  const [roomState, setRoomState] = useState<string>("waiting");
+  const [opponentName, setOpponentName] = useState<string | null>(null);
+  const [myTurn, setMyTurn] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [distance, setDistance] = useState(2.0);
+  const [round, setRound] = useState(0);
+  const [log, setLog] = useState<string[]>([]);
+  const [engine, setEngine] = useState<DuelEngine | null>(null);
+  const [playerHand, setPlayerHand] = useState<PresetCard[]>([]);
+  const [playerHearts, setPlayerHearts] = useState(10);
+  const [opponentHearts, setOpponentHearts] = useState(10);
+  const [myPlayed, setMyPlayed] = useState(false);
+  const [isFall, setIsFall] = useState(false);
+  const mulliganCountRef = useRef(2);
+  const MAX_MULLIGAN = 2;
+  const playerLastCardRef = useRef<PresetCard | null>(null);
+  const [comboScores, setComboScores] = useState<Record<string, { feasibility: number; difficulty: string } | null>>({});
+  const [phase, setPhase] = useState<DuelPhase>("selecting");
+
+  // 轮询房间状态
+  useEffect(() => {
+    if (!roomId || !side) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/v1/duels/room/${roomId}`);
+        if (!res.ok) { clearInterval(interval); return; }
+        const data = await res.json();
+        setRoomState(data.state);
+        setOpponentName(data.opponentName);
+        if (data.started && !gameStarted) {
+          setGameStarted(true);
+          const eng = new DuelEngine("player", "opponent", starterId, starterId);
+          setEngine(eng);
+          const fullMap = await ensureFullCardMap();
+          const startCard = fullMap.get(starterId);
+          if (startCard) {
+            playerLastCardRef.current = startCard;
+            setPlayerHand(drawFromDeck(normalIds));
+            setLog([`比武开始！双方相距 2米\n你摆出【${startCard.name}】（起手式）\n对手摆出起手式`]);
+          }
+        }
+        if (data.state === "in_progress" || data.state === "ready") {
+          setMyTurn(data.myTurn);
+        }
+        if (data.finished) {
+          clearInterval(interval);
+        }
+      } catch {}
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [roomId, side, gameStarted]);
+
+  // 提交出招
+  const playCard = async (card: PresetCard) => {
+    if (!engine || myPlayed) return;
+    try {
+      const combo = playerLastCardRef.current ? comboScores[card.id] : null;
+      let comboPrefix = "";
+      if (combo && combo.feasibility < 0.4) {
+        comboPrefix = `${playerLastCardRef.current!.name}后姿势不稳，强行出招`;
+      } else if (combo && combo.feasibility < 0.7) {
+        comboPrefix = `从${playerLastCardRef.current!.name}衔接`;
+      }
+      await fetch(`/api/v1/duels/room/${roomId}/action`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId: card.id, comboPrefix }),
+      });
+      setMyPlayed(true);
+      setPhase("result");
+    } catch {}
+  };
+
+  // 轮询对手出招并判定
+  useEffect(() => {
+    if (!myPlayed || !engine || !roomId || !side) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/v1/duels/room/${roomId}`);
+        const data = await res.json();
+        if (data.roundActions.length >= 2) {
+          clearInterval(interval);
+          const myAction = data.roundActions.find((a: any) => a.player === side);
+          const oppAction = data.roundActions.find((a: any) => a.player !== side);
+          if (!myAction || !oppAction) return;
+
+          const cardMap = await ensureFullCardMap();
+          const myCard = cardMap.get(myAction.cardId);
+          const oppCard = cardMap.get(oppAction.cardId);
+          if (!myCard || !oppCard) return;
+
+          const myDesc = myAction.comboPrefix
+            ? `[${myAction.comboPrefix}] ${cardToMoveDescription(myCard)}`
+            : cardToMoveDescription(myCard);
+          const oppDesc = oppAction.comboPrefix
+            ? `[${oppAction.comboPrefix}] ${cardToMoveDescription(oppCard)}`
+            : cardToMoveDescription(oppCard);
+
+          const verdict = await api.duel.judge({
+            moveA: myDesc, moveB: oppDesc,
+            distance, cardA: myCard.name, cardB: oppCard.name,
+            round: round + 1,
+          });
+
+          engine.applyExternalVerdict(myCard, oppCard, {
+            feasibilityA: verdict.feasibilityA, feasibilityB: verdict.feasibilityB,
+            succeededA: verdict.succeededA, succeededB: verdict.succeededB,
+            damageA: verdict.damageA, damageB: verdict.damageB,
+            distanceAfter: verdict.distanceAfter, narration: verdict.narration,
+          });
+          const state = engine.getState();
+          setDistance(state.distance);
+          setRound(state.round);
+          setPlayerHearts(state.heartsA);
+          setOpponentHearts(state.heartsB);
+          playerLastCardRef.current = myCard;
+          setLog((prev) => [buildLog(state.round, myCard, oppCard, "", true, verdict.succeededB, verdict.damageA, verdict.damageB, verdict.narration), ...prev]);
+          setPlayerHand(drawFromDeck(normalIds));
+          setMyPlayed(false);
+          mulliganCountRef.current = MAX_MULLIGAN;
+          setPhase("selecting");
+
+          if (state.status === "finished") {
+            await fetch(`/api/v1/duels/room/${roomId}/finish`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ winner: state.winner === "A" ? "player" : "opponent", rounds: state.round, playerHearts: state.heartsA, aiHearts: state.heartsB }),
+            });
+            setPhase("finished");
+          }
+        }
+      } catch {}
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [myPlayed, engine, roomId, side, distance, round, normalIds]);
+
+  // 等待页面
+  if (!gameStarted) {
+    return (
+      <div style={{ maxWidth: 600, margin: "0 auto", padding: "32px 24px", textAlign: "center" }}>
+        <h2 style={{ fontSize: 24, color: "#f5e6c8", marginBottom: 24 }}>以武会友</h2>
+        <div style={{ padding: 40, background: "linear-gradient(145deg, #1a1a2e, #0d0d1a)",
+          borderRadius: 12, border: "1px solid #7c4dff", marginBottom: 24 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
+          {opponentName ? (
+            <div style={{ fontSize: 18, color: "#b388ff" }}>对手「{opponentName}」已就位，战斗即将开始…</div>
+          ) : (
+            <>
+              <div style={{ fontSize: 16, color: "#b388ff", marginBottom: 12 }}>等待对手加入…</div>
+              <div style={{ fontSize: 36, fontWeight: "bold", color: "#b388ff", letterSpacing: 8, marginBottom: 12 }}>
+                {createdCode}
+              </div>
+              <div style={{ fontSize: 14, color: "#7c4dff88" }}>
+                房间码已复制到剪贴板，分享给好友
+              </div>
+            </>
+          )}
+        </div>
+        {!opponentName && (
+          <button onClick={onExit} style={{
+            padding: "10px 24px", fontSize: 14, borderRadius: 8,
+            border: "1px solid #4E342E", background: "transparent", color: "#8B7D6B", cursor: "pointer",
+          }}>返回</button>
+        )}
+      </div>
+    );
+  }
+
+  // PvP 对战
+  if (phase === "finished") {
+    return (
+      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 24px", textAlign: "center" }}>
+        <h2 style={{ fontSize: 24, color: "#f5e6c8", marginBottom: 24 }}>比武结果</h2>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>{playerHearts > 0 ? "🏆" : "💀"}</div>
+        <div style={{ fontSize: 22, color: playerHearts > 0 ? "#d4a373" : "#EF5350", marginBottom: 8 }}>
+          {playerHearts > 0 ? "你" : "对手"} 获胜！
+        </div>
+        <div style={{ fontSize: 14, color: "#8B7D6B", marginBottom: 32 }}>
+          {round} 回合结束
+        </div>
+        <button onClick={onExit} style={{
+          padding: "12px 40px", fontSize: 16, borderRadius: 8,
+          border: "2px solid #d4a373", background: "#4E342E", color: "#f5e6c8", cursor: "pointer",
+        }}>返回比武场</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 24px" }}>
+      <h2 style={{ fontSize: 24, color: "#f5e6c8", marginBottom: 24, textAlign: "center" }}>
+        以武会友 — 第 {round} 回合 {myPlayed ? "（等待对手出招…）" : ""}
+      </h2>
+      <div style={{
+        background: "linear-gradient(145deg, #2d2320, #1a1414)",
+        border: "1px solid #4E342E", borderRadius: 12,
+        padding: "24px 60px", marginBottom: 24, minHeight: 200, position: "relative", overflow: "hidden",
+      }}>
+        <div style={{ position: "absolute", bottom: 42, left: "50%", transform: "translateX(-50%)",
+          fontSize: 12, color: "#8B7D6B", zIndex: 2 }}>
+          相距 {distance.toFixed(1)}m
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14 }}>
+        <div style={{ color: "#d4a373" }}>你 ❤️ {playerHearts}</div>
+        <div style={{ color: "#EF5350" }}>对手 ❤️ {opponentHearts}</div>
+      </div>
+      <div style={{ marginBottom: 24 }}>
+        {!myPlayed && (
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            {playerHand.map((card) => (
+              <div key={card.id} onClick={() => playCard(card)}
+                style={{ cursor: "pointer", opacity: phase === "selecting" ? 1 : 0.5 }}>
+                <CardComponent card={card} size="sm" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ background: "#0d0a0a", borderRadius: 8, padding: 16, maxHeight: 140, overflowY: "auto" }}>
+        {log.map((msg, i) => (
+          <div key={i} style={{ fontSize: 12, color: i === 0 ? "#f5e6c8" : "#5a4a3a", marginBottom: 6, whiteSpace: "pre-wrap" }}>{msg}</div>
         ))}
       </div>
     </div>
