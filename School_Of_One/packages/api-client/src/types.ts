@@ -163,3 +163,19 @@ export interface HermitStartResponse {
   maxRounds: number;
   trainingType: string;
 }
+
+/** GET /api/v1/cards/custom 响应中的卡牌对象 */
+export interface CustomCardResponse {
+  id: string;
+  userId: string;
+  cardId: string;
+  name: string;
+  factionId: string;
+  gameId: string;
+  description: string;
+  displacement: number;
+  isApproved: boolean;
+  originalDescription: string;
+  sourceTrainingSessionId: string | null;
+  createdAt: string;
+}

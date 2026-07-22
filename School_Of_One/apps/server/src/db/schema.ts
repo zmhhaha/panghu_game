@@ -1,4 +1,4 @@
-import { pgTable, text, jsonb, integer, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, jsonb, integer, uuid, boolean } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -47,6 +47,21 @@ export const userCards = pgTable("user_cards", {
   userId: text("user_id").notNull().references(() => users.id),
   cardId: text("card_id").notNull(),
   unlockedAt: text("unlocked_at").notNull(),
+});
+
+export const customCards = pgTable("custom_cards", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull().references(() => users.id),
+  cardId: text("card_id").notNull().unique(),
+  name: text("name").notNull(),
+  factionId: text("faction_id").notNull().default("hermit"),
+  gameId: text("game_id").notNull().default("martial-hegemony"),
+  description: text("description").notNull().default(""),
+  displacement: integer("displacement").notNull().default(0),
+  isApproved: boolean("is_approved").notNull().default(false),
+  originalDescription: text("original_description").notNull().default(""),
+  sourceTrainingSessionId: uuid("source_training_session_id"),
+  createdAt: text("created_at").notNull(),
 });
 
 export const comboCache = pgTable("combo_cache", {

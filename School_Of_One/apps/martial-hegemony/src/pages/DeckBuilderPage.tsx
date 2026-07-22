@@ -1,6 +1,7 @@
 import { FACTIONS, PresetCard, getAllPresetCards } from "@school-of-one/core";
 import { CardComponent } from "@school-of-one/ui-core";
 import { api } from "@school-of-one/api-client";
+import type { CustomCardResponse } from "@school-of-one/api-client";
 import { useState, useMemo, useEffect } from "react";
 
 /** 拍平卡牌数据 */
@@ -69,13 +70,57 @@ export function DeckBuilderPage() {
   const [starterId, setStarterId] = useState<string | null>(() => loadDeck().starterId);
   const [normalIds, setNormalIds] = useState<string[]>(() => loadDeck().normalIds);
   const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set());
+  const [customCards, setCustomCards] = useState<CustomCardResponse[]>([]);
 
-  // 加载已解锁卡牌
+  // 合并查找：先查预设卡牌，无结果再查自定义
+  function findCard(id: string): PresetCard | undefined {
+    return allCards.find((c) => c.id === id) ?? customCards.find((cc) => cc.cardId === id) as PresetCard | undefined;
+  }
+
+  // 加载已解锁卡牌 + 自创卡牌
   useEffect(() => {
     api.cards.mine()
       .then((res) => setUnlockedIds(new Set(res.cardIds)))
       .catch(() => {}); // 离线模式不限制
+    api.cards.listCustom()
+      .then((res) => setCustomCards(res.customCards))
+      .catch(() => {});
   }, []);
+
+  // 构造自创卡牌的书本
+  const hermitBook = useMemo(() => {
+    if (customCards.length === 0) return null;
+    return {
+      subId: "hermit-custom",
+      subName: "自创武功",
+      subDesc: "世外高人独创，独步天下",
+      factionId: "hermit",
+      factionName: "无门无派",
+      factionIcon: "🧙",
+      cards: customCards.map((cc) => ({
+        id: cc.cardId,
+        factionId: cc.factionId,
+        gameId: cc.gameId as "martial-hegemony",
+        name: cc.name,
+        subtitle: "自创武功",
+        description: cc.description,
+        displacement: cc.displacement,
+        source: "custom" as const,
+        isStarter: false,
+        keywords: [] as string[],
+        createdAt: cc.createdAt,
+        updatedAt: undefined,
+        verses: [] as string[],
+        artAssetId: undefined,
+      }) as PresetCard),
+    };
+  }, [customCards]);
+
+  // 合并书架
+  const allBooks = useMemo(() => {
+    if (!hermitBook) return books;
+    return [...books, hermitBook];
+  }, [books, hermitBook]);
 
   const MIN_NORMAL = 14;
   const MAX_NORMAL = 29;
@@ -101,7 +146,7 @@ export function DeckBuilderPage() {
     });
   };
 
-  const activeBook = activeSubId ? books.find((b) => b.subId === activeSubId) : null;
+  const activeBook = activeSubId ? allBooks.find((b) => b.subId === activeSubId) : null;
 
   // 书架视图
   if (!activeBook) {
@@ -177,13 +222,24 @@ export function DeckBuilderPage() {
                 gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
                 gap: 20,
               }}>
-                {books.map((book) => (
+                {allBooks.map((book) => {
+                  const isHermitBook = book.subId === "hermit-custom";
+                  return (
                   <div
                     key={book.subId}
                     onClick={() => setActiveSubId(book.subId)}
                     style={{
+                      ...(isHermitBook ? {
+                        border: "1px solid #7c4dff",
+                        background: "linear-gradient(145deg, #1a1a2e, #0d0d1a)",
+                      } : {
+                        border: "1px solid #a08050",
+                        backgroundImage: "url(/assets/slipcase.png)",
+                        backgroundSize: "contain",
+                        backgroundPosition: "center",
+                        backgroundRepeat: "no-repeat",
+                      }),
                       height: 210, cursor: "pointer", position: "relative",
-                      border: "1px solid #a08050",
                       boxShadow: "4px 4px 12px rgba(0,0,0,0.15)",
                       display: "flex", flexDirection: "column",
                       alignItems: "center", textAlign: "center",
@@ -191,10 +247,6 @@ export function DeckBuilderPage() {
                       fontFamily: "'KaiTi','STKaiti','Noto Serif SC',serif",
                       color: "#2c1810", justifyContent: "flex-start",
                       paddingTop: 40,
-                      backgroundImage: "url(/assets/slipcase.png)",
-                      backgroundSize: "contain",
-                      backgroundPosition: "center",
-                      backgroundRepeat: "no-repeat",
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.transform = "translateY(-4px)";
@@ -222,7 +274,8 @@ export function DeckBuilderPage() {
                       {book.factionName} · {book.cards.length}式
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -252,7 +305,7 @@ export function DeckBuilderPage() {
               {starterId ? (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ color: "#d4a373" }}>
-                    ⭐ {allCards.find((c) => c.id === starterId)?.name ?? starterId}
+                    ⭐ {findCard(starterId)?.name ?? starterId}
                   </span>
                   <span onClick={() => toggleStarter(starterId)}
                     style={{ color: "#EF5350", cursor: "pointer", fontSize: 10, marginLeft: 8 }}>
@@ -271,7 +324,7 @@ export function DeckBuilderPage() {
               </div>
             ) : (
               normalIds.map((id) => {
-                const card = allCards.find((c) => c.id === id);
+                const card = findCard(id);
                 return card ? (
                   <div key={id} onClick={() => toggleNormal(id)}
                     style={{
@@ -284,7 +337,7 @@ export function DeckBuilderPage() {
                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#d4a373"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#3b2f2f"; }}>
                     <span style={{ color: "#e8dcc8" }}>{card.name}</span>
-                    <span style={{ color: "#8B7D6B", fontSize: 9 }}>{card.subtitle || ""}</span>
+                    <span style={{ color: "#8B7D6B", fontSize: 9 }}>{"subtitle" in card && card.subtitle ? card.subtitle : ""}</span>
                   </div>
                 ) : null;
               })
@@ -381,11 +434,11 @@ export function DeckBuilderPage() {
         {starterId && (
           <div style={{ padding: "4px 8px", marginBottom: 3, borderRadius: 4,
             background: "#1a1414", border: "1px solid #d4a373", fontSize: 11 }}>
-            <span style={{ color: "#d4a373" }}>⭐ {allCards.find((c) => c.id === starterId)?.name}</span>
+            <span style={{ color: "#d4a373" }}>⭐ {findCard(starterId)?.name}</span>
           </div>
         )}
         {normalIds.map((id) => {
-          const card = allCards.find((c) => c.id === id);
+          const card = findCard(id);
           return card ? (
             <div key={id} onClick={() => toggleNormal(id)}
               style={{
@@ -395,7 +448,7 @@ export function DeckBuilderPage() {
                 display: "flex", justifyContent: "space-between",
               }}>
               <span style={{ color: "#e8dcc8" }}>{card.name}</span>
-              <span style={{ color: "#8B7D6B", fontSize: 9 }}>{card.subtitle || ""}</span>
+              <span style={{ color: "#8B7D6B", fontSize: 9 }}>{"subtitle" in card && card.subtitle ? card.subtitle : ""}</span>
             </div>
           ) : null;
         })}

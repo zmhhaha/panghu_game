@@ -2,7 +2,7 @@ import { Router } from "express";
 import { v4 as uuid } from "uuid";
 import { authMiddleware } from "../middleware/auth.js";
 import { getDb } from "../db/index.js";
-import { trainingSessions, userCards } from "../db/schema.js";
+import { trainingSessions, userCards, customCards } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
 
 export const router = Router();
@@ -85,6 +85,21 @@ router.post("/complete", async (req, res) => {
         userId: req.user.id,
         cardId,
         unlockedAt: new Date().toISOString(),
+      });
+
+      // 写入 customCards（存元数据）
+      await db.insert(customCards).values({
+        id: uuid(),
+        userId: req.user.id,
+        cardId,
+        name: cardName,
+        factionId: "hermit",
+        gameId: "martial-hegemony",
+        description: cardDescription,
+        displacement: match.cardDisplacement || 0,
+        sourceTrainingSessionId: sessionIdDb,
+        isApproved: false,
+        createdAt: new Date().toISOString(),
       });
 
       res.json({

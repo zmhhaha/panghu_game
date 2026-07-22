@@ -73,6 +73,21 @@ CREATE TABLE IF NOT EXISTS combo_cache (
   created_at TEXT NOT NULL,
   hit_count INTEGER NOT NULL DEFAULT 1
 );
+
+CREATE TABLE IF NOT EXISTS custom_cards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  card_id TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  faction_id TEXT NOT NULL DEFAULT 'hermit',
+  game_id TEXT NOT NULL DEFAULT 'martial-hegemony',
+  description TEXT NOT NULL DEFAULT '',
+  displacement INTEGER NOT NULL DEFAULT 0,
+  is_approved BOOLEAN NOT NULL DEFAULT false,
+  original_description TEXT NOT NULL DEFAULT '',
+  source_training_session_id UUID,
+  created_at TEXT NOT NULL
+);
 "
 
 case "${1:-}" in

@@ -25,6 +25,7 @@ import type {
   TrainingSessionResponse,
   TrainingCompleteResponse,
   HermitStartResponse,
+  CustomCardResponse,
 } from "./types.js";
 
 export * from "./types.js";
@@ -135,6 +136,14 @@ export const apiClient = {
     },
     unlock(cardId: string, signal?: AbortSignal) {
       return request<{ message: string; cardId: string }>("POST", "/api/v1/cards/unlock", { cardId }, { signal });
+    },
+    /** GET /api/v1/cards/custom — 当前用户的自创卡牌 */
+    listCustom(signal?: AbortSignal) {
+      return request<{ customCards: CustomCardResponse[]; total: number }>("GET", "/api/v1/cards/custom", undefined, { signal });
+    },
+    /** GET /api/v1/cards/custom/:cardId — 单张自创卡牌 */
+    getCustom(cardId: string, signal?: AbortSignal) {
+      return request<{ customCard: CustomCardResponse }>("GET", `/api/v1/cards/custom/${encodeURIComponent(cardId)}`, undefined, { signal });
     },
   },
 

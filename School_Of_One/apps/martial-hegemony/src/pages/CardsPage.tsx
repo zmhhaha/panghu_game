@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { FACTIONS, getAllPresetCards, PresetCard } from "@school-of-one/core";
 import { CardComponent } from "@school-of-one/ui-core";
 import { api } from "@school-of-one/api-client";
+import type { CustomCardResponse } from "@school-of-one/api-client";
 
 /** 展开为书脊列表 */
 function buildBooks() {
@@ -43,15 +44,54 @@ export function CardsPage() {
   const books = useMemo(() => buildBooks(), []);
   const [activeSubId, setActiveSubId] = useState<string | null>(null);
   const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set());
+  const [customCards, setCustomCards] = useState<CustomCardResponse[]>([]);
 
-  // 加载已解锁卡牌
+  // 加载已解锁卡牌 + 自创卡牌
   useEffect(() => {
     api.cards.mine()
       .then((res) => setUnlockedIds(new Set(res.cardIds)))
       .catch(() => { /* 离线也能看全卡牌 */ });
+    api.cards.listCustom()
+      .then((res) => setCustomCards(res.customCards))
+      .catch(() => {});
   }, []);
 
-  const activeBook = activeSubId ? books.find((b) => b.subId === activeSubId) : null;
+  // 构造自创卡牌的书本
+  const hermitBook = useMemo(() => {
+    if (customCards.length === 0) return null;
+    return {
+      subId: "hermit-custom",
+      subName: "自创武功",
+      subDesc: "世外高人独创，独步天下",
+      factionId: "hermit",
+      factionName: "无门无派",
+      factionIcon: "🧙",
+      cards: customCards.map((cc) => ({
+        id: cc.cardId,
+        factionId: cc.factionId,
+        gameId: cc.gameId as "martial-hegemony",
+        name: cc.name,
+        subtitle: "自创武功",
+        description: cc.description,
+        displacement: cc.displacement,
+        source: "custom" as const,
+        isStarter: false,
+        keywords: [] as string[],
+        createdAt: cc.createdAt,
+        updatedAt: undefined,
+        verses: [] as string[],
+        artAssetId: undefined,
+      }) as PresetCard),
+    };
+  }, [customCards]);
+
+  // 合并书本（预设 + 自创）
+  const allBooks = useMemo(() => {
+    if (!hermitBook) return books;
+    return [...books, hermitBook];
+  }, [books, hermitBook]);
+
+  const activeBook = activeSubId ? allBooks.find((b) => b.subId === activeSubId) : null;
 
   // 书架视图
   if (!activeBook) {
@@ -65,16 +105,26 @@ export function CardsPage() {
           gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
           gap: 20, padding: "20px 0",
         }}>
-          {books.map((book) => {
+          {allBooks.map((book) => {
             // 统计该分支已解锁卡数
             const bookUnlocked = book.cards.filter((c) => unlockedIds.has(c.id)).length;
+            const isHermitBook = book.subId === "hermit-custom";
             return (
               <div
                 key={book.subId}
                 onClick={() => setActiveSubId(book.subId)}
                 style={{
+                  ...(isHermitBook ? {
+                    border: "1px solid #7c4dff",
+                    background: "linear-gradient(145deg, #1a1a2e, #0d0d1a)",
+                  } : {
+                    border: "1px solid #a08050",
+                    backgroundImage: "url(/assets/slipcase.png)",
+                    backgroundSize: "contain",
+                    backgroundPosition: "center",
+                    backgroundRepeat: "no-repeat",
+                  }),
                   height: 210, cursor: "pointer", position: "relative",
-                  border: "1px solid #a08050",
                   boxShadow: "4px 4px 12px rgba(0,0,0,0.15)",
                   display: "flex", flexDirection: "column",
                   alignItems: "center", textAlign: "center",
@@ -82,10 +132,6 @@ export function CardsPage() {
                   fontFamily: "'KaiTi','STKaiti','Noto Serif SC',serif",
                   color: "#2c1810", justifyContent: "flex-start",
                   paddingTop: 40,
-                  backgroundImage: "url(/assets/slipcase.png)",
-                  backgroundSize: "contain",
-                  backgroundPosition: "center",
-                  backgroundRepeat: "no-repeat",
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = "translateY(-4px)";

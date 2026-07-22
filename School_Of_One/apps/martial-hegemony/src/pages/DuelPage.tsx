@@ -1,6 +1,7 @@
 import { PresetCard, DuelEngine, getAllPresetCards } from "@school-of-one/core";
 import { CardComponent } from "@school-of-one/ui-core";
 import { api } from "@school-of-one/api-client";
+import type { CustomCardResponse } from "@school-of-one/api-client";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 
 type DuelPhase = "selecting" | "result" | "finished";
@@ -20,9 +21,37 @@ function cardToMoveDescription(card: PresetCard): string {
 
 const allPresetCards = getAllPresetCards() as PresetCard[];
 
+// 模块级缓存：合并后的卡牌 Map（预设 + 自定义）
+let _fullCardMap: Map<string, PresetCard> | null = null;
+async function ensureFullCardMap(): Promise<Map<string, PresetCard>> {
+  if (_fullCardMap) return _fullCardMap;
+  const map = new Map(allPresetCards.map((c) => [c.id, c]));
+  try {
+    const res = await api.cards.listCustom();
+    for (const cc of res.customCards) {
+      map.set(cc.cardId, {
+        id: cc.cardId,
+        factionId: cc.factionId,
+        gameId: cc.gameId as "martial-hegemony",
+        name: cc.name,
+        subtitle: "自创武功",
+        description: cc.description,
+        displacement: cc.displacement,
+        source: "custom",
+        isStarter: false,
+        keywords: [],
+        createdAt: cc.createdAt,
+      } as PresetCard);
+    }
+  } catch { /* 自定义卡牌加载失败不影响预设卡牌 */ }
+  _fullCardMap = map;
+  return map;
+}
+
 function drawFromDeck(deckIds: string[]): PresetCard[] {
+  const map = _fullCardMap || new Map(allPresetCards.map((c) => [c.id, c]));
   const pool = deckIds
-    .map((id) => allPresetCards.find((c) => c.id === id))
+    .map((id) => map.get(id))
     .filter((c): c is PresetCard => !!c);
   return [...pool].sort(() => Math.random() - 0.5).slice(0, 5);
 }
@@ -122,35 +151,42 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
 
   // ── 初始化 ──
   useEffect(() => {
-    const startCard = allPresetCards.find((c) => c.id === starterId);
-    if (!startCard) return;
+    let cancelled = false;
+    (async () => {
+      const fullMap = await ensureFullCardMap();
+      if (cancelled) return;
 
-    const aiId = allPresetCards
-      .filter((c) => c.isStarter && c.id !== starterId)
-      .sort(() => Math.random() - 0.5)[0]?.id ?? starterId;
-    const aiStartCard = allPresetCards.find((c) => c.id === aiId) ?? startCard;
+      const startCard = fullMap.get(starterId);
+      if (!startCard) return;
 
-    const eng = new DuelEngine("player", "ai", starterId, aiId);
-    setEngine(eng);
+      const aiId = allPresetCards
+        .filter((c) => c.isStarter && c.id !== starterId)
+        .sort(() => Math.random() - 0.5)[0]?.id ?? starterId;
+      const aiStartCard = allPresetCards.find((c) => c.id === aiId) ?? startCard;
 
-    setPlayerHand(drawFromDeck(normalIds));
-    setDistance(2.0);
-    setRound(0);
-    setIsFall(false);
-    player.hearts = 10;
-    ai.hearts = 10;
-    player.lastCard = null;
-    ai.lastCard = null;
-    aiHandRef.current = drawFromDeck(
-      allPresetCards.filter((c) => !c.isStarter).map((c) => c.id),
-    );
-    // 起手式作为上一招的基准
-    lastPlayedCardRef.current = startCard;
+      const eng = new DuelEngine("player", "ai", starterId, aiId);
+      setEngine(eng);
 
-    setLog([
-      `比武开始！双方相距 2米\n甲摆出【${startCard.name}】（起手式）\n乙摆出【${aiStartCard.name}】（起手式）`,
-    ]);
-    setPhase("selecting");
+      setPlayerHand(drawFromDeck(normalIds));
+      setDistance(2.0);
+      setRound(0);
+      setIsFall(false);
+      player.hearts = 10;
+      ai.hearts = 10;
+      player.lastCard = null;
+      ai.lastCard = null;
+      aiHandRef.current = drawFromDeck(
+        allPresetCards.filter((c) => !c.isStarter).map((c) => c.id),
+      );
+      // 起手式作为上一招的基准
+      lastPlayedCardRef.current = startCard;
+
+      setLog([
+        `比武开始！双方相距 2米\n甲摆出【${startCard.name}】（起手式）\n乙摆出【${aiStartCard.name}】（起手式）`,
+      ]);
+      setPhase("selecting");
+    })();
+    return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canPlayCard = (card: PresetCard) => {

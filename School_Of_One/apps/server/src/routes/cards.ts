@@ -3,7 +3,7 @@ import { v4 as uuid } from "uuid";
 import { getAllPresetCards } from "@school-of-one/core";
 import { authMiddleware } from "../middleware/auth.js";
 import { getDb } from "../db/index.js";
-import { userCards } from "../db/schema.js";
+import { userCards, customCards } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
 
 export const router: ExpressRouter = Router();
@@ -23,6 +23,39 @@ router.get("/preset/:id", (req, res) => {
   const card = cards.find((c) => c.id === req.params.id);
   if (!card) return res.status(404).json({ error: "Card not found" });
   res.json({ card });
+});
+
+// ── 自定义卡牌（需认证） ────────────────────────────────
+
+/** GET /api/v1/cards/custom — 自创武功卡牌列表 */
+router.get("/custom", authMiddleware, async (req, res) => {
+  if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
+  try {
+    const db = getDb();
+    const rows = await db.select()
+      .from(customCards)
+      .where(eq(customCards.userId, req.user.id))
+      .orderBy(customCards.createdAt);
+    res.json({ customCards: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/v1/cards/custom/:cardId — 单张自创武功卡牌 */
+router.get("/custom/:cardId", authMiddleware, async (req, res) => {
+  if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
+  try {
+    const db = getDb();
+    const rows = await db.select()
+      .from(customCards)
+      .where(and(eq(customCards.cardId, req.params.cardId), eq(customCards.userId, req.user.id)))
+      .limit(1);
+    if (rows.length === 0) return res.status(404).json({ error: "卡牌不存在" });
+    res.json({ customCard: rows[0] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── 用户卡牌收集（需认证） ──────────────────────────────
