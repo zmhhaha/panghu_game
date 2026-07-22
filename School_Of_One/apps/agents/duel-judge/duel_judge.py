@@ -55,8 +55,8 @@ app.add_middleware(
 
 class JudgeRequest(BaseModel):
     """对决判定请求"""
-    moveA: str = Field(..., min_length=1, max_length=500, description="玩家 A 的招式描述")
-    moveB: str = Field(..., min_length=1, max_length=500, description="玩家 B 的招式描述")
+    moveA: str = Field(..., min_length=1, max_length=2000, description="玩家 A 的招式描述")
+    moveB: str = Field(..., min_length=1, max_length=2000, description="玩家 B 的招式描述")
     distance: float = Field(..., ge=0, le=10, description="当前距离（米）")
     cardA: str | None = Field(default=None, description="可选：玩家 A 参考卡牌 ID")
     cardB: str | None = Field(default=None, description="可选：玩家 B 参考卡牌 ID")

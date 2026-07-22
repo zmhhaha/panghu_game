@@ -12,8 +12,6 @@ class ComboInput:
     """连招判定输入"""
     moveA: str        # 前一个动作
     moveB: str        # 后一个动作
-    context: str = "" # 可选：额外上下文（如当前距离、对手状态等）
-
 
 SYSTEM_COMBO = """你是武学世家出身的连招大师"连环手"，武林中论连招没有人比你更懂。
 
@@ -35,7 +33,6 @@ TASK_COMBO = """## 任务
 
 ### 后一个动作
 {moveB}
-{context_section}
 
 ## 分析维度
 
@@ -151,13 +148,8 @@ TASK_COMBO = """## 任务
 
 def build_combo_prompt(inp: ComboInput) -> tuple[str, str]:
     """构建连招判定任务的 system 和 user prompt"""
-    context_section = ""
-    if inp.context:
-        context_section = f"\n### 额外上下文\n{inp.context}"
-
     user = TASK_COMBO.format(
         moveA=inp.moveA,
         moveB=inp.moveB,
-        context_section=context_section,
     )
     return SYSTEM_COMBO, user

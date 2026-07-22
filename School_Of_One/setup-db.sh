@@ -88,6 +88,19 @@ CREATE TABLE IF NOT EXISTS custom_cards (
   source_training_session_id UUID,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS duel_cache (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cache_key TEXT NOT NULL UNIQUE,
+  move_a TEXT NOT NULL,
+  move_b TEXT NOT NULL,
+  distance TEXT NOT NULL,
+  card_a TEXT NOT NULL DEFAULT '',
+  card_b TEXT NOT NULL DEFAULT '',
+  result JSONB NOT NULL,
+  created_at TEXT NOT NULL,
+  hit_count INTEGER NOT NULL DEFAULT 1
+);
 "
 
 case "${1:-}" in

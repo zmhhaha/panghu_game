@@ -45,9 +45,8 @@ app.add_middleware(
 # ============================================================
 
 class ComboRequest(BaseModel):
-    moveA: str = Field(..., min_length=1, max_length=500, description="前一个动作描述")
-    moveB: str = Field(..., min_length=1, max_length=500, description="后一个动作描述")
-    context: str = Field(default="", max_length=500, description="可选额外上下文")
+    moveA: str = Field(..., min_length=1, max_length=2000, description="前一个动作描述")
+    moveB: str = Field(..., min_length=1, max_length=2000, description="后一个动作描述")
 
 
 class ComboResponse(BaseModel):
@@ -78,7 +77,7 @@ def combo_endpoint(req: ComboRequest):
     logger.info(f"  后动作: {req.moveB}")
 
     try:
-        result = judge_combo(moveA=req.moveA, moveB=req.moveB, context=req.context)
+        result = judge_combo(moveA=req.moveA, moveB=req.moveB)
 
         # 将所有分析数据打包
         analysis = {
@@ -114,11 +113,10 @@ def cli():
     parser = argparse.ArgumentParser(description="🥋 招式连招可行性判定")
     parser.add_argument("moveA", help="前一个动作描述")
     parser.add_argument("moveB", help="后一个动作描述")
-    parser.add_argument("--context", default="", help="额外上下文")
     parser.add_argument("--pretty", action="store_true", help="JSON 美化输出")
     args = parser.parse_args()
 
-    result = judge_combo(moveA=args.moveA, moveB=args.moveB, context=args.context)
+    result = judge_combo(moveA=args.moveA, moveB=args.moveB)
 
     output = {
         "moveA": result.moveA,

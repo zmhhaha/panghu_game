@@ -13,10 +13,10 @@ interface DuelPlayer {
   currentCard: PresetCard | null;
 }
 
-/** 从卡牌 description 截取前 200 字 */
+/** 从卡牌 description 截取前 2000 字 */
 function cardToMoveDescription(card: PresetCard): string {
   const desc = card.description || card.name;
-  return desc.length > 200 ? desc.slice(0, 200) + "…" : desc;
+  return desc.length > 2000 ? desc.slice(0, 2000) + "…" : desc;
 }
 
 const allPresetCards = getAllPresetCards() as PresetCard[];
@@ -143,8 +143,12 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
 
   // 连招评分
   const [comboScores, setComboScores] = useState<Record<string, { feasibility: number; difficulty: string } | null>>({});
+  const [aiComboScores, setAiComboScores] = useState<Record<string, { feasibility: number; difficulty: string } | null>>({});
   const [comboLoading, setComboLoading] = useState(false);
-  const lastPlayedCardRef = useRef<PresetCard | null>(null);
+  const [aiComboLoading, setAiComboLoading] = useState(false);
+  const playerLastCardRef = useRef<PresetCard | null>(null);
+  const aiLastCardRef = useRef<PresetCard | null>(null);
+  const [aiHandVer, setAiHandVer] = useState(0); // 触发 AI 连招重新计算
 
   // AI 手牌用全量卡池（AI 不受卡组限制）
   const aiHandRef = useRef<PresetCard[]>([]);
@@ -179,7 +183,8 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
         allPresetCards.filter((c) => !c.isStarter).map((c) => c.id),
       );
       // 起手式作为上一招的基准
-      lastPlayedCardRef.current = startCard;
+      playerLastCardRef.current = startCard;
+      aiLastCardRef.current = aiStartCard;
 
       setLog([
         `比武开始！双方相距 2米\n甲摆出【${startCard.name}】（起手式）\n乙摆出【${aiStartCard.name}】（起手式）`,
@@ -243,7 +248,7 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
       ai.currentCard = aiCard;
       ai.lastCard = aiCard;
       // 放弃回合退回起手式，后续连招以起手式为基准
-      lastPlayedCardRef.current = startCard;
+      playerLastCardRef.current = startCard;
       msg = `第${newState.round}回合：甲放弃进攻退回起手式\n${verdict.narration}\n${verdict.succeededB ? `乙命中甲，造成${verdict.damageB}点伤害。` : "乙未命中。"}`;
     } catch {
       const { result, newState } = engine.skipTurn(aiCard);
@@ -253,7 +258,7 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
       ai.hearts = newState.heartsB;
       ai.currentCard = aiCard;
       ai.lastCard = aiCard;
-      lastPlayedCardRef.current = startCard;
+      playerLastCardRef.current = startCard;
     }
     setLog((prev) => [msg, ...prev]);
     setPlayerHand(drawFromDeck(normalIds));
@@ -264,14 +269,14 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
     }, 2000);
   };
 
-  // ── 选牌时连招判定（以上一张打出的牌或起手式为基准） ──
+  // ── 选牌时玩家连招判定（以上一张打出的牌或起手式为基准） ──
   useEffect(() => {
-    if (phase !== "selecting" || !lastPlayedCardRef.current) {
+    if (phase !== "selecting" || !playerLastCardRef.current) {
       setComboScores({});
       return;
     }
 
-    const prevCard = lastPlayedCardRef.current;
+    const prevCard = playerLastCardRef.current;
     let cancelled = false;
 
     const judgeAll = async () => {
@@ -303,6 +308,46 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
     return () => { cancelled = true; };
   }, [playerHand, phase, distance]);
 
+  // ── 选牌时 AI 连招判定 ──
+  useEffect(() => {
+    if (phase !== "selecting" || !aiLastCardRef.current) {
+      setAiComboScores({});
+      return;
+    }
+
+    const prevCard = aiLastCardRef.current;
+    const aiHand = aiHandRef.current;
+    let cancelled = false;
+
+    const judgeAll = async () => {
+      setAiComboLoading(true);
+      const scores: Record<string, { feasibility: number; difficulty: string } | null> = {};
+
+      const results = await Promise.allSettled(
+        aiHand.map(async (card) => {
+          const res = await api.combo.judge({
+            moveA: cardToMoveDescription(prevCard),
+            moveB: cardToMoveDescription(card),
+          });
+          return { cardId: card.id, feasibility: res.feasibility, difficulty: res.difficulty };
+        }),
+      );
+
+      if (cancelled) return;
+
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          scores[r.value.cardId] = { feasibility: r.value.feasibility, difficulty: r.value.difficulty };
+        }
+      }
+      setAiComboScores(scores);
+      setAiComboLoading(false);
+    };
+
+    judgeAll();
+    return () => { cancelled = true; };
+  }, [phase, aiHandVer]);
+
   // ── 出牌 ──
   const playCard = async (card: PresetCard) => {
     if (!engine || !canPlayCard(card)) return;
@@ -314,21 +359,30 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
       allPresetCards.filter((c) => !c.isStarter).map((c) => c.id),
     );
 
-    const combo = lastPlayedCardRef.current ? comboScores[card.id] : null;
+    const combo = playerLastCardRef.current ? comboScores[card.id] : null;
     let moveADesc = cardToMoveDescription(card);
     let stabilityNote = "";
     if (combo && combo.feasibility < 0.4) {
-      moveADesc = `[${lastPlayedCardRef.current!.name}后姿势不稳，强行出招] ${cardToMoveDescription(card)}`;
+      moveADesc = `[${playerLastCardRef.current!.name}后姿势不稳，强行出招] ${cardToMoveDescription(card)}`;
       stabilityNote = "但身形不稳";
     } else if (combo && combo.feasibility < 0.7) {
-      moveADesc = `[从${lastPlayedCardRef.current!.name}衔接] ${cardToMoveDescription(card)}`;
+      moveADesc = `[从${playerLastCardRef.current!.name}衔接] ${cardToMoveDescription(card)}`;
       stabilityNote = "但动作略有迟滞";
+    }
+
+    // AI 方同样处理连招失稳
+    const aiCombo = aiLastCardRef.current ? aiComboScores[aiCard.id] : null;
+    let moveBDesc = cardToMoveDescription(aiCard);
+    if (aiCombo && aiCombo.feasibility < 0.4) {
+      moveBDesc = `[${aiLastCardRef.current!.name}后姿势不稳，强行出招] ${cardToMoveDescription(aiCard)}`;
+    } else if (aiCombo && aiCombo.feasibility < 0.7) {
+      moveBDesc = `[从${aiLastCardRef.current!.name}衔接] ${cardToMoveDescription(aiCard)}`;
     }
 
     try {
       const verdict = await api.duel.judge({
         moveA: moveADesc,
-        moveB: cardToMoveDescription(aiCard),
+        moveB: moveBDesc,
         distance: distance,
         cardA: card.name,
         cardB: aiCard.name,
@@ -358,7 +412,9 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
       player.lastCard = card;
       ai.currentCard = aiCard;
       ai.lastCard = aiCard;
-      lastPlayedCardRef.current = card;
+      playerLastCardRef.current = card;
+      aiLastCardRef.current = aiCard;
+      setAiHandVer((v) => v + 1);
 
       const msg = buildLog(newState.round, card, aiCard, stabilityNote,
         verdict.succeededA, verdict.succeededB,
@@ -397,7 +453,9 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
       player.lastCard = card;
       ai.currentCard = aiCard;
       ai.lastCard = aiCard;
-      lastPlayedCardRef.current = card;
+      playerLastCardRef.current = card;
+      aiLastCardRef.current = aiCard;
+      setAiHandVer((v) => v + 1);
 
       const msg = buildLog(newState.round, card, aiCard, stabilityNote,
         result.succeededA, result.succeededB,
@@ -587,9 +645,9 @@ function DuelArena({ starterId, normalIds }: { starterId: string; normalIds: str
           display: "flex", alignItems: "center", gap: 8 }}>
           <span>选择招式</span>
           {comboLoading && <span style={{ fontSize: 11, color: "#5a4a3a" }}>连招判定中…</span>}
-          {lastPlayedCardRef.current && (
+          {playerLastCardRef.current && (
             <span style={{ fontSize: 11, color: "#d4a373" }}>
-              上一招「{lastPlayedCardRef.current.name}」
+              上一招「{playerLastCardRef.current.name}」
             </span>
           )}
         </div>

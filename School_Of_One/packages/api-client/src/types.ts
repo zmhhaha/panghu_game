@@ -35,7 +35,6 @@ export interface DuelJudgeResponse {
 export interface ComboJudgeRequest {
   moveA: string;
   moveB: string;
-  context?: string;
 }
 
 export interface ComboJudgeResponse {

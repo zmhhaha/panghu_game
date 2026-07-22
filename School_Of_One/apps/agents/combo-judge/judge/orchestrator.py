@@ -63,7 +63,6 @@ def _extract_json(text: str) -> dict:
 def judge_combo(
     moveA: str,
     moveB: str,
-    context: str = "",
 ) -> ComboResult:
     """
     分析从前一个动作到后一个动作的衔接可行性。
@@ -71,12 +70,11 @@ def judge_combo(
     Args:
         moveA: 前一个动作描述
         moveB: 后一个动作描述
-        context: 可选额外上下文
 
     Returns:
         ComboResult 对象
     """
-    inp = ComboInput(moveA=moveA, moveB=moveB, context=context)
+    inp = ComboInput(moveA=moveA, moveB=moveB)
 
     system_prompt, user_prompt = build_combo_prompt(inp)
 

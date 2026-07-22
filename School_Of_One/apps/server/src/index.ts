@@ -8,6 +8,7 @@ import { router as deckRouter } from "./routes/decks.js";
 import { router as duelRouter } from "./routes/duels.js";
 import { router as trainingRouter } from "./routes/training.js";
 import { router as comboCacheRouter } from "./routes/combo-cache.js";
+import { router as duelCacheRouter } from "./routes/duel-cache.js";
 import { errorHandler } from "./middleware/error.js";
 
 const app = express();
@@ -21,11 +22,19 @@ const TRAINING_GROUND_URL = process.env.TRAINING_GROUND_URL || "http://localhost
 app.use(cors());
 
 // AI Agent 反向代理（必须在 express.json() 之前，避免 body 被消费）
-app.use("/api/ai/duel", createProxyMiddleware({
-  target: DUEL_JUDGE_URL,
-  changeOrigin: true,
-  pathRewrite: (path) => "/api/duel" + path,
-}));
+// duel 走缓存路由，不直接代理到 duel-judge
+app.use("/api/ai/duel", (req, res, next) => {
+  // POST /api/ai/duel/judge 走缓存逻辑（需要先解析 body）
+  if (req.method === "POST" && req.path === "/judge") {
+    return express.json()(req, res, () => duelCacheRouter(req, res, next));
+  }
+  // 其他（如 GET /health）直接转发
+  createProxyMiddleware({
+    target: DUEL_JUDGE_URL,
+    changeOrigin: true,
+    pathRewrite: (path) => "/api/duel" + path,
+  })(req, res, next);
+});
 // combo 走缓存路由，不直接代理到 combo-judge
 app.use("/api/ai/combo", (req, res, next) => {
   // POST /api/ai/combo/judge 走缓存逻辑（需要先解析 body）

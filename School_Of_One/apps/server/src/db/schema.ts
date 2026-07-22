@@ -73,3 +73,16 @@ export const comboCache = pgTable("combo_cache", {
   createdAt: text("created_at").notNull(),
   hitCount: integer("hit_count").notNull().default(1),
 });
+
+export const duelCache = pgTable("duel_cache", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  cacheKey: text("cache_key").notNull().unique(),
+  moveA: text("move_a").notNull(),
+  moveB: text("move_b").notNull(),
+  distance: text("distance").notNull(),
+  cardA: text("card_a").notNull().default(""),
+  cardB: text("card_b").notNull().default(""),
+  result: jsonb("result").notNull(),
+  createdAt: text("created_at").notNull(),
+  hitCount: integer("hit_count").notNull().default(1),
+});
