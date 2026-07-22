@@ -92,6 +92,7 @@ export function CardsPage() {
   }, [books, hermitBook]);
 
   const activeBook = activeSubId ? allBooks.find((b) => b.subId === activeSubId) : null;
+  const [hoveredCard, setHoveredCard] = useState<PresetCard | null>(null);
 
   // 书架视图
   if (!activeBook) {
@@ -189,32 +190,81 @@ export function CardsPage() {
         {activeBook.factionName} · {activeBook.subDesc} · {activeBook.cards.length}式
       </div>
 
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-        gap: 16, justifyItems: "center",
-      }}>
-        {activeBook.cards.map((card) => {
-          const owned = unlockedIds.has(card.id);
-          return owned ? (
-            <CardComponent key={card.id} card={card} size="sm" />
-          ) : (
-            <div key={card.id}
-              style={{
-                width: 180, height: 260,
-                background: "linear-gradient(145deg, #1a1414, #0d0a0a)",
-                border: "1px solid #3b2f2f", borderRadius: 12,
-                display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "center",
-                gap: 8, opacity: 0.5,
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+        {/* 左侧：卡牌网格 */}
+        <div style={{
+          flex: 1,
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+          gap: 16, justifyItems: "center",
+        }}>
+          {activeBook.cards.map((card) => {
+            const owned = unlockedIds.has(card.id);
+            return owned ? (
+              <div key={card.id} style={{ position: "relative" }}
+                onMouseEnter={() => setHoveredCard(card)}
+                onClick={() => setHoveredCard(card)}
+              >
+                <CardComponent card={card} size="sm" />
+              </div>
+            ) : (
+              <div key={card.id}
+                style={{
+                  width: 180, height: 260,
+                  background: "linear-gradient(145deg, #1a1414, #0d0a0a)",
+                  border: "1px solid #3b2f2f", borderRadius: 12,
+                  display: "flex", flexDirection: "column",
+                  alignItems: "center", justifyContent: "center",
+                  gap: 8, opacity: 0.5,
+                }}>
+                <div style={{ fontSize: 32 }}>🔒</div>
+                <div style={{ fontSize: 11, color: "#5a4a3a" }}>
+                  习武解锁
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 右侧：招式描述面板 */}
+        <div style={{
+          width: 260, flexShrink: 0,
+          background: "linear-gradient(145deg, #2d2320, #1a1414)",
+          border: "1px solid #4E342E", borderRadius: 12,
+          padding: 20, minHeight: 300,
+          position: "sticky", top: 24,
+        }}>
+          {hoveredCard ? (
+            <div>
+              <div style={{ fontSize: 18, fontWeight: "bold", color: "#f5e6c8", marginBottom: 4 }}>
+                {hoveredCard.name}
+              </div>
+              <div style={{ fontSize: 12, color: "#d4a373", marginBottom: 12 }}>
+                {hoveredCard.subtitle || ""}
+              </div>
+              <div style={{
+                fontSize: 13, color: "#a09080", lineHeight: 1.8,
+                whiteSpace: "pre-wrap",
               }}>
-              <div style={{ fontSize: 32 }}>🔒</div>
-              <div style={{ fontSize: 11, color: "#5a4a3a" }}>
-                习武解锁
+                {hoveredCard.description}
+              </div>
+              <div style={{ marginTop: 16, fontSize: 11, color: "#8B7D6B" }}>
+                📍 位移 {hoveredCard.displacement >= 0 ? "+" : ""}{hoveredCard.displacement}m
+                {hoveredCard.isStarter && <span style={{ marginLeft: 12 }}>⭐ 起手式</span>}
               </div>
             </div>
-          );
-        })}
+          ) : (
+            <div style={{
+              display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center",
+              height: 260, color: "#5a4a3a", fontSize: 13,
+              gap: 8,
+            }}>
+              <div style={{ fontSize: 32 }}>📜</div>
+              <div>悬停或点击卡牌查看招式详情</div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
