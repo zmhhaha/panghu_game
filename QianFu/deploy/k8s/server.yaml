@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qianfu-server
+  namespace: qianfu
+  labels: { app: qianfu-server }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: qianfu-server }
+  template:
+    metadata:
+      labels: { app: qianfu-server }
+    spec:
+      containers:
+        - name: server
+          image: arm-cluster-master:5000/qianfu-server:latest
+          imagePullPolicy: Always
+          ports: [{ name: http, containerPort: 3001 }]
+          env:
+            - name: PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  name: qianfu-agent-config
+                  key: PROVIDER
+                  optional: true
+            - name: NODE_ENV
+              value: production
+            - name: TRUST_PROXY_AUTH_HEADERS
+              value: "true"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: OPENAI_API_KEY, optional: true }
+            - name: OPENAI_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: OPENAI_BASE_URL, optional: true }
+            - name: OPENAI_MODEL
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: OPENAI_MODEL, optional: true }
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: ANTHROPIC_API_KEY, optional: true }
+            - name: ANTHROPIC_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: ANTHROPIC_BASE_URL, optional: true }
+            - name: ANTHROPIC_MODEL
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: ANTHROPIC_MODEL, optional: true }
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: DEEPSEEK_API_KEY, optional: true }
+            - name: DEEPSEEK_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: DEEPSEEK_BASE_URL, optional: true }
+            - name: DEEPSEEK_MODEL
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: DEEPSEEK_MODEL, optional: true }
+            - name: CUSTOM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: CUSTOM_API_KEY, optional: true }
+            - name: CUSTOM_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: CUSTOM_BASE_URL, optional: true }
+            - name: CUSTOM_MODEL
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: CUSTOM_MODEL, optional: true }
+            - name: LLM_TIMEOUT_MS
+              value: "8000"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: qianfu-database
+                  key: url
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qianfu-server
+  namespace: qianfu
+spec:
+  selector: { app: qianfu-server }
+  ports: [{ name: http, port: 3001, targetPort: http }]

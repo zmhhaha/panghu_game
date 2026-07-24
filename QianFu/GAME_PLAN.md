@@ -941,6 +941,10 @@ QianFu/
 
 ### 16.3 多用户资源复用与实例隔离
 
+#### 数据库项目边界
+
+每个独立项目使用 PostgreSQL 中独立的 schema。QianFu 当前使用 `appdb.qianfu`，不复用其他项目的数据表；同一项目内的战役仍通过 `game_instance_id` 和所有权校验隔离。连接池固定设置 `search_path=qianfu,public`，迁移脚本负责幂等创建 schema 和项目表。这样既保留数据库实例复用的运维便利，也避免不同项目之间发生表结构、迁移和数据访问耦合。
+
 系统采用“共享只读资源 + 独立游戏实例 + 共享计算池”的多租户结构。
 
 | 资源层级 | 可共享内容 | 必须隔离的内容 |
@@ -1183,6 +1187,10 @@ apps/web/
 `School_Of_One` 继续保持当前的 Vite + React + React Router 架构，不进行 Next.js 迁移。只有在 QianFu 前端纵向切片验证通过后，才考虑抽取真正通用的 UI 组件。
 
 ### 16.11 OAuth2 / OIDC 用户认证
+
+#### Secret 管理边界
+
+QianFu 的所有运行时 Secret 统一由 Vault 保存、External Secrets Operator 同步到 Kubernetes。数据库连接串由 `vault/inventory/qianfu-externalsecret.yaml` 生成到 `qianfu/qianfu-database`；OAuth2 使用的共享 `oauth/oauth2-proxy-secret` 由 OAuth 基础设施的 ExternalSecret 管理。QianFu 应用清单只引用 Secret，不内嵌值、不提交 Secret 示例、不在部署脚本中创建明文 Secret。后续接入 Redis、模型供应商或签名密钥时，必须新增对应 Vault 路径和 ExternalSecret 字段，不能回退到 `.env` 或 Deployment 明文环境变量。
 
 QianFu 复用 `School_Of_One` 已有的统一登录体系，不开发独立登录页，也不重复实现 OAuth2 回调：
 

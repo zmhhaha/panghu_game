@@ -1,0 +1,72 @@
+import type { CampaignDefinition, CharacterDefinition, LocationDefinition } from "@qianfu/core";
+import { assertValidCampaign } from "../../validation.js";
+
+const travel = (archive: number, radio: number, newspaper: number, hotel: number, dock: number, clock: number) => ({
+  "archive-office": archive,
+  "radio-office": radio,
+  "linjiang-news": newspaper,
+  "jianghai-hotel": hotel,
+  "third-dock": dock,
+  "wu-clock-shop": clock,
+});
+
+const locations: LocationDefinition[] = [
+  { id: "archive-office", name: "机要楼档案科", district: "政务区", travelMinutes: travel(10, 10, 20, 20, 40, 30) },
+  { id: "radio-office", name: "电讯科", district: "政务区", travelMinutes: travel(10, 10, 20, 20, 40, 30) },
+  { id: "linjiang-news", name: "临江日报社", district: "旧城区", travelMinutes: travel(20, 20, 10, 20, 30, 20) },
+  { id: "jianghai-hotel", name: "江海饭店", district: "商业区", travelMinutes: travel(20, 20, 20, 10, 30, 20) },
+  { id: "third-dock", name: "三号码头", district: "码头区", travelMinutes: travel(40, 40, 30, 30, 10, 30) },
+  { id: "wu-clock-shop", name: "老吴钟表店", district: "旧城区", travelMinutes: travel(30, 30, 20, 20, 30, 10) },
+];
+
+const reliability = (loyalty: number, discipline: number, pressureResistance: number, courage: number, competence: number) => ({
+  loyalty, discipline, pressureResistance, courage, competence,
+});
+
+const characters: CharacterDefinition[] = [
+  { id: "chen-jingwen", name: "陈敬文", publicIdentity: "档案科长", hiddenAlignment: "variable", initialLocationId: "archive-office", recruitable: true, reliability: reliability(68, 74, 52, 48, 82), schedule: [{ startMinute: 480, endMinute: 960, locationId: "archive-office", activity: "整理运输与人事档案" }, { startMinute: 1080, endMinute: 1260, locationId: "jianghai-hotel", activity: "私人会面" }] },
+  { id: "lin-ruolan", name: "林若岚", publicIdentity: "报社编辑", hiddenAlignment: "organization", initialLocationId: "linjiang-news", recruitable: true, reliability: reliability(88, 77, 63, 72, 75), schedule: [{ startMinute: 540, endMinute: 1020, locationId: "linjiang-news", activity: "编辑晚报" }] },
+  { id: "zhou-qiming", name: "周启明", publicIdentity: "电讯科技术员", hiddenAlignment: "variable", initialLocationId: "radio-office", recruitable: true, reliability: reliability(55, 86, 71, 58, 91), schedule: [{ startMinute: 480, endMinute: 1080, locationId: "radio-office", activity: "维护收发设备" }] },
+  { id: "zhao-fusheng", name: "赵福生", publicIdentity: "码头调度员", hiddenAlignment: "neutral", initialLocationId: "third-dock", recruitable: true, reliability: reliability(43, 39, 45, 70, 78), schedule: [{ startMinute: 420, endMinute: 1140, locationId: "third-dock", activity: "安排货物与车辆" }] },
+  { id: "shen-manqiu", name: "沈曼秋", publicIdentity: "医院护士", hiddenAlignment: "organization", initialLocationId: "jianghai-hotel", recruitable: true, reliability: reliability(92, 81, 42, 65, 74), schedule: [{ startMinute: 1080, endMinute: 1200, locationId: "jianghai-hotel", activity: "为秘密伤员送药" }] },
+  { id: "han-shijie", name: "韩世杰", publicIdentity: "警备处调查员", hiddenAlignment: "enemy", initialLocationId: "archive-office", recruitable: false, reliability: reliability(8, 91, 88, 82, 89), schedule: [{ startMinute: 540, endMinute: 960, locationId: "archive-office", activity: "核查异常借阅记录" }] },
+  { id: "luo-boan", name: "罗伯安", publicIdentity: "商会秘书", hiddenAlignment: "neutral", initialLocationId: "jianghai-hotel", recruitable: false, reliability: reliability(31, 62, 55, 44, 80), schedule: [{ startMinute: 660, endMinute: 960, locationId: "jianghai-hotel", activity: "安排商会宴请" }] },
+  { id: "old-wu", name: "老吴", publicIdentity: "钟表店老板", hiddenAlignment: "organization", initialLocationId: "wu-clock-shop", recruitable: false, reliability: reliability(96, 94, 68, 61, 70), schedule: [{ startMinute: 480, endMinute: 1200, locationId: "wu-clock-shop", activity: "经营店铺并维护交通线" }] },
+];
+
+const personalityById: Record<string, CharacterDefinition["personality"]> = {
+  "chen-jingwen": { traits: ["谨慎", "务实"], speechStyle: "克制而讲究事实", values: ["秩序", "家人"], fears: ["牵连同事"], verbalHabits: ["先不急", "按规矩说"], sensitiveTopics: ["档案来源"] },
+  "lin-ruolan": { traits: ["敏锐", "理想主义"], speechStyle: "简洁，偶尔带反问", values: ["真相", "公平"], fears: ["失去表达的机会"], verbalHabits: ["你觉得呢", "说重点"], sensitiveTopics: ["报社内部人事"] },
+  "zhou-qiming": { traits: ["专注", "寡言"], speechStyle: "技术化，少用形容词", values: ["可靠", "准确"], fears: ["设备失控"], verbalHabits: ["先核对", "有记录吗"], sensitiveTopics: ["设备参数"] },
+  "zhao-fusheng": { traits: ["圆滑", "重利"], speechStyle: "热络但会留后手", values: ["生计", "信用"], fears: ["得罪靠山"], verbalHabits: ["好说", "这个嘛"], sensitiveTopics: ["货物去向"] },
+  "shen-manqiu": { traits: ["温和", "坚韧"], speechStyle: "平静，善于安抚", values: ["生命", "承诺"], fears: ["无辜者受伤"], verbalHabits: ["慢慢来", "先照顾好自己"], sensitiveTopics: ["伤员姓名"] },
+  "han-shijie": { traits: ["多疑", "冷静"], speechStyle: "短句，频繁反问", values: ["控制", "证据"], fears: ["失去主动权"], verbalHabits: ["你凭什么", "有证据吗"], sensitiveTopics: ["调查进度"] },
+  "luo-boan": { traits: ["世故", "观察力强"], speechStyle: "礼貌而含蓄", values: ["体面", "利益"], fears: ["丑闻"], verbalHabits: ["不妨这样", "大家都方便"], sensitiveTopics: ["商会账目"] },
+  "old-wu": { traits: ["沉稳", "耐心"], speechStyle: "像聊天一样自然，话里有暗号", values: ["信义", "耐心"], fears: ["线路暴露"], verbalHabits: ["钟总会走准", "慢一点"], sensitiveTopics: ["接头暗号"] },
+};
+for (const character of characters) character.personality = personalityById[character.id] ?? { traits: ["谨慎"], speechStyle: "克制", values: ["安全"], fears: ["暴露"], verbalHabits: ["嗯"], sensitiveTopics: [] };
+
+const draft: CampaignDefinition = {
+  id: "linjiang-1942",
+  version: "0.1.0",
+  engineVersion: "0.1.0",
+  name: "临江潜线：第三号电台",
+  startTime: "1942-05-12T08:00:00.000Z",
+  locations,
+  characters,
+  intel: [
+    { id: "shipment-time", title: "运输时间", truth: "true", requiredFields: ["date", "hour"], sourceCharacterIds: ["chen-jingwen", "zhao-fusheng"], expiresAt: "1942-05-15T22:00:00.000Z" },
+    { id: "shipment-place", title: "运输地点", truth: "true", requiredFields: ["dock", "warehouse"], sourceCharacterIds: ["zhao-fusheng", "lin-ruolan"], expiresAt: "1942-05-15T22:00:00.000Z" },
+    { id: "shipment-cargo", title: "货物内容", truth: "true", requiredFields: ["category", "quantity"], sourceCharacterIds: ["chen-jingwen", "zhou-qiming"], expiresAt: "1942-05-15T22:00:00.000Z" },
+    { id: "vehicle-route", title: "车辆路线", truth: "partial", requiredFields: ["origin", "checkpoint"], sourceCharacterIds: ["zhao-fusheng"], expiresAt: "1942-05-15T20:00:00.000Z" },
+    { id: "escort-list", title: "押运名单", truth: "partial", requiredFields: ["leader", "unit"], sourceCharacterIds: ["chen-jingwen", "han-shijie"], expiresAt: "1942-05-15T20:00:00.000Z" },
+    { id: "radio-window", title: "组织收报窗口", truth: "true", requiredFields: ["date", "start", "duration"], sourceCharacterIds: ["old-wu", "zhou-qiming"], expiresAt: "1942-05-15T22:20:00.000Z" },
+    { id: "false-warehouse", title: "二号仓库假消息", truth: "false", requiredFields: ["warehouse"], sourceCharacterIds: ["han-shijie"], expiresAt: "1942-05-15T18:00:00.000Z" },
+    { id: "archive-audit", title: "档案借阅核查", truth: "true", requiredFields: ["scope", "investigator"], sourceCharacterIds: ["chen-jingwen", "han-shijie"], expiresAt: "1942-05-14T18:00:00.000Z" },
+    { id: "hotel-meeting", title: "江海饭店会面", truth: "partial", requiredFields: ["room", "attendees"], sourceCharacterIds: ["luo-boan", "chen-jingwen"], expiresAt: "1942-05-13T22:00:00.000Z" },
+    { id: "inspection-order", title: "临时封锁命令", truth: "true", requiredFields: ["checkpoint", "start"], sourceCharacterIds: ["lin-ruolan", "han-shijie"], expiresAt: "1942-05-15T12:00:00.000Z" },
+  ],
+  objectives: [{ id: "confirm-radio-shipment", required: true, deadline: "1942-05-15T22:00:00.000Z", requiredIntelIds: ["shipment-time", "shipment-place", "shipment-cargo"], minimumConfidence: 0.7, acceptedDeliveryMethods: ["radio", "courier"], recipientId: "organization" }],
+};
+
+export const LINJIANG_1942 = assertValidCampaign(draft);

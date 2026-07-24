@@ -1,0 +1,13 @@
+{
+  "name": "qianfu",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @qianfu/server --filter @qianfu/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
