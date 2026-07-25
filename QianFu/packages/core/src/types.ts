@@ -64,6 +64,7 @@ export interface CharacterDefinition {
 export interface DialogueMemory {
   characterId: string;
   summary: string;
+  lastPrivateIntent: string | null;
   turns: Array<{ speaker: "player" | "npc"; text: string; at: string }>;
   lastGoal: DialogueGoal | null;
   interactionCount: number;

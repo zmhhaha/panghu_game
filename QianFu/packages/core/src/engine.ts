@@ -35,7 +35,7 @@ export function createInitialWorld(
     },
   ]));
   const dialogueMemories = Object.fromEntries(campaign.characters.map((character) => [character.id, {
-    characterId: character.id, summary: "尚未与玩家交谈。", turns: [], lastGoal: null, interactionCount: 0,
+    characterId: character.id, summary: "尚未与玩家交谈。", lastPrivateIntent: null, turns: [], lastGoal: null, interactionCount: 0,
   }]));
 
   const intel = Object.fromEntries(campaign.intel.map((item): [string, IntelState] => [
@@ -82,15 +82,16 @@ export class CampaignEngine {
     this.campaign = campaign;
     this.state = structuredClone(initialState);
     this.state.dialogueMemories ??= Object.fromEntries(campaign.characters.map((character) => [character.id, {
-      characterId: character.id, summary: "尚未与玩家交谈。", turns: [], lastGoal: null, interactionCount: 0,
+      characterId: character.id, summary: "尚未与玩家交谈。", lastPrivateIntent: null, turns: [], lastGoal: null, interactionCount: 0,
     }]));
     this.state.activeDialogue ??= null;
     this.state.discoveredLocationIds ??= campaign.locations.slice(0, 3).map((location) => location.id);
     this.state.knownCharacterIds ??= [];
     for (const character of campaign.characters) {
       this.state.dialogueMemories[character.id] ??= {
-        characterId: character.id, summary: "尚未与玩家交谈。", turns: [], lastGoal: null, interactionCount: 0,
+        characterId: character.id, summary: "尚未与玩家交谈。", lastPrivateIntent: null, turns: [], lastGoal: null, interactionCount: 0,
       };
+      this.state.dialogueMemories[character.id].lastPrivateIntent ??= null;
     }
   }
 
@@ -149,11 +150,17 @@ export class CampaignEngine {
         memory.turns.push({ speaker: "player", text: action.playerText.trim(), at: next.currentTime });
         npcReply = action.agentOutcome?.visibleSpeech ?? generateNpcReply(definition, next, legacyAction, memory, discovery !== null);
         memory.turns.push({ speaker: "npc", text: npcReply, at: next.currentTime });
+        if (action.agentOutcome?.privateIntent) memory.lastPrivateIntent = action.agentOutcome.privateIntent;
         memory.turns = memory.turns.slice(-8); memory.interactionCount += 1; memory.lastGoal = session.goal; memory.summary = summarizeMemory(memory, definition);
         session.transcript.push({ speaker: "player", text: action.playerText.trim(), at: next.currentTime }, { speaker: "npc", text: npcReply, at: next.currentTime });
         session.elapsedMinutes += 2; session.turnCount += 1;
         if (session.turnCount >= session.maxTurns) session.status = "completed";
-        append("dialogue.turn_completed", { characterId: definition.id, goal: session.goal, playerText: action.playerText, npcReply, turnCount: session.turnCount, maxTurns: session.maxTurns });
+        append("dialogue.turn_completed", {
+          characterId: definition.id, goal: session.goal, playerText: action.playerText, npcReply,
+          turnCount: session.turnCount, maxTurns: session.maxTurns,
+          privateIntent: action.agentOutcome?.privateIntent,
+          requestedEffects: action.agentOutcome?.requestedEffects ?? [],
+        });
         if (discovery) {
           append("intel.dialogue_discovered", { characterId: definition.id, ...discovery });
           unlockNextLocation(this.campaign, next, append);
@@ -231,6 +238,7 @@ export class CampaignEngine {
           memory.turns.push({ speaker: "player", text: action.playerText.trim(), at: next.currentTime });
           npcReply = action.agentOutcome?.visibleSpeech ?? generateNpcReply(definition, next, action, memory, discovery !== null);
           memory.turns.push({ speaker: "npc", text: npcReply, at: next.currentTime });
+          if (action.agentOutcome?.privateIntent) memory.lastPrivateIntent = action.agentOutcome.privateIntent;
           memory.turns = memory.turns.slice(-8);
           memory.interactionCount += 1;
           memory.lastGoal = action.goal;

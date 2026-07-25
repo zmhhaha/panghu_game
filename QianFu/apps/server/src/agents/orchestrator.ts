@@ -17,7 +17,7 @@ export class CampaignOrchestrator {
   async prepareDialogue(state: WorldState, action: DialogueAction): Promise<AgentPreparation> {
     const character = LINJIANG_1942.characters.find((item) => item.id === action.targetCharacterId);
     const memory = state.dialogueMemories?.[action.targetCharacterId] ?? {
-      characterId: action.targetCharacterId, summary: "尚未与玩家交谈。", turns: [], lastGoal: null, interactionCount: 0,
+      characterId: action.targetCharacterId, summary: "尚未与玩家交谈。", lastPrivateIntent: null, turns: [], lastGoal: null, interactionCount: 0,
     };
     const directorSummary = this.buildDirectorSummary(state, action);
     if (!character || !this.provider) return { action, provider: "fallback", directorSummary };
@@ -78,6 +78,7 @@ export class CampaignOrchestrator {
         recruitmentProgress: relationship.recruitmentProgress,
       } : null,
       memorySummary: memory.summary,
+      previousPrivateIntent: memory.lastPrivateIntent,
       recentDialogue,
       interactionCount: memory.interactionCount,
     });
