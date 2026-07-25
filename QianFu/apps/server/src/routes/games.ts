@@ -54,10 +54,16 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
     if (!state) { res.status(404).json({ error: "战役不存在" }); return; }
     const visibleCharacters = LINJIANG_1942.characters
       .filter((character) => state.characters[character.id]?.locationId === state.currentLocationId)
-      .map((character) => ({ id: character.id, name: character.name, publicIdentity: character.publicIdentity, recruitable: character.recruitable }));
+      .map((character) => {
+        const known = state.knownCharacterIds?.includes(character.id) ?? false;
+        return { id: character.id, name: known ? character.name : "？？？", publicIdentity: known ? character.publicIdentity : "尚未认识", recruitable: known && character.recruitable, known };
+      });
     res.json({
       campaign: { id: LINJIANG_1942.id, version: LINJIANG_1942.version, name: LINJIANG_1942.name },
-      locations: LINJIANG_1942.locations.map(({ id, name, district }) => ({ id, name, district })),
+      locations: LINJIANG_1942.locations.map(({ id, name, district }) => {
+        const discovered = state.discoveredLocationIds?.includes(id) ?? id === state.currentLocationId;
+        return { id, name: discovered ? name : "？？？", district: discovered ? district : "区域未确认", discovered };
+      }),
       characters: visibleCharacters,
       intel: LINJIANG_1942.intel.map(({ id, title, requiredFields }) => ({ id, title, requiredFields })),
     });

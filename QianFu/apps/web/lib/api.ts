@@ -4,8 +4,8 @@ type PublicActionResult = Omit<ActionResult, "state"> & { state: PublicWorldStat
 
 export interface GameContext {
   campaign: { id: string; version: string; name: string };
-  locations: { id: string; name: string; district: string }[];
-  characters: { id: string; name: string; publicIdentity: string; recruitable: boolean }[];
+  locations: { id: string; name: string; district: string; discovered: boolean }[];
+  characters: { id: string; name: string; publicIdentity: string; recruitable: boolean; known: boolean }[];
   intel: { id: string; title: string; requiredFields: string[] }[];
 }
 

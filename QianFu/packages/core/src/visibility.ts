@@ -28,5 +28,6 @@ export function toPublicWorldState(state: WorldState): PublicWorldState {
       deliveryMethod: intel.deliveryMethod,
     }]),
   );
-  return { ...structuredClone(state), characters: visibleCharacters, intel: visibleIntel };
+  const { dialogueMemories: _privateMemories, characters: _privateCharacters, intel: _privateIntel, ...publicState } = structuredClone(state);
+  return { ...publicState, characters: visibleCharacters, intel: visibleIntel };
 }

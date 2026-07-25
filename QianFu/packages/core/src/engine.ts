@@ -52,6 +52,8 @@ export function createInitialWorld(
     difficulty: DIFFICULTIES[difficultyId],
     currentTime: campaign.startTime,
     currentLocationId: campaign.locations[0]?.id ?? "",
+    discoveredLocationIds: campaign.locations.slice(0, 3).map((location) => location.id),
+    knownCharacterIds: [],
     status: "active",
     stateVersion: 0,
     lastEventSeq: 0,
@@ -83,6 +85,8 @@ export class CampaignEngine {
       characterId: character.id, summary: "尚未与玩家交谈。", turns: [], lastGoal: null, interactionCount: 0,
     }]));
     this.state.activeDialogue ??= null;
+    this.state.discoveredLocationIds ??= campaign.locations.slice(0, 3).map((location) => location.id);
+    this.state.knownCharacterIds ??= [];
     for (const character of campaign.characters) {
       this.state.dialogueMemories[character.id] ??= {
         characterId: character.id, summary: "尚未与玩家交谈。", turns: [], lastGoal: null, interactionCount: 0,
@@ -121,6 +125,10 @@ export class CampaignEngine {
         const target = next.characters[action.targetCharacterId];
         if (!target || target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
         if (next.activeDialogue?.status === "active") throw new Error("Another dialogue is already active");
+        if (!next.knownCharacterIds.includes(action.targetCharacterId)) {
+          next.knownCharacterIds.push(action.targetCharacterId);
+          append("character.introduced", { characterId: action.targetCharacterId });
+        }
         const minTurns = action.allocatedMinutes / 2;
         next.activeDialogue = { id: action.idempotencyKey, characterId: action.targetCharacterId, goal: action.goal, tone: action.tone, allocatedMinutes: action.allocatedMinutes, elapsedMinutes: 0, maxTurns: minTurns, turnCount: 0, status: "active", transcript: [] };
         append("dialogue.started", { characterId: action.targetCharacterId, goal: action.goal, allocatedMinutes: action.allocatedMinutes, maxTurns: minTurns });
@@ -146,7 +154,10 @@ export class CampaignEngine {
         session.elapsedMinutes += 2; session.turnCount += 1;
         if (session.turnCount >= session.maxTurns) session.status = "completed";
         append("dialogue.turn_completed", { characterId: definition.id, goal: session.goal, playerText: action.playerText, npcReply, turnCount: session.turnCount, maxTurns: session.maxTurns });
-        if (discovery) append("intel.dialogue_discovered", { characterId: definition.id, ...discovery });
+        if (discovery) {
+          append("intel.dialogue_discovered", { characterId: definition.id, ...discovery });
+          unlockNextLocation(this.campaign, next, append);
+        }
         narration = npcReply;
         break;
       }
@@ -160,6 +171,7 @@ export class CampaignEngine {
       }
       case "move": {
         const origin = this.campaign.locations.find((item) => item.id === next.currentLocationId);
+        if (!next.discoveredLocationIds.includes(action.destinationId)) throw new Error("Destination has not been discovered");
         if (!origin?.travelMinutes[action.destinationId]) throw new Error("Destination is not reachable from current location");
         if (action.durationMinutes !== origin.travelMinutes[action.destinationId]) throw new Error("Move duration does not match campaign travel time");
         append("player.moved", { from: next.currentLocationId, to: action.destinationId });
@@ -172,6 +184,10 @@ export class CampaignEngine {
         if (!target) throw new Error("Unknown character");
         if (target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
         target.familiarity = clamp(target.familiarity + 2);
+        if (!next.knownCharacterIds.includes(target.id)) {
+          next.knownCharacterIds.push(target.id);
+          append("character.identified", { characterId: target.id });
+        }
         next.personalSuspicion = clamp(next.personalSuspicion + 1 * next.difficulty.enemyResponseSpeed);
         append("character.observed", { characterId: target.id });
         narration = "你记下了目标的行动规律，但长时间停留也可能引人注意。";
@@ -231,7 +247,10 @@ export class CampaignEngine {
           privateIntent: action.agentOutcome?.privateIntent,
           requestedEffects: action.agentOutcome?.requestedEffects ?? [],
         });
-        if (discovery) append("intel.dialogue_discovered", { characterId: definition.id, ...discovery });
+        if (discovery) {
+          append("intel.dialogue_discovered", { characterId: definition.id, ...discovery });
+          unlockNextLocation(this.campaign, next, append);
+        }
         if (action.goal === "recruit_probe") append("character.recruitment_progress", { characterId: definition.id, progress: next.characters[definition.id].recruitmentProgress, recruited: next.characters[definition.id].recruited });
         narration = dialogueNarration(next, definition, action, discovery !== null);
         break;
@@ -294,6 +313,13 @@ function summarizeMemory(memory: NonNullable<WorldState["dialogueMemories"][stri
   const personality = definition.personality ?? { speechStyle: "克制" };
   const latest = memory.turns.filter((turn) => turn.speaker === "player").at(-1)?.text ?? "";
   return `${definition.name}已与玩家交谈${memory.interactionCount}次；最近话题是“${latest.slice(0, 40)}”，保持${personality.speechStyle}的说话方式。`;
+}
+
+function unlockNextLocation(campaign: CampaignDefinition, state: WorldState, append: (type: string, payload: unknown) => void) {
+  const nextLocation = campaign.locations.find((location) => !state.discoveredLocationIds.includes(location.id));
+  if (!nextLocation) return;
+  state.discoveredLocationIds.push(nextLocation.id);
+  append("location.discovered", { locationId: nextLocation.id });
 }
 
 function minuteOfDay(iso: string): number {

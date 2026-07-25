@@ -5,8 +5,8 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#171513", panel: "#211e1a", paper: "#e7dfcd", muted: "#958b7a",
-        copper: "#b97a45", alert: "#b84a3b", safe: "#687b61", line: "#3a342d",
+        ink: "#151817", panel: "#1d2220", paper: "#e5e8e4", muted: "#929b96",
+        copper: "#76a7a1", alert: "#c45d57", safe: "#769579", line: "#343b38",
       },
       fontFamily: { sans: ["Arial", "Noto Sans SC", "sans-serif"], serif: ["KaiTi", "STKaiti", "Noto Serif SC", "serif"] },
     },

@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 * { box-sizing: border-box; }
-html { background: #171513; }
-body { margin: 0; background: #171513; color: #e7dfcd; letter-spacing: 0; }
+html { background: #151817; }
+body { margin: 0; background: #151817; color: #e5e8e4; letter-spacing: 0; }
 button, input, select, textarea { font: inherit; }
-::selection { background: #b97a45; color: #171513; }
+button, a, select { -webkit-tap-highlight-color: transparent; }
+::selection { background: #76a7a1; color: #151817; }

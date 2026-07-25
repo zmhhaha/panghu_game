@@ -171,6 +171,8 @@ export interface WorldState {
   difficulty: DifficultyConfig;
   currentTime: string;
   currentLocationId: string;
+  discoveredLocationIds: string[];
+  knownCharacterIds: string[];
   status: GameStatus;
   stateVersion: number;
   lastEventSeq: number;
