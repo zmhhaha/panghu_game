@@ -6,4 +6,4 @@ metadata:
 data:
   # Values: fallback, openai, deepseek, anthropic, custom.
   # Credentials and connection fields are injected from the Vault Secret.
-  PROVIDER: fallback
+  PROVIDER: deepseek

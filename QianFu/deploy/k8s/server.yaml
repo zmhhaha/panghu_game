@@ -65,7 +65,7 @@ spec:
               valueFrom:
                 secretKeyRef: { name: qianfu-agent, key: CUSTOM_MODEL, optional: true }
             - name: LLM_TIMEOUT_MS
-              value: "8000"
+              value: "20000"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
