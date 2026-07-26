@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CampaignEngine, createInitialWorld, type CampaignDefinition } from "../src/index.js";
+import { CampaignEngine, createInitialWorld, toPublicGameEvents, toPublicWorldState, type CampaignDefinition, type WorldState } from "../src/index.js";
 
 const campaign: CampaignDefinition = {
   id: "test", version: "1.0.0", engineVersion: "1.0.0", name: "Test",
@@ -125,5 +125,70 @@ describe("CampaignEngine", () => {
     }
     expect(engine.getState().characters.recruit.recruited).toBe(true);
     expect(engine.getState().network.activeMemberIds).toContain("recruit");
+  });
+});
+
+describe("enemy investigation", () => {
+  const investigationCampaign: CampaignDefinition = {
+    ...campaign,
+    characters: [{
+      id: "observer-target", name: "Target", publicIdentity: "Clerk", hiddenAlignment: "neutral",
+      initialLocationId: "office", recruitable: false,
+      schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
+      reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 },
+    }],
+  };
+
+  it("migrates old saves when projecting public state", () => {
+    const oldState = createInitialWorld(investigationCampaign, "old-game", "user-1");
+    delete (oldState as { investigation?: WorldState["investigation"] }).investigation;
+    const publicState = toPublicWorldState(oldState);
+    expect(publicState.investigation).toEqual({ pressure: 0, locationHeat: {}, surveillanceLocationIds: [], lastActionAt: null });
+  });
+
+  it("processes evidence only after crossing a ten-minute boundary", () => {
+    const engine = new CampaignEngine(investigationCampaign, createInitialWorld(investigationCampaign, "boundary-game", "user-1"));
+    engine.execute({ type: "dialogue_start", targetCharacterId: "observer-target", goal: "small_talk", tone: "friendly", allocatedMinutes: 10, durationMinutes: 0, idempotencyKey: "boundary-start" });
+    engine.execute({ type: "dialogue_turn", sessionId: "boundary-start", playerText: "Hello", durationMinutes: 2, idempotencyKey: "boundary-turn-1" });
+    expect(engine.getState().investigation.pressure).toBe(0);
+    expect(engine.getState().investigation.evidence[0]?.processed).toBe(false);
+    for (let index = 2; index <= 5; index += 1) {
+      engine.execute({ type: "dialogue_turn", sessionId: "boundary-start", playerText: `Turn ${index}`, durationMinutes: 2, idempotencyKey: `boundary-turn-${index}` });
+    }
+    expect(engine.getState().investigation.pressure).toBeGreaterThan(0);
+    expect(engine.getState().investigation.evidence.every((evidence) => evidence.processed)).toBe(true);
+  });
+
+  it("starts surveillance after repeated observation and raises suspicion on follow-up activity", () => {
+    const engine = new CampaignEngine(investigationCampaign, createInitialWorld(investigationCampaign, "surveillance-game", "user-1"));
+    for (let index = 1; index <= 3; index += 1) {
+      engine.execute({ type: "observe", targetCharacterId: "observer-target", durationMinutes: 10, idempotencyKey: `observe-${index}` });
+    }
+    expect(engine.getState().investigation.surveillanceLocationIds).toContain("office");
+    const suspicionBefore = engine.getState().personalSuspicion;
+    const followed = engine.execute({ type: "observe", targetCharacterId: "observer-target", durationMinutes: 10, idempotencyKey: "observe-4" });
+    expect(followed.state.personalSuspicion).toBeGreaterThan(suspicionBefore + 1);
+    expect(followed.notices.some((notice) => notice.includes("人影"))).toBe(true);
+  });
+
+  it("keeps investigation evidence out of public state and event payloads", () => {
+    const engine = new CampaignEngine(investigationCampaign, createInitialWorld(investigationCampaign, "private-game", "user-1"));
+    const result = engine.execute({ type: "observe", targetCharacterId: "observer-target", durationMinutes: 10, idempotencyKey: "private-observe" });
+    expect(toPublicWorldState(result.state).investigation).not.toHaveProperty("evidence");
+    expect(toPublicGameEvents(result.events).some((event) => event.type.startsWith("investigation.evidence_"))).toBe(false);
+  });
+
+  it("keeps a boundary interruption in the completed dialogue transcript", () => {
+    const state = createInitialWorld(investigationCampaign, "dialogue-notice-game", "user-1");
+    state.investigation.locationHeat.office = 20;
+    state.investigation.surveillanceLocationIds.push("office");
+    const engine = new CampaignEngine(investigationCampaign, state);
+    engine.execute({ type: "dialogue_start", targetCharacterId: "observer-target", goal: "small_talk", tone: "friendly", allocatedMinutes: 10, durationMinutes: 0, idempotencyKey: "notice-start" });
+    let result = engine.execute({ type: "dialogue_turn", sessionId: "notice-start", playerText: "Turn 1", durationMinutes: 2, idempotencyKey: "notice-turn-1" });
+    for (let index = 2; index <= 5; index += 1) {
+      result = engine.execute({ type: "dialogue_turn", sessionId: "notice-start", playerText: `Turn ${index}`, durationMinutes: 2, idempotencyKey: `notice-turn-${index}` });
+    }
+    expect(result.state.activeDialogue?.status).toBe("completed");
+    expect(result.state.activeDialogue?.transcript.some((turn) => turn.speaker === "system" && turn.text.includes("人影"))).toBe(true);
   });
 });

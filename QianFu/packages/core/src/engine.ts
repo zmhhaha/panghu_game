@@ -66,6 +66,13 @@ export function createInitialWorld(
     activeDialogue: null,
     intel,
     network: { exposure: 0, activeMemberIds: [], compromisedMemberIds: [], availableChannels: ["radio", "courier"] },
+    investigation: {
+      pressure: 0,
+      locationHeat: Object.fromEntries(campaign.locations.map((location) => [location.id, 0])),
+      surveillanceLocationIds: [],
+      evidence: [],
+      lastActionAt: null,
+    },
     ending: null,
     closedAt: null,
   };
@@ -88,6 +95,17 @@ export class CampaignEngine {
     this.state.activeDialogue ??= null;
     this.state.discoveredLocationIds ??= campaign.locations.slice(0, 3).map((location) => location.id);
     this.state.knownCharacterIds ??= [];
+    this.state.investigation ??= {
+      pressure: 0,
+      locationHeat: Object.fromEntries(campaign.locations.map((location) => [location.id, 0])),
+      surveillanceLocationIds: [],
+      evidence: [],
+      lastActionAt: null,
+    };
+    this.state.investigation.evidence ??= [];
+    this.state.investigation.surveillanceLocationIds ??= [];
+    this.state.investigation.locationHeat ??= {};
+    for (const location of campaign.locations) this.state.investigation.locationHeat[location.id] ??= 0;
     for (const character of campaign.characters) {
       this.state.dialogueMemories[character.id] ??= {
         characterId: character.id, summary: "尚未与玩家交谈。", lastPrivateIntent: null, turns: [], lastGoal: null, interactionCount: 0,
@@ -103,7 +121,7 @@ export class CampaignEngine {
   execute(action: GameAction): ActionResult {
     if (this.state.status !== "active") throw new Error("Campaign is not active");
     if (this.usedIdempotencyKeys.has(action.idempotencyKey)) {
-      return { state: this.getState(), events: [], narration: "该行动已经处理。", duplicate: true };
+      return { state: this.getState(), events: [], narration: "该行动已经处理。", duplicate: true, notices: [] };
     }
     if (!Number.isInteger(action.durationMinutes) || action.durationMinutes < 0 || (action.type === "dialogue_turn" ? action.durationMinutes !== 2 : action.durationMinutes % 10 !== 0)) {
       throw new Error("Action duration must be a non-negative multiple of 10 minutes");
@@ -111,6 +129,7 @@ export class CampaignEngine {
 
     const next = structuredClone(this.state);
     const events: GameEvent[] = [];
+    const notices: string[] = [];
     const append = (type: string, payload: unknown) => {
       next.lastEventSeq += 1;
       events.push({
@@ -164,6 +183,8 @@ export class CampaignEngine {
           privateIntent: action.agentOutcome?.privateIntent,
           requestedEffects: action.agentOutcome?.requestedEffects ?? [],
         });
+        const contactWeight = session.goal === "apply_pressure" ? 3 : session.goal === "recruit_probe" || session.goal === "request_information" ? 2 : 1;
+        recordInvestigationEvidence(next, "extended_contact", next.currentLocationId, contactWeight, append);
         if (discovery) {
           append("intel.dialogue_discovered", { characterId: definition.id, ...discovery });
           unlockNextLocation(this.campaign, next, append);
@@ -175,6 +196,7 @@ export class CampaignEngine {
         if (!next.activeDialogue || next.activeDialogue.id !== action.sessionId) throw new Error("Dialogue session is not active");
         const endedSession = next.activeDialogue;
         elapsedDuration = Math.max(0, endedSession.allocatedMinutes - endedSession.elapsedMinutes);
+        if (elapsedDuration > 0) recordInvestigationEvidence(next, "extended_contact", next.currentLocationId, Math.max(1, Math.ceil(elapsedDuration / 10)), append);
         append("dialogue.ended", { characterId: endedSession.characterId, turnCount: endedSession.turnCount });
         next.activeDialogue = null;
         narration = "你结束了这次交谈，重新回到街上的时间线。";
@@ -200,6 +222,7 @@ export class CampaignEngine {
           append("character.identified", { characterId: target.id });
         }
         next.personalSuspicion = clamp(next.personalSuspicion + 1 * next.difficulty.enemyResponseSpeed);
+        recordInvestigationEvidence(next, "covert_observation", next.currentLocationId, 6, append);
         append("character.observed", { characterId: target.id });
         narration = "你记下了目标的行动规律，但长时间停留也可能引人注意。";
         break;
@@ -210,6 +233,7 @@ export class CampaignEngine {
         if (!intel || !definition) throw new Error("Unknown intelligence item");
         intel.knownFields = [...new Set([...intel.knownFields, ...action.fields.filter((field) => definition.requiredFields.includes(field))])];
         intel.confidence = clamp(intel.confidence + action.confidenceDelta, 0, 1);
+        recordInvestigationEvidence(next, "sensitive_notes", next.currentLocationId, 3, append);
         append("intel.recorded", { intelId: action.intelId, fields: action.fields });
         narration = "新的情报碎片已经记录，仍需核验来源。";
         break;
@@ -224,6 +248,7 @@ export class CampaignEngine {
         intel.deliveryMethod = action.method;
         next.network.exposure = clamp(next.network.exposure + (action.method === "radio" ? 4 : 2) * next.difficulty.enemyResponseSpeed);
         next.personalSuspicion = clamp(next.personalSuspicion + (action.method === "radio" ? 2 : 1) * next.difficulty.enemyResponseSpeed);
+        recordInvestigationEvidence(next, action.method === "radio" ? "radio_signal" : "courier_pattern", next.currentLocationId, action.method === "radio" ? 18 : 7, append);
         append("intel.transmitted", { intelId: action.intelId, method: action.method });
         narration = "情报已经送出，最终价值将在组织确认后结算。";
         break;
@@ -281,6 +306,10 @@ export class CampaignEngine {
     // when the clock crosses a ten-minute boundary.
     if (Math.floor(new Date(previousTime).getTime() / 600_000) !== Math.floor(new Date(next.currentTime).getTime() / 600_000)) {
       advanceSchedules(this.campaign, next, append);
+      notices.push(...advanceEnemyInvestigation(next, append));
+      if (next.activeDialogue && notices.length > 0) {
+        next.activeDialogue.transcript.push(...notices.map((text) => ({ speaker: "system" as const, text, at: next.currentTime })));
+      }
     }
     next.playerEnergy = clamp(next.playerEnergy - Math.ceil(elapsedDuration / 30));
     next.stateVersion += 1;
@@ -295,7 +324,7 @@ export class CampaignEngine {
       this.state.stateVersion += 1;
     }
 
-    return { state: this.getState(), events, narration, duplicate: false, npcReply };
+    return { state: this.getState(), events, narration, duplicate: false, npcReply, notices };
   }
 }
 
@@ -355,6 +384,60 @@ function unlockNextLocation(campaign: CampaignDefinition, state: WorldState, app
   if (!nextLocation) return;
   state.discoveredLocationIds.push(nextLocation.id);
   append("location.discovered", { locationId: nextLocation.id });
+}
+
+function recordInvestigationEvidence(
+  state: WorldState,
+  type: WorldState["investigation"]["evidence"][number]["type"],
+  locationId: string,
+  weight: number,
+  append: (type: string, payload: unknown) => void,
+) {
+  const investigation = state.investigation;
+  investigation.locationHeat[locationId] = clamp((investigation.locationHeat[locationId] ?? 0) + weight);
+  investigation.evidence.push({ type, locationId, weight, observedAt: state.currentTime, processed: false });
+  investigation.evidence = investigation.evidence.slice(-100);
+  append("investigation.evidence_recorded", { type, locationId, weight });
+}
+
+function advanceEnemyInvestigation(state: WorldState, append: (type: string, payload: unknown) => void): string[] {
+  const investigation = state.investigation;
+  const fresh = investigation.evidence.filter((evidence) => !evidence.processed);
+  if (fresh.length === 0) return [];
+  for (const evidence of fresh) evidence.processed = true;
+
+  const newWeight = fresh.reduce((total, evidence) => total + evidence.weight, 0);
+  investigation.pressure = clamp(investigation.pressure + newWeight * 0.8 * state.difficulty.enemyResponseSpeed);
+  const radioEvidence = fresh.find((evidence) => evidence.type === "radio_signal");
+  const hottest = Object.entries(investigation.locationHeat).sort((a, b) => b[1] - a[1])[0];
+  let action: string | null = null;
+  let notice: string | null = null;
+
+  if (radioEvidence) {
+    state.network.exposure = clamp(state.network.exposure + 3 * state.difficulty.enemyResponseSpeed);
+    action = "radio_sweep";
+    notice = "远处传来短促的干扰声。有人正在这一带排查异常无线电信号。";
+  } else if (hottest && hottest[1] >= 12 && !investigation.surveillanceLocationIds.includes(hottest[0])) {
+    investigation.surveillanceLocationIds.push(hottest[0]);
+    action = "surveillance_started";
+    notice = "街角多了一个停留过久的陌生人。这里可能已经受到监视。";
+  } else if (investigation.surveillanceLocationIds.includes(state.currentLocationId) && fresh.some((evidence) => evidence.locationId === state.currentLocationId)) {
+    state.personalSuspicion = clamp(state.personalSuspicion + 3 * state.difficulty.enemyResponseSpeed);
+    action = "subject_followed";
+    notice = "窗外同一道人影再次出现。你意识到自己的停留可能被人记下了。";
+  } else if (investigation.pressure >= 30) {
+    state.personalSuspicion = clamp(state.personalSuspicion + 1 * state.difficulty.enemyResponseSpeed);
+    action = "records_reviewed";
+    notice = "机关里开始核对近期出入和调阅记录，几个人被叫去补填说明。";
+  }
+
+  for (const locationId of Object.keys(investigation.locationHeat)) {
+    investigation.locationHeat[locationId] = clamp(investigation.locationHeat[locationId] - 0.5);
+  }
+  if (!action || !notice) return [];
+  investigation.lastActionAt = state.currentTime;
+  append("investigation.action_taken", { action, locationId: radioEvidence?.locationId ?? hottest?.[0], notice });
+  return [notice];
 }
 
 function minuteOfDay(iso: string): number {

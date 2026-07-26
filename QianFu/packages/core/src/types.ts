@@ -87,7 +87,7 @@ export interface DialogueSession {
   maxTurns: number;
   turnCount: number;
   status: "active" | "completed";
-  transcript: Array<{ speaker: "player" | "npc"; text: string; at: string }>;
+  transcript: Array<{ speaker: "player" | "npc" | "system"; text: string; at: string }>;
 }
 
 export interface IntelDefinition {
@@ -153,6 +153,22 @@ export interface NetworkState {
   availableChannels: string[];
 }
 
+export interface InvestigationEvidence {
+  type: "extended_contact" | "covert_observation" | "radio_signal" | "courier_pattern" | "sensitive_notes";
+  locationId: string;
+  weight: number;
+  observedAt: string;
+  processed: boolean;
+}
+
+export interface EnemyInvestigationState {
+  pressure: number;
+  locationHeat: Record<string, number>;
+  surveillanceLocationIds: string[];
+  evidence: InvestigationEvidence[];
+  lastActionAt: string | null;
+}
+
 export interface ScoreBreakdown {
   mission: number;
   intelligence: number;
@@ -192,6 +208,7 @@ export interface WorldState {
   activeDialogue: DialogueSession | null;
   intel: Record<string, IntelState>;
   network: NetworkState;
+  investigation: EnemyInvestigationState;
   ending: CampaignEnding | null;
   closedAt: string | null;
 }
@@ -292,4 +309,5 @@ export interface ActionResult {
   narration: string;
   duplicate: boolean;
   npcReply?: string;
+  notices: string[];
 }

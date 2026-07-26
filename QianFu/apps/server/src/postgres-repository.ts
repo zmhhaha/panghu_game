@@ -93,7 +93,7 @@ export class PostgresGameRepository implements GameRepository {
       );
       if (duplicate.rowCount) {
         await client.query("COMMIT");
-        return { state, events: [], narration: "该行动已经处理。", duplicate: true };
+        return { state, events: [], narration: "该行动已经处理。", duplicate: true, notices: [] };
       }
 
       const result = new CampaignEngine(LINJIANG_1942, state).execute(action);

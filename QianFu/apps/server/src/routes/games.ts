@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { toPublicWorldState, type GameAction } from "@qianfu/core";
+import { toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
 import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
 import { LINJIANG_1942 } from "@qianfu/content";
@@ -97,7 +97,7 @@ gamesRouter.post("/:id/actions", async (req, res) => {
     }
     const result = await gameRepository.execute(req.params.id, req.user.id, action);
     if (!result) { res.status(404).json({ error: "战役不存在" }); return; }
-    res.json({ ...result, state: toPublicWorldState(result.state) });
+    res.json({ ...result, state: toPublicWorldState(result.state), events: toPublicGameEvents(result.events) });
   } catch (error) {
     res.status(409).json({ error: error instanceof Error ? error.message : "行动执行失败" });
   }
@@ -108,9 +108,7 @@ gamesRouter.get("/:id/events", async (req, res, next) => {
   try {
     const events = await gameRepository.getEvents(req.params.id, req.user.id);
     if (!events) { res.status(404).json({ error: "战役不存在" }); return; }
-    res.json({ events: events.map((event) => event.type === "dialogue.completed" || event.type === "dialogue.turn_completed"
-      ? { ...event, payload: (() => { const payload = event.payload as Record<string, unknown>; const { privateIntent: _privateIntent, memorySummary: _memorySummary, requestedEffects: _requestedEffects, ...publicPayload } = payload; return publicPayload; })() }
-      : event) });
+    res.json({ events: toPublicGameEvents(events) });
   } catch (error) { next(error); }
 });
 
@@ -122,6 +120,6 @@ gamesRouter.get("/:id/export", async (req, res, next) => {
     if (!state || !events) { res.status(404).json({ error: "战役不存在" }); return; }
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="qianfu-${state.gameInstanceId}.json"`);
-    res.json({ schemaVersion: "1.0.0", exportedAt: new Date().toISOString(), campaign: LINJIANG_1942, state, events });
+    res.json({ schemaVersion: "1.0.0", exportedAt: new Date().toISOString(), campaign: LINJIANG_1942, state: toPublicWorldState(state), events: toPublicGameEvents(events) });
   } catch (error) { next(error); }
 });

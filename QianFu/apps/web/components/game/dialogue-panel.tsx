@@ -107,7 +107,10 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
   </main>;
 }
 
-function DialogueBubble({ speaker, text, npcName }: { speaker: "player" | "npc"; text: string; npcName: string }) {
+function DialogueBubble({ speaker, text, npcName }: { speaker: "player" | "npc" | "system"; text: string; npcName: string }) {
+  if (speaker === "system") {
+    return <div className="mx-auto max-w-2xl border-y border-alert/30 bg-alert/[0.07] px-4 py-3 text-center text-xs leading-6 text-[#efaaa4]">{text}</div>;
+  }
   return <div className={`flex ${speaker === "player" ? "justify-end" : "justify-start"}`}>
     <div className={`max-w-[82%] px-4 py-3 sm:max-w-[70%] ${speaker === "player" ? "border-r-2 border-copper bg-copper/[0.07]" : "border-l-2 border-line bg-panel"}`}>
       <p className="mb-1 text-[10px] text-muted">{speaker === "player" ? "你" : npcName}</p>
