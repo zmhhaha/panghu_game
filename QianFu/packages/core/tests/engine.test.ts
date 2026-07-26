@@ -57,6 +57,30 @@ describe("CampaignEngine", () => {
     expect(result.events.some((event) => event.type === "character.schedule_advanced")).toBe(true);
   });
 
+  it("enforces a different per-turn text limit for each dialogue goal", () => {
+    const dialogueCampaign: CampaignDefinition = {
+      ...campaign,
+      characters: [{
+        id: "contact", name: "Contact", publicIdentity: "Shopkeeper", hiddenAlignment: "neutral",
+        initialLocationId: "office", recruitable: false,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
+        reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 },
+      }],
+    };
+
+    const shortEngine = new CampaignEngine(dialogueCampaign, createInitialWorld(dialogueCampaign, "game-short-dialogue", "user-1"));
+    shortEngine.execute({ type: "dialogue_start", targetCharacterId: "contact", goal: "small_talk", tone: "friendly", allocatedMinutes: 10, durationMinutes: 0, idempotencyKey: "short-start" });
+    expect(() => shortEngine.execute({ type: "dialogue_turn", sessionId: "short-start", playerText: "寒".repeat(81), durationMinutes: 2, idempotencyKey: "short-turn" })).toThrow("最多 80 个字符");
+    const fallback = shortEngine.execute({ type: "dialogue_turn", sessionId: "short-start", playerText: "今天天气挺好。", durationMinutes: 2, idempotencyKey: "short-turn-valid" });
+    expect(fallback.narration).toContain("Shopkeeper");
+    expect(fallback.narration).not.toContain("钟摆");
+
+    const longEngine = new CampaignEngine(dialogueCampaign, createInitialWorld(dialogueCampaign, "game-long-dialogue", "user-1"));
+    longEngine.execute({ type: "dialogue_start", targetCharacterId: "contact", goal: "long_talk", tone: "formal", allocatedMinutes: 60, durationMinutes: 0, idempotencyKey: "long-start" });
+    const result = longEngine.execute({ type: "dialogue_turn", sessionId: "long-start", playerText: "谈".repeat(300), durationMinutes: 2, idempotencyKey: "long-turn" });
+    expect(result.state.activeDialogue?.turnCount).toBe(1);
+  });
+
   it("shares a controlled intelligence fragment only after rapport is built", () => {
     const conversational: CampaignDefinition = {
       ...campaign,

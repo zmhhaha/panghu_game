@@ -1,4 +1,4 @@
-import type { DialogueAction, DialogueMemory, DialogueTurnAction, WorldState } from "@qianfu/core";
+import { DIALOGUE_TEXT_LIMITS, type DialogueAction, type DialogueMemory, type DialogueTurnAction, type WorldState } from "@qianfu/core";
 import { LINJIANG_1942 } from "@qianfu/content";
 import { createAgentProvider, parseNpcResponse, type AgentProvider, type NpcAgentResponse } from "./provider.js";
 
@@ -24,6 +24,7 @@ export class CampaignOrchestrator {
 
     try {
       const npc = await this.runNpcAgent(character, state, action, memory, directorSummary);
+      npc.visibleSpeech = npc.visibleSpeech.slice(0, DIALOGUE_TEXT_LIMITS[action.goal]);
       console.info(`[QianFu Agent] npc=${character.id} provider=${this.provider.name} status=success`);
       return { action: { ...action, agentOutcome: { ...npc, provider: "model" } }, provider: "model", directorSummary };
     } catch (error) {
@@ -36,6 +37,8 @@ export class CampaignOrchestrator {
   async prepareTurn(state: WorldState, action: DialogueTurnAction): Promise<DialogueTurnAction> {
     const session = state.activeDialogue;
     if (!session) return action;
+    const textLimit = DIALOGUE_TEXT_LIMITS[session.goal];
+    if (action.playerText.length > textLimit) throw new Error(`“${session.goal}”每轮发言最多 ${textLimit} 个字符`);
     const prepared = await this.prepareDialogue(state, {
       type: "dialogue", targetCharacterId: session.characterId, goal: session.goal, tone: session.tone,
       playerText: action.playerText, durationMinutes: 2, idempotencyKey: action.idempotencyKey,
@@ -61,6 +64,7 @@ export class CampaignOrchestrator {
       "只能依据提供的自身人格、个人记忆、当前场景和玩家原话作答，不能知道其他NPC的私密信息或全局真相。",
       "回复必须紧接玩家刚说的话，体现情绪和关系变化；不要泛泛而谈，不要重复前几轮的句式或口头禅。",
       "通常回复1到4句中文。关系不足时可以回避、反问、撒谎或转移话题，不要为了推进剧情主动泄露情报。",
+      `visibleSpeech不得超过${DIALOGUE_TEXT_LIMITS[action.goal]}个字符；${action.goal === "small_talk" ? "寒暄只说简短自然的日常话，不展开长篇叙述。" : action.goal === "long_talk" ? "长谈可以完整表达观点，但仍要像当面交谈。" : "控制在两三句有针对性的话内。"}`,
       "只输出JSON对象：visibleSpeech是对玩家说的话；privateIntent是未说出口的真实意图；requestedEffects是建议效果数组。",
     ].join("\n");
 

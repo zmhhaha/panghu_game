@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { DialogueGoal, DialogueTone, PublicWorldState } from "@qianfu/core";
+import { DIALOGUE_TEXT_LIMITS, type DialogueGoal, type DialogueTone, type PublicWorldState } from "@qianfu/core";
 import { Clock3, LogOut, Send, ShieldAlert, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -31,6 +31,9 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
   useEffect(() => { transcriptEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [session?.transcript.length]);
   if (!session) return null;
 
+  const activeGoal = session.goal ?? goal;
+  const activeTone = session.tone ?? tone;
+  const textLimit = DIALOGUE_TEXT_LIMITS[activeGoal];
   const remainingTurns = Math.max(0, session.maxTurns - session.turnCount);
   const remainingMinutes = Math.max(0, session.allocatedMinutes - session.elapsedMinutes);
   const currentMinute = new Date(state.currentTime).getUTCMinutes();
@@ -55,8 +58,8 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
 
     <div className="border-b border-line bg-ink">
       <div className="mx-auto grid w-full max-w-5xl grid-cols-2 gap-px bg-line sm:grid-cols-4">
-        <StatusItem label="交谈目标" value={goalLabels[goal]} />
-        <StatusItem label="表达方式" value={toneLabels[tone]} />
+        <StatusItem label="交谈目标" value={goalLabels[activeGoal]} />
+        <StatusItem label="表达方式" value={toneLabels[activeTone]} />
         <StatusItem label="剩余时间" value={`${remainingMinutes} 分钟`} />
         <StatusItem label="剩余轮次" value={`${remainingTurns} 轮`} />
       </div>
@@ -81,12 +84,12 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
       {error && <div className="mt-3 border-l-2 border-alert bg-alert/10 px-4 py-2 text-sm text-[#efaaa4]">{error}</div>}
 
       <div className="mt-4 border border-line bg-panel p-3">
-        <textarea value={text} onChange={(event) => setText(event.target.value)} maxLength={500}
+        <textarea value={text} onChange={(event) => setText(event.target.value)} maxLength={textLimit}
           onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }}
           className="min-h-24 w-full resize-none bg-transparent p-1 text-sm leading-6 text-paper outline-none placeholder:text-muted"
-          placeholder="输入这一轮要说的话..." />
+          placeholder={`输入这一轮要说的话，最多 ${textLimit} 个字符...`} />
         <div className="mt-2 flex items-center justify-between border-t border-line pt-3">
-          <span className="text-[11px] text-muted">{text.length}/500 · Enter 发送</span>
+          <span className="text-[11px] text-muted">{text.length}/{textLimit} · Enter 发送</span>
           <Button disabled={busy || !text.trim()} onClick={send}><Send size={15} />发送这一轮</Button>
         </div>
       </div>

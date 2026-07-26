@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type {
-  ActionResult, CampaignDefinition, CampaignEnding, CharacterState, GameAction,
-  GameEvent, IntelState, ScoreBreakdown, WorldState,
+import {
+  DIALOGUE_TEXT_LIMITS,
+  type ActionResult, type CampaignDefinition, type CampaignEnding, type CharacterState, type GameAction,
+  type GameEvent, type IntelState, type ScoreBreakdown, type WorldState,
 } from "./types.js";
 import { DIFFICULTIES } from "./difficulties.js";
 
@@ -140,7 +141,9 @@ export class CampaignEngine {
         const session = next.activeDialogue;
         if (!session || session.status !== "active" || session.id !== action.sessionId) throw new Error("Dialogue session is not active");
         if (action.durationMinutes !== 2) throw new Error("Each dialogue turn costs 2 minutes");
-        if (action.playerText.trim().length === 0 || action.playerText.length > 500) throw new Error("Dialogue text must be between 1 and 500 characters");
+        const textLimit = DIALOGUE_TEXT_LIMITS[session.goal];
+        if (action.playerText.trim().length === 0) throw new Error("对话内容不能为空");
+        if (action.playerText.length > textLimit) throw new Error(`“${session.goal}”每轮发言最多 ${textLimit} 个字符`);
         const definition = this.campaign.characters.find((item) => item.id === session.characterId);
         if (!definition) throw new Error("Unknown character");
         const legacyAction = { type: "dialogue" as const, targetCharacterId: session.characterId, goal: session.goal, tone: session.tone, playerText: action.playerText, durationMinutes: 10, idempotencyKey: action.idempotencyKey };
@@ -229,7 +232,9 @@ export class CampaignEngine {
         const definition = this.campaign.characters.find((item) => item.id === action.targetCharacterId);
         if (!target || !definition) throw new Error("Unknown character");
         if (target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
-        if (action.playerText.trim().length === 0 || action.playerText.length > 500) throw new Error("Dialogue text must be between 1 and 500 characters");
+        const textLimit = DIALOGUE_TEXT_LIMITS[action.goal];
+        if (action.playerText.trim().length === 0) throw new Error("对话内容不能为空");
+        if (action.playerText.length > textLimit) throw new Error(`“${action.goal}”每轮发言最多 ${textLimit} 个字符`);
         const minimumDialogueDuration = action.goal === "small_talk" ? 10 : action.goal === "build_trust" || action.goal === "probe_attitude" || action.goal === "verify_intel" ? 20 : 30;
         if (action.durationMinutes < minimumDialogueDuration) throw new Error("Dialogue duration is too short for this goal");
         const discovery = resolveDialogue(this.campaign, next, definition, action);
@@ -295,18 +300,39 @@ export class CampaignEngine {
 
 function generateNpcReply(
   definition: CampaignDefinition["characters"][number],
-  _state: WorldState,
+  state: WorldState,
   action: Extract<GameAction, { type: "dialogue" }>,
   memory: NonNullable<WorldState["dialogueMemories"][string]>,
   discovered: boolean,
 ): string {
   const personality = definition.personality ?? { traits: [], speechStyle: "克制", values: [], fears: [], verbalHabits: ["嗯"], sensitiveTopics: [] };
-  const prior = memory.interactionCount > 0 ? "我记得我们之前聊过一些事。" : "我们先从简单的话题开始。";
   const habits = personality.verbalHabits;
   const habit = habits[memory.interactionCount % Math.max(1, habits.length)] ?? "嗯";
+  const playerText = action.playerText.trim();
+  const familiarity = state.characters[definition.id]?.familiarity ?? 0;
   if (action.goal === "small_talk") {
-    const smallTalk = ["店里今天不忙，钟摆声倒是很清楚。", "街上比往常安静，看来大家都在等消息。", "天气闷得很，适合坐下来喝口茶。", "这几天来客不少，但真正愿意说话的人不多。"];
-    return `${habit}，${prior}${smallTalk[memory.interactionCount % smallTalk.length]}`;
+    if (/重复|又是这句|兜圈子|敷衍/.test(playerText)) {
+      return `你觉得我在兜圈子？刚认识就把话说满，反倒不像正常人。`;
+    }
+    if (/天气|晴|下雨|冷|热|风/.test(playerText)) {
+      return `天气确实不错。不过做${definition.publicIdentity}的，天晴天阴都闲不下来。你今天怎么有空过来？`;
+    }
+    if (/等什么|什么消息|谁的消息/.test(playerText)) {
+      return familiarity < 8
+        ? `你问得倒细。我们才说过几句话，你怎么会觉得我在等消息？`
+        : `无非是工作上的回音。倒是你，似乎比我更在意这件事。`;
+    }
+    if (/聊什么|说什么|话题/.test(playerText)) {
+      const value = personality.values[0] ?? "近来的见闻";
+      return `随便聊聊${value}也好。或者你直说，今天特意来找我是为了什么？`;
+    }
+    const smallTalk = [
+      `听起来你今天心情不错。做${definition.publicIdentity}久了，我倒很少留意这些。`,
+      `这话听着轻松。只是最近人人都忙，说闲话也会留三分。`,
+      `${habit}，你说得有意思。接着说，我听听你的看法。`,
+      `比起街上的传闻，我更愿意听你亲眼见到的事。`,
+    ];
+    return smallTalk[memory.interactionCount % smallTalk.length];
   }
   if (action.goal === "apply_pressure") return `${habit}。你问得太直接了，我们最好换个话题。`;
   if (discovered) return `${habit}，这件事我可以透露一点，细节等确认后再说。`;

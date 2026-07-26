@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { toPublicWorldState, type GameAction } from "@qianfu/core";
+import { DIALOGUE_MAX_TEXT_LENGTH, toPublicWorldState, type GameAction } from "@qianfu/core";
 import { gameRepository } from "../game-repository.js";
 import { LINJIANG_1942 } from "@qianfu/content";
 import { campaignOrchestrator } from "../agents/orchestrator.js";
@@ -11,7 +11,7 @@ const difficultySchema = z.enum(["story", "undercover", "iron_curtain"]);
 const duration = z.number().int().nonnegative().multipleOf(10);
 const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("dialogue_start"), targetCharacterId: z.string().min(1), goal: z.enum(["small_talk", "build_trust", "probe_attitude", "request_information", "verify_intel", "apply_pressure", "recruit_probe", "long_talk"]), tone: z.enum(["neutral", "friendly", "formal", "urgent", "threatening"]), allocatedMinutes: z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(60)]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
-  z.object({ type: z.literal("dialogue_turn"), sessionId: z.string().min(8), playerText: z.string().trim().min(1).max(500), durationMinutes: z.literal(2), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("dialogue_turn"), sessionId: z.string().min(8), playerText: z.string().trim().min(1).max(DIALOGUE_MAX_TEXT_LENGTH), durationMinutes: z.literal(2), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("dialogue_end"), sessionId: z.string().min(8), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("move"), destinationId: z.string().min(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("observe"), targetCharacterId: z.string().min(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
@@ -23,7 +23,7 @@ const actionSchema = z.discriminatedUnion("type", [
     targetCharacterId: z.string().min(1),
     goal: z.enum(["small_talk", "build_trust", "probe_attitude", "request_information", "verify_intel", "apply_pressure", "recruit_probe", "long_talk"]),
     tone: z.enum(["neutral", "friendly", "formal", "urgent", "threatening"]),
-    playerText: z.string().trim().min(1).max(500),
+    playerText: z.string().trim().min(1).max(DIALOGUE_MAX_TEXT_LENGTH),
     durationMinutes: z.number().int().positive().multipleOf(10).max(60),
     idempotencyKey: z.string().min(8).max(128),
   }),
@@ -107,7 +107,7 @@ gamesRouter.get("/:id/events", async (req, res, next) => {
   try {
     const events = await gameRepository.getEvents(req.params.id, req.user.id);
     if (!events) { res.status(404).json({ error: "战役不存在" }); return; }
-    res.json({ events: events.map((event) => event.type === "dialogue.completed"
+    res.json({ events: events.map((event) => event.type === "dialogue.completed" || event.type === "dialogue.turn_completed"
       ? { ...event, payload: (() => { const payload = event.payload as Record<string, unknown>; const { privateIntent: _privateIntent, memorySummary: _memorySummary, requestedEffects: _requestedEffects, ...publicPayload } = payload; return publicPayload; })() }
       : event) });
   } catch (error) { next(error); }

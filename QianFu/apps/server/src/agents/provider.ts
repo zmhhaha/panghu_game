@@ -81,7 +81,7 @@ export function createAgentProvider(): AgentProvider | null {
     case "anthropic":
       return new AnthropicProvider();
     case "deepseek":
-      return new OpenAiCompatibleProvider("deepseek", process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com", process.env.DEEPSEEK_API_KEY, process.env.DEEPSEEK_MODEL ?? "deepseek-chat");
+      return new OpenAiCompatibleProvider("deepseek", process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com", process.env.DEEPSEEK_API_KEY, process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash");
     case "custom":
       return new OpenAiCompatibleProvider("custom", process.env.CUSTOM_BASE_URL, process.env.CUSTOM_API_KEY, process.env.CUSTOM_MODEL ?? "qianfu-npc");
     default:
