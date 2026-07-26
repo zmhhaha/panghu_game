@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import { DIALOGUE_MAX_TEXT_LENGTH, toPublicWorldState, type GameAction } from "@qianfu/core";
+import { toPublicWorldState, type GameAction } from "@qianfu/core";
+import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
 import { LINJIANG_1942 } from "@qianfu/content";
 import { campaignOrchestrator } from "../agents/orchestrator.js";

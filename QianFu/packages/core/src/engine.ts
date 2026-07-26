@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import {
-  DIALOGUE_TEXT_LIMITS,
-  type ActionResult, type CampaignDefinition, type CampaignEnding, type CharacterState, type GameAction,
-  type GameEvent, type IntelState, type ScoreBreakdown, type WorldState,
+import { DIALOGUE_TEXT_LIMITS } from "./dialogue.js";
+import type {
+  ActionResult, CampaignDefinition, CampaignEnding, CharacterState, GameAction,
+  GameEvent, IntelState, ScoreBreakdown, WorldState,
 } from "./types.js";
 import { DIFFICULTIES } from "./difficulties.js";
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { DIALOGUE_TEXT_LIMITS, type DialogueGoal, type DialogueTone, type PublicWorldState } from "@qianfu/core";
+import type { DialogueGoal, DialogueTone, PublicWorldState } from "@qianfu/core";
+import { DIALOGUE_TEXT_LIMITS } from "@qianfu/core/dialogue";
 import { Clock3, LogOut, Send, ShieldAlert, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 

@@ -1,4 +1,5 @@
-import { DIALOGUE_TEXT_LIMITS, type DialogueAction, type DialogueMemory, type DialogueTurnAction, type WorldState } from "@qianfu/core";
+import type { DialogueAction, DialogueMemory, DialogueTurnAction, WorldState } from "@qianfu/core";
+import { DIALOGUE_TEXT_LIMITS } from "@qianfu/core/dialogue";
 import { LINJIANG_1942 } from "@qianfu/content";
 import { createAgentProvider, parseNpcResponse, type AgentProvider, type NpcAgentResponse } from "./provider.js";
 
