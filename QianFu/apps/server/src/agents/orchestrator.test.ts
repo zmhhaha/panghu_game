@@ -2,7 +2,7 @@ import { createInitialWorld } from "@qianfu/core";
 import { LINJIANG_1942 } from "@qianfu/content";
 import { describe, expect, it } from "vitest";
 import { CampaignOrchestrator } from "./orchestrator.js";
-import { parseNpcResponse, type AgentProvider } from "./provider.js";
+import { parseModelJson, parseNpcResponse, type AgentProvider } from "./provider.js";
 
 describe("CampaignOrchestrator", () => {
   it("keeps valid speech when optional model effects have the wrong shape", () => {
@@ -12,6 +12,18 @@ describe("CampaignOrchestrator", () => {
       requestedEffects: ["trust+1", "suspicion-1"],
     })).toEqual({
       visibleSpeech: "家里都好，劳你挂念。",
+      privateIntent: "继续观察",
+      requestedEffects: [],
+    });
+  });
+
+  it("recovers speech from a slightly malformed model object without applying effects", () => {
+    expect(parseModelJson(`{
+      "visibleSpeech": "档案科管的是文件，不是来客。你问这个做什么？",
+      "privateIntent": "继续观察",
+      "requestedEffects": ["怀疑增加",]
+    }`)).toEqual({
+      visibleSpeech: "档案科管的是文件，不是来客。你问这个做什么？",
       privateIntent: "继续观察",
       requestedEffects: [],
     });

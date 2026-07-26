@@ -16,16 +16,42 @@ export type AgentProvider = {
   complete(system: string, user: string): Promise<unknown>;
 };
 
-function parseModelJson(content: string): unknown {
+export function parseModelJson(content: string): unknown {
   const trimmed = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   try {
     return JSON.parse(trimmed);
   } catch {
     const start = trimmed.indexOf("{");
     const end = trimmed.lastIndexOf("}");
-    if (start < 0 || end <= start) throw new Error("LLM returned invalid JSON");
-    return JSON.parse(trimmed.slice(start, end + 1));
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(trimmed.slice(start, end + 1));
+      } catch {
+        const visibleSpeech = recoverStringField(trimmed, "visibleSpeech", ["privateIntent", "requestedEffects"]);
+        if (visibleSpeech) {
+          return {
+            visibleSpeech,
+            privateIntent: recoverStringField(trimmed, "privateIntent", ["requestedEffects"]) ?? "",
+            requestedEffects: [],
+          };
+        }
+      }
+    }
+    throw new Error("LLM returned invalid JSON");
   }
+}
+
+function recoverStringField(content: string, field: string, followingFields: string[]): string | null {
+  const next = followingFields.map(escapeRegExp).join("|");
+  const doubleQuoted = new RegExp(`"${escapeRegExp(field)}"\\s*:\\s*"([\\s\\S]*?)"\\s*(?=,\\s*"(?:${next})"|[},])`);
+  const singleQuoted = new RegExp(`['"]${escapeRegExp(field)}['"]\\s*:\\s*'([\\s\\S]*?)'\\s*(?=,\\s*['"](?:${next})['"]|[},])`);
+  const match = content.match(doubleQuoted) ?? content.match(singleQuoted);
+  if (!match?.[1]) return null;
+  return match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\\\/g, "\\").trim();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 class OpenAiCompatibleProvider implements AgentProvider {

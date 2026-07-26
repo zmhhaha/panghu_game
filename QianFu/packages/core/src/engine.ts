@@ -330,7 +330,7 @@ function generateNpcReply(
     const smallTalk = [
       `听起来你今天心情不错。做${definition.publicIdentity}久了，我倒很少留意这些。`,
       `这话听着轻松。只是最近人人都忙，说闲话也会留三分。`,
-      `${habit}，你说得有意思。接着说，我听听你的看法。`,
+      `这件事我未必有答案。你要是不介意，可以把刚才的话说具体些。`,
       `比起街上的传闻，我更愿意听你亲眼见到的事。`,
     ];
     return smallTalk[memory.interactionCount % smallTalk.length];
