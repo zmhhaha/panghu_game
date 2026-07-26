@@ -724,9 +724,20 @@ E：0-39
 | 失败后果 | 多数暴露可以补救 | 可能切断交通线或牵连小组 |
 | 资源限制 | 密码本、金钱和交通资源充足 | 资源有限，需要持续取舍 |
 
-### 12.2 预设难度
+### 12.2 内容形态与难度分离
 
-#### 故事模式
+“玩多长”与“有多难”是两个独立选项，创建游戏时不能再混在同一组模式中：
+
+| 配置 | 选项 | 含义 |
+|:---|:---|:---|
+| 内容形态 `experienceMode` | `standalone` 独立战役 / `chronicle` 长篇故事 | 决定是否跨章节继承人物、组织和资源 |
+| 难度 `difficultyPreset` | `guided` 引导 / `undercover` 潜伏 / `ironCurtain` 铁幕 | 决定提示、压力、敌方反应和容错 |
+
+当前三日 MVP 和未来 14-21 天剧本都属于“独立战役”。“长篇故事”专指由多个战役章节首尾相连的长期内容，不能再用作低难度名称。玩家进入长篇故事后仍可选择引导、潜伏或铁幕难度。
+
+### 12.3 预设难度
+
+#### 引导模式
 
 - NPC 日程比较稳定。
 - 情报界面提示来源质量和明显矛盾。
@@ -752,17 +763,17 @@ E：0-39
 - 时间窗口更短，密码与交通资源更稀缺。
 - 存档和失败补救机会减少，但不使用无预警的强制永久死亡。
 
-### 12.3 对话辅助与证据提示
+### 12.4 对话辅助与证据提示
 
 难度可以改变提示程度，但不能直接显示 NPC 的隐藏可靠性：
 
-- 故事模式显示“这句话可能引起警觉”“适合试探立场”等意图提示。
+- 引导模式显示“这句话可能引起警觉”“适合试探立场”等意图提示。
 - 潜伏模式只显示交互目标和不精确的场合风险。
 - 铁幕模式主要依赖 NPC 反应、历史记录和玩家自行判断。
 
-即使在故事模式，也只展示证据，例如“他两次遵守了保密约定”，而不展示“可靠度 87%”。
+即使在引导模式，也只展示证据，例如“他两次遵守了保密约定”，而不展示“可靠度 87%”。
 
-### 12.4 配置实现
+### 12.5 配置实现
 
 ```ts
 interface DifficultyConfig {
@@ -775,9 +786,11 @@ interface DifficultyConfig {
   recoveryAllowance: number;
   dialogueAssistLevel: number;
 }
+
+type ExperienceMode = "standalone" | "chronicle";
 ```
 
-难度配置在创建游戏实例时固定并保存在服务端。主控 Agent 可以读取配置调整叙事和计划强度，但不能自行修改参数。
+内容形态与难度配置在创建游戏实例时固定并保存在服务端。主控 Agent 可以读取难度配置调整叙事和计划强度，但不能自行修改参数。长篇故事的章节继承规则由规则引擎和故事清单决定，不能由 Agent 临时改写。
 
 ---
 
@@ -1415,6 +1428,141 @@ interface CampaignMember {
 
 日志必须包含 `requestId`、`gameInstanceId`、`userId`（可脱敏）、`agentRunId` 和 `eventSeq`，但不得记录完整隐藏 Prompt、密码本和未脱敏私有情报。应为 Agent 超时、事件堆积、跨实例访问和报告生成失败配置告警。
 
+### 16.18 长篇章节故事模式
+
+长篇故事是独立于难度的内容形态。它由多个可独立结算的章节战役组成，但人物命运、组织网络、资金和关键选择会延续到后续章节，最终共同指向一个预先定义的长期目标。建议首部长篇包含 6-10 章，每章覆盖 3-21 个游戏日，完整体验约 20-40 小时。
+
+#### 故事结构与章节解锁
+
+```text
+长篇故事实例 StoryRun
+├── 第一章：建立潜线与识别第一名同志
+├── 第二章：由已招募同志接棒，建立交通站
+├── 第三章：扩展电台与跨城联络
+├── 分支章节：营救、撤离或重建受损网络
+└── 终章：完成贯穿全篇的战略目标
+```
+
+每章必须在内容包中声明入口状态、核心目标、可选目标、截止条件和 `ChapterGate`。章节门槛由规则引擎判定，不能依靠主控 Agent 主观决定。例如第一章要求说服并保护“顾明远”，第二章才允许以顾明远为主角，从他的身份和人脉继续行动。
+
+```ts
+interface ChapterGate {
+  requiredFacts: string[];
+  requiredCharacters: Array<{
+    characterId: string;
+    allowedStates: Array<"recruited" | "active" | "extracted">;
+  }>;
+  minimumNetworkCapabilities: string[];
+  minimumAvailableFunds?: number;
+  alternativeGateIds?: string[];
+}
+```
+
+必要要素必须可追溯、可预览：章节结算要明确显示“已满足”“尚未满足”和可用的补救路径。重要人物牺牲、失踪或招募失败可以关闭原路线，但不应在数十小时后才宣告整段存档无效；内容应预设营救、替代联络人、组织重建或不同结局等分支。真正不可逆的失败必须在玩家作出决定前给出符合角色认知的风险提示。
+
+#### 跨章节继承与角色接棒
+
+长篇故事使用一个 `storyRunId` 关联多个章节 `gameInstanceId`。单章仍保留独立事件日志、快照、结算和战报，跨章只通过经过校验的 `StoryCarryover` 传递允许继承的状态：
+
+- 存活、失踪、被捕、撤离和已招募人物及其关系变化。
+- 已建立的交通站、安全屋、电台、联络线和组织能力。
+- 资金余额、物资储备、长期承诺和固定维护成本。
+- 已确认的关键事实、组织声望、敌方长期关注与历史债务。
+- 会影响后续章节的公开选择和不可逆后果。
+
+章节可以更换玩家角色。上一章招募的同志可以成为下一章主角，原主角则转为上级、联络人、失踪对象或可自主行动的同志 Agent。新主角只能继承组织明确交接给他的情报，不能自动获得前任的全部私有记忆。这样既保留连续性，也继续遵守 Agent 知识隔离。
+
+#### 资金与地下网络经营
+
+资金是长篇故事的战略资源，不加入现有短期战役的逐餐记账。系统维护组织总账，并在每日或每周结算固定开支：
+
+| 收入来源 | 特点与风险 |
+|:---|:---|
+| 组织拨款 | 相对可靠，但受交通线和上级状况影响 |
+| 合法职业或商号收益 | 可持续，同时需要维持公开经营和合理账目 |
+| 同情者捐助 | 依赖关系，频繁索取会增加对方压力和暴露风险 |
+| 特别行动所得 | 收益高但风险大，不能成为无代价刷钱渠道 |
+
+| 支出项目 | 产生的能力 |
+|:---|:---|
+| 安全屋租金与伪装经营 | 提供隐蔽会面、住宿和紧急藏匿 |
+| 地下交通站维护 | 提高人员、情报和物资跨区传递能力 |
+| 同志生活与安置费 | 降低成员压力，维持长期工作能力 |
+| 电台、密码本和维修 | 维持通信能力与信息安全 |
+| 证件、交通、医疗和营救 | 支撑具体行动或处理突发损失 |
+| 紧急撤离准备金 | 在网络暴露时保留人员和火种 |
+
+资金不足不应只显示负数，而要产生可选择的后果：关闭或降级据点、拖欠补助、暂停通信、请求高风险拨款，或让某条交通线暂时休眠。资金充足也不能直接购买 NPC 忠诚或消除暴露；每笔异常收入和大额支出都可能形成敌方可调查的账目痕迹。
+
+地下网络节点至少包含 `upkeep`、`capacity`、`concealment`、`exposure` 和 `status`。玩家需要在扩张速度、维持成本和安全性之间取舍。章节门槛应优先检查“网络是否具备某种能力”，而不是只检查攒够多少钱，避免把谍战游戏变成单纯资源刷取。
+
+#### 长期目标与结算
+
+每部长篇故事必须在内容清单中固定一个贯穿全篇的最终目标，例如建立覆盖三座城市的可靠情报网，并在终章保证关键战略情报及时送达。每章的胜负会改变终章条件，而不是简单累计分数。
+
+长篇结算除单章评分外，还应评价：战略目标完成度、组织网络保留程度、关键同志命运、情报贡献、资金纪律、平民与组织代价，以及玩家留下的长期影响。最终可生成一份包含章节年表、历任主角、人物去向、网络兴衰和关键抉择的“长篇档案”，供玩家下载和分享。
+
+#### 内容版本与 Agent 上下文
+
+长篇内容包增加 `story.json`，声明章节顺序、分支、门槛、继承白名单和最终结局。创建 `StoryRun` 时固定故事主版本；每个章节开始时再固定其具体内容版本。若后续修订尚未开始的章节，必须通过显式兼容迁移，不能静默改变已获得的解锁条件。
+
+主控 Agent 不直接装载数十小时的完整记录。进入新章时由规则引擎生成结构化历史摘要，并按当前角色权限提供人物关系、已知事实、组织状态和未偿债务；需要追溯时再按事件 ID 检索原始记录。NPC Agent 仍只获得该人物亲历或被告知的跨章记忆。
+
+#### 当前预留接口
+
+这部分在 `Phase 5` 前不实现业务逻辑、不创建资金账本，也不在当前 API 中注册空路由。当前阶段只保证战役模型和内容包不会阻断未来扩展：
+
+```ts
+interface GameInstanceLink {
+  experienceMode: "standalone" | "chronicle";
+  storyRunId?: string;
+  chapterId?: string;
+  chapterSequence?: number;
+}
+
+interface StoryRunSummary {
+  storyRunId: string;
+  storyId: string;
+  storyVersion: string;
+  difficultyPreset: "guided" | "undercover" | "ironCurtain";
+  status: "active" | "paused" | "finished" | "failed" | "abandoned";
+  currentChapterId: string;
+  completedChapterIds: string[];
+  availableChapterIds: string[];
+  funds: { available: number; reserved: number; currency: string };
+  updatedAt: string;
+}
+
+interface StoryCarryover {
+  sourceGameInstanceId: string;
+  targetChapterId: string;
+  characterStates: Record<string, "active" | "missing" | "captured" | "dead" | "extracted">;
+  relationshipRefs: string[];
+  inheritedFactIds: string[];
+  networkNodeIds: string[];
+  networkCapabilities: string[];
+  availableFunds: number;
+  reservedFunds: number;
+  consequenceIds: string[];
+  lastEventSeq: number;
+}
+```
+
+未来服务接口统一放在 `/api/v1/story-runs` 下，避免把跨章聚合状态塞进现有单场 `/games` 接口：
+
+| 方法与路径 | 用途 |
+|:---|:---|
+| `POST /api/v1/story-runs` | 根据已发布的 `storyId`、版本和难度创建长篇实例 |
+| `GET /api/v1/story-runs/:id` | 获取玩家可见的长篇进度、当前章和资源摘要 |
+| `GET /api/v1/story-runs/:id/chapters` | 获取章节状态、解锁门槛和可用补救路线 |
+| `POST /api/v1/story-runs/:id/chapters/:chapterId/start` | 校验门槛后创建该章的独立 `gameInstanceId`，要求幂等键 |
+| `POST /api/v1/story-runs/:id/chapters/:chapterId/settle` | 冻结章节结算并原子生成 `StoryCarryover`，仅供内部结算流程调用 |
+| `GET /api/v1/story-runs/:id/ledger` | 分页读取玩家可见的资金收支与维护预测 |
+| `GET /api/v1/story-runs/:id/network` | 读取跨章组织节点、能力、维护成本和公开风险 |
+| `GET /api/v1/story-runs/:id/archive` | 获取长篇年表和最终档案；结束前只返回已完成章节 |
+
+所有接口沿用现有 OAuth2 用户身份和所有权校验。章节启动、结算和资金变动必须写入带单调事件序号的事件日志；客户端不能直接提交余额、人物状态或解锁结果，只能提交受控行动或启动请求。当前独立战役默认返回 `experienceMode: "standalone"`，可选字段缺失时必须保持向后兼容。
+
 ---
 
 ## 十七、MVP 范围
@@ -1451,6 +1599,7 @@ interface CampaignMember {
 - 无限数量的自由 NPC。
 - 自动生成完整战役。
 - 复杂经济与生存系统。
+- 长篇章节故事、跨章角色接棒和资金经营；MVP 只预留 `experienceMode` 与 `storyRunId` 扩展位。
 - 语音对话。
 
 ---
@@ -1509,6 +1658,17 @@ interface CampaignMember {
 - 动态身份组合和多周目变化。
 - 更多通信方式与组织管理策略。
 - 人物长期关系和个人支线。
+
+### Phase 5：长篇故事
+
+- 将现有低难度“故事模式”完成迁移并统一命名为“引导模式”。
+- 建立 `StoryRun`、章节门槛、分支和跨章继承模型。
+- 实现资金总账、据点维护、交通站和组织能力系统。
+- 支持角色接棒、跨章知识隔离和结构化历史摘要。
+- 制作 6-10 章的首部长篇内容，并定义贯穿全篇的最终目标。
+- 生成章节年表和可下载、可分享的长篇档案。
+
+验收标准：玩家可以从第一章连续推进至终章；人物、资金、组织能力和重大后果能够稳定跨章继承，失败路线具有明确且可测试的补救或分支结果。
 
 ---
 
