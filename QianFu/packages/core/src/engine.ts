@@ -173,9 +173,10 @@ export class CampaignEngine {
       }
       case "dialogue_end": {
         if (!next.activeDialogue || next.activeDialogue.id !== action.sessionId) throw new Error("Dialogue session is not active");
-        elapsedDuration = Math.max(0, next.activeDialogue.allocatedMinutes - next.activeDialogue.elapsedMinutes);
-        next.activeDialogue.status = "completed";
-        append("dialogue.ended", { characterId: next.activeDialogue.characterId, turnCount: next.activeDialogue.turnCount });
+        const endedSession = next.activeDialogue;
+        elapsedDuration = Math.max(0, endedSession.allocatedMinutes - endedSession.elapsedMinutes);
+        append("dialogue.ended", { characterId: endedSession.characterId, turnCount: endedSession.turnCount });
+        next.activeDialogue = null;
         narration = "你结束了这次交谈，重新回到街上的时间线。";
         break;
       }

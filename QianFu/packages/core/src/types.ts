@@ -58,6 +58,13 @@ export interface CharacterDefinition {
     fears: string[];
     verbalHabits: string[];
     sensitiveTopics: string[];
+    roleplay?: {
+      background: string;
+      socialMask: string;
+      currentPressure: string;
+      conversationalMotives: string[];
+      boundaries: string[];
+    };
   };
 }
 

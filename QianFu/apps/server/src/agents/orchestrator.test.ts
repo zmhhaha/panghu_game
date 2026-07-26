@@ -2,9 +2,21 @@ import { createInitialWorld } from "@qianfu/core";
 import { LINJIANG_1942 } from "@qianfu/content";
 import { describe, expect, it } from "vitest";
 import { CampaignOrchestrator } from "./orchestrator.js";
-import type { AgentProvider } from "./provider.js";
+import { parseNpcResponse, type AgentProvider } from "./provider.js";
 
 describe("CampaignOrchestrator", () => {
+  it("keeps valid speech when optional model effects have the wrong shape", () => {
+    expect(parseNpcResponse({
+      visibleSpeech: "家里都好，劳你挂念。",
+      privateIntent: "继续观察",
+      requestedEffects: ["trust+1", "suspicion-1"],
+    })).toEqual({
+      visibleSpeech: "家里都好，劳你挂念。",
+      privateIntent: "继续观察",
+      requestedEffects: [],
+    });
+  });
+
   it("gives an NPC its personality, relationship and recent private memory in one model call", async () => {
     const state = createInitialWorld(LINJIANG_1942, "game-test", "user-test", "story");
     const characterId = "old-wu";

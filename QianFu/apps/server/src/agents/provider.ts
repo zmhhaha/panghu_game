@@ -2,8 +2,12 @@ import { z } from "zod";
 
 const npcResponseSchema = z.object({
   visibleSpeech: z.string().min(1).max(800),
-  privateIntent: z.string().max(300).default(""),
-  requestedEffects: z.array(z.object({ type: z.string().max(40), value: z.number().min(-20).max(20), reason: z.string().max(200) })).max(8).default([]),
+  privateIntent: z.string().max(300).catch("").default(""),
+  requestedEffects: z.array(z.object({
+    type: z.string().max(40),
+    value: z.number().min(-20).max(20),
+    reason: z.string().max(200),
+  })).max(8).catch([]).default([]),
 });
 
 export type NpcAgentResponse = z.infer<typeof npcResponseSchema>;

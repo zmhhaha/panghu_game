@@ -74,6 +74,12 @@ describe("CampaignEngine", () => {
     const fallback = shortEngine.execute({ type: "dialogue_turn", sessionId: "short-start", playerText: "今天天气挺好。", durationMinutes: 2, idempotencyKey: "short-turn-valid" });
     expect(fallback.narration).toContain("Shopkeeper");
     expect(fallback.narration).not.toContain("钟摆");
+    for (let index = 2; index <= 5; index += 1) {
+      shortEngine.execute({ type: "dialogue_turn", sessionId: "short-start", playerText: `第${index}轮寒暄。`, durationMinutes: 2, idempotencyKey: `short-turn-${index}` });
+    }
+    expect(shortEngine.getState().activeDialogue?.status).toBe("completed");
+    shortEngine.execute({ type: "dialogue_end", sessionId: "short-start", durationMinutes: 0, idempotencyKey: "short-end" });
+    expect(shortEngine.getState().activeDialogue).toBeNull();
 
     const longEngine = new CampaignEngine(dialogueCampaign, createInitialWorld(dialogueCampaign, "game-long-dialogue", "user-1"));
     longEngine.execute({ type: "dialogue_start", targetCharacterId: "contact", goal: "long_talk", tone: "formal", allocatedMinutes: 60, durationMinutes: 0, idempotencyKey: "long-start" });
@@ -93,10 +99,10 @@ describe("CampaignEngine", () => {
       intel: [{ id: "fact", title: "Fact", truth: "true", requiredFields: ["when", "where"], sourceCharacterIds: ["source"], expiresAt: "1942-05-13T20:00:00.000Z" }],
     };
     const engine = new CampaignEngine(conversational, createInitialWorld(conversational, "game-dialogue", "user-1"));
-    engine.execute({ type: "dialogue", targetCharacterId: "source", goal: "request_information", tone: "neutral", playerText: "告诉我最近的安排。", durationMinutes: 10, idempotencyKey: "dialogue-locked" });
+    engine.execute({ type: "dialogue", targetCharacterId: "source", goal: "request_information", tone: "neutral", playerText: "告诉我最近的安排。", durationMinutes: 30, idempotencyKey: "dialogue-locked" });
     expect(engine.getState().intel.fact.knownFields).toHaveLength(0);
-    engine.execute({ type: "dialogue", targetCharacterId: "source", goal: "build_trust", tone: "friendly", playerText: "我们可以先从小事合作。", durationMinutes: 10, idempotencyKey: "dialogue-trust" });
-    const result = engine.execute({ type: "dialogue", targetCharacterId: "source", goal: "request_information", tone: "neutral", playerText: "现在可以谈谈那批货了吗？", durationMinutes: 20, idempotencyKey: "dialogue-info" });
+    engine.execute({ type: "dialogue", targetCharacterId: "source", goal: "build_trust", tone: "friendly", playerText: "我们可以先从小事合作。", durationMinutes: 20, idempotencyKey: "dialogue-trust" });
+    const result = engine.execute({ type: "dialogue", targetCharacterId: "source", goal: "request_information", tone: "neutral", playerText: "现在可以谈谈那批货了吗？", durationMinutes: 30, idempotencyKey: "dialogue-info" });
     expect(result.state.intel.fact.knownFields).toHaveLength(1);
     expect(result.state.intel.fact.collectedSourceIds).toEqual(["source"]);
   });

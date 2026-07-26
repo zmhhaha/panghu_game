@@ -34,6 +34,7 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
 
   const activeGoal = session.goal ?? goal;
   const activeTone = session.tone ?? tone;
+  const completed = session.status === "completed";
   const textLimit = DIALOGUE_TEXT_LIMITS[activeGoal];
   const remainingTurns = Math.max(0, session.maxTurns - session.turnCount);
   const remainingMinutes = Math.max(0, session.allocatedMinutes - session.elapsedMinutes);
@@ -41,7 +42,7 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
   const untilWorldTick = 10 - (currentMinute % 10 || 10);
   const send = () => {
     const message = text.trim();
-    if (!message || busy) return;
+    if (!message || busy || completed) return;
     onSend(message);
     setText("");
   };
@@ -53,7 +54,7 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
           <span className="grid h-9 w-9 shrink-0 place-items-center border border-copper text-copper"><UserRound size={17} /></span>
           <div className="min-w-0"><h1 className="truncate font-serif text-lg">{npcName}</h1><p className="truncate text-xs text-muted">{npcIdentity}</p></div>
         </div>
-        <button onClick={onEnd} disabled={busy} className="flex h-9 items-center gap-2 px-2 text-sm text-muted hover:text-paper disabled:opacity-40"><LogOut size={16} />退出并结算</button>
+        <button onClick={onEnd} disabled={busy} className="flex h-9 items-center gap-2 px-2 text-sm text-muted hover:text-paper disabled:opacity-40"><LogOut size={16} />{completed ? "结束对话" : "提前结束"}</button>
       </div>
     </header>
 
@@ -84,7 +85,10 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
 
       {error && <div className="mt-3 border-l-2 border-alert bg-alert/10 px-4 py-2 text-sm text-[#efaaa4]">{error}</div>}
 
-      <div className="mt-4 border border-line bg-panel p-3">
+      {completed ? <div className="mt-4 flex flex-col items-center justify-between gap-3 border border-copper/40 bg-copper/[0.06] px-4 py-4 sm:flex-row">
+        <div><p className="text-sm text-paper">交谈时间已到</p><p className="mt-1 text-xs text-muted">对方没有继续开口。你可以回看记录，然后结束这次对话。</p></div>
+        <Button disabled={busy} onClick={onEnd}><LogOut size={15} />结束对话</Button>
+      </div> : <div className="mt-4 border border-line bg-panel p-3">
         <textarea value={text} onChange={(event) => setText(event.target.value)} maxLength={textLimit}
           onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }}
           className="min-h-24 w-full resize-none bg-transparent p-1 text-sm leading-6 text-paper outline-none placeholder:text-muted"
@@ -93,7 +97,7 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
           <span className="text-[11px] text-muted">{text.length}/{textLimit} · Enter 发送</span>
           <Button disabled={busy || !text.trim()} onClick={send}><Send size={15} />发送这一轮</Button>
         </div>
-      </div>
+      </div>}
     </section>
   </main>;
 }

@@ -44,7 +44,22 @@ const personalityById: Record<string, CharacterDefinition["personality"]> = {
   "luo-boan": { traits: ["世故", "观察力强"], speechStyle: "礼貌而含蓄", values: ["体面", "利益"], fears: ["丑闻"], verbalHabits: ["不妨这样", "大家都方便"], sensitiveTopics: ["商会账目"] },
   "old-wu": { traits: ["沉稳", "耐心"], speechStyle: "像聊天一样自然，话里有暗号", values: ["信义", "耐心"], fears: ["线路暴露"], verbalHabits: ["钟总会走准", "慢一点"], sensitiveTopics: ["接头暗号"] },
 };
-for (const character of characters) character.personality = personalityById[character.id] ?? { traits: ["谨慎"], speechStyle: "克制", values: ["安全"], fears: ["暴露"], verbalHabits: ["嗯"], sensitiveTopics: [] };
+
+const roleplayById: Record<string, NonNullable<CharacterDefinition["personality"]>["roleplay"]> = {
+  "chen-jingwen": { background: "在档案科熬了十余年，熟悉机关人情和公文漏洞；与妻子、幼子住在城南，习惯把担忧藏在规矩后面。", socialMask: "谨慎可靠的科长，不轻易得罪人，也绝不在走廊里议论上级。", currentPressure: "警备处正在核查异常借阅记录，他担心下属或家人被牵连。", conversationalMotives: ["判断来者是否会给自己惹麻烦", "用日常细节确认对方是否说真话", "保住职位和家人"], boundaries: ["不会向生人主动透露档案内容", "不会把所有话题都转回工作", "被追问时会用具体但无关紧要的事实遮掩"] },
+  "lin-ruolan": { background: "从地方小报校对做起，见过稿件被删和同事失踪，仍相信文字能留下证据。", socialMask: "干练的报社编辑，习惯追问消息来源，表面只关心稿件是否可靠。", currentPressure: "晚报截稿在即，一篇敏感消息可能引来审查。", conversationalMotives: ["辨别对方是否尊重事实", "从措辞和细节判断来意", "保护报社同事"], boundaries: ["不承认地下关系", "不会轻信没有来源的传闻", "紧张时反而说得更简短"] },
+  "zhou-qiming": { background: "从修收音机的学徒成长为电讯技术员，信机器记录胜过人的保证。", socialMask: "寡言而精确的技术人员，对含糊说法缺乏耐心。", currentPressure: "近期设备出现无法解释的频率漂移，他担心有人动过线路。", conversationalMotives: ["确认对方是否懂基本技术", "寻找可验证的事实", "避免设备事故落到自己头上"], boundaries: ["不凭感情承诺", "不泄露完整设备参数", "不知道的事会直接说不知道"] },
+  "zhao-fusheng": { background: "在码头从搬运工混到调度员，靠记人情、算账和给各方留面子站稳脚跟。", socialMask: "热络爽快的生意人，嘴上好说，实际每句话都在估价。", currentPressure: "几批货的单据对不上，警备处和商会都可能找他背锅。", conversationalMotives: ["判断对方能带来利益还是风险", "套出对方的靠山", "给自己保留退路"], boundaries: ["没有交换条件不说货物去向", "受压时会装糊涂", "绝不承认自己怕谁"] },
+  "shen-manqiu": { background: "长期照顾伤员和普通病人，见惯疼痛，却仍记得每个托付给她的人。", socialMask: "温和可靠的护士，先观察对方是否需要帮助，再决定说多少。", currentPressure: "药品短缺，一名不能登记姓名的伤员病情正在恶化。", conversationalMotives: ["确认对方会不会伤害无辜者", "安抚紧张的人", "寻找可信的药品和转移渠道"], boundaries: ["绝不透露伤员姓名", "不会拿生命作筹码", "面对威胁会变得冷淡而坚定"] },
+  "han-shijie": { background: "从基层侦缉一路升上来，靠发现别人忽略的矛盾获得权力，也因此不相信巧合。", socialMask: "礼貌克制的调查员，让对方多说，自己很少表态。", currentPressure: "上级要求尽快为异常借阅案找到责任人，他不能显得失去控制。", conversationalMotives: ["制造沉默让对方补充解释", "记录前后矛盾", "让对方低估自己的怀疑"], boundaries: ["不会公开调查底牌", "不会被恭维轻易打动", "发现矛盾时先追问具体时间地点"] },
+  "luo-boan": { background: "替商会各家处理宴请、债务和难以写进合同的交易，深知体面往往比事实值钱。", socialMask: "周到含蓄的秘书，从不当面让客人难堪。", currentPressure: "一笔商会账目可能成为丑闻，他正在判断该保谁、舍谁。", conversationalMotives: ["维持彼此体面", "判断对方代表哪一方利益", "把风险变成可交易的条件"], boundaries: ["不在没有退路时承认账目问题", "不使用粗暴威胁", "会用第三人的故事表达警告"] },
+  "old-wu": { background: "做了半辈子钟表生意，熟悉城里人的作息和脚步声，也守过许多不能写下来的约定。", socialMask: "耐心随和的老店主，愿意聊修表和街坊琐事。", currentPressure: "交通线近期出现异常，他必须判断是偶然失约还是有人跟踪。", conversationalMotives: ["从耐心和细节辨认可信的人", "保护交通线", "用寻常话确认暗号是否自然"], boundaries: ["不主动点破暗号", "口头禅只在确有含义时使用", "察觉监视时会立刻回到修表话题"] },
+};
+
+for (const character of characters) {
+  const personality = personalityById[character.id] ?? { traits: ["谨慎"], speechStyle: "克制", values: ["安全"], fears: ["暴露"], verbalHabits: ["嗯"], sensitiveTopics: [] };
+  character.personality = { ...personality, roleplay: roleplayById[character.id] };
+}
 
 const draft: CampaignDefinition = {
   id: "linjiang-1942",

@@ -94,7 +94,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
     month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(new Date(state.currentTime));
 
-  if (state.activeDialogue?.status === "active") {
+  if (state.activeDialogue) {
     const activeNpc = context.characters.find((item) => item.id === state.activeDialogue?.characterId);
     return <DialoguePanel
       state={state}
