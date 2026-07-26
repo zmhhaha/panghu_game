@@ -30,6 +30,7 @@ export function toPublicWorldState(state: WorldState): PublicWorldState {
     }]),
   );
   const clonedState = structuredClone(state);
+  clonedState.network.tasks ??= [];
   const privateInvestigation = clonedState.investigation ?? {
     pressure: 0,
     locationHeat: {},

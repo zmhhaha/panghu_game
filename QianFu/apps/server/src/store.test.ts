@@ -37,4 +37,16 @@ describe("GameStore", () => {
     expect(duplicate?.state.currentTime).toBe(first?.state.currentTime);
     expect(await store.getEvents(game.gameInstanceId, owner.id)).toHaveLength(1);
   });
+
+  it("only lets an owner delete their campaign", async () => {
+    const store = new GameStore();
+    const ownerA = await store.ensureUser(user("delete-owner-a"));
+    const ownerB = await store.ensureUser(user("delete-owner-b"));
+    const game = await store.createGame(ownerA.id, "story");
+
+    expect(await store.deleteGame(game.gameInstanceId, ownerB.id)).toBe(false);
+    expect(await store.getGame(game.gameInstanceId, ownerA.id)).not.toBeNull();
+    expect(await store.deleteGame(game.gameInstanceId, ownerA.id)).toBe(true);
+    expect(await store.getGame(game.gameInstanceId, ownerA.id)).toBeNull();
+  });
 });

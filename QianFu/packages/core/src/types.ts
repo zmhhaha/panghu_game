@@ -146,11 +146,29 @@ export interface IntelState {
   deliveryMethod: string | null;
 }
 
+export type ComradeTaskKind = "gather_intel" | "verify_intel" | "scout_location";
+export type ComradeTaskApproach = "cautious" | "balanced" | "urgent";
+export type ComradeTaskStatus = "active" | "completed" | "failed" | "cancelled";
+
+export interface ComradeTask {
+  id: string;
+  memberId: string;
+  kind: ComradeTaskKind;
+  targetId: string;
+  approach: ComradeTaskApproach;
+  status: ComradeTaskStatus;
+  assignedAt: string;
+  dueAt: string;
+  completedAt: string | null;
+  report: string | null;
+}
+
 export interface NetworkState {
   exposure: number;
   activeMemberIds: string[];
   compromisedMemberIds: string[];
   availableChannels: string[];
+  tasks: ComradeTask[];
 }
 
 export interface InvestigationEvidence {
@@ -301,7 +319,20 @@ export interface DialogueEndAction extends ActionBase {
   sessionId: string;
 }
 
-export type GameAction = MoveAction | ObserveAction | WaitAction | RecordIntelAction | TransmitIntelAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction;
+export interface DelegateComradeTaskAction extends ActionBase {
+  type: "delegate_comrade_task";
+  memberId: string;
+  kind: ComradeTaskKind;
+  targetId: string;
+  approach: ComradeTaskApproach;
+}
+
+export interface CancelComradeTaskAction extends ActionBase {
+  type: "cancel_comrade_task";
+  taskId: string;
+}
+
+export type GameAction = MoveAction | ObserveAction | WaitAction | RecordIntelAction | TransmitIntelAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | DelegateComradeTaskAction | CancelComradeTaskAction;
 
 export interface ActionResult {
   state: WorldState;

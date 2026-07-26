@@ -11,6 +11,7 @@ import { api, type GameContext } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { DialoguePanel } from "@/components/game/dialogue-panel";
 import { CityMap } from "@/components/game/city-map";
+import { OrganizationNetwork } from "@/components/game/organization-network";
 
 const travelMinutes: Record<string, Record<string, number>> = {
   "archive-office": { "radio-office": 10, "linjiang-news": 20, "jianghai-hotel": 20, "third-dock": 40, "wu-clock-shop": 30 },
@@ -189,6 +190,8 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
             </div>
           </div> : <p className="mt-4 text-sm text-muted">先从现场人物中选择交谈对象。</p>}
         </div>
+
+        <OrganizationNetwork state={state} context={context} busy={busy} onAction={(action) => void act(action)} />
 
         <div className="mt-8 border-t border-line pt-6">
           <SectionLabel icon={<Eye size={15} />} text="最近动静" />

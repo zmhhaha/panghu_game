@@ -73,6 +73,14 @@ export class PostgresGameRepository implements GameRepository {
     return result.rows[0]?.state ?? null;
   }
 
+  async deleteGame(gameInstanceId: string, ownerUserId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      "DELETE FROM game_instances WHERE id = $1 AND owner_user_id = $2 RETURNING id",
+      [gameInstanceId, ownerUserId],
+    );
+    return result.rowCount === 1;
+  }
+
   async execute(gameInstanceId: string, ownerUserId: string, action: GameAction) {
     const client = await this.pool.connect();
     try {

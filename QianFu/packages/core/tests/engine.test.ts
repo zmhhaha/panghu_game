@@ -142,8 +142,10 @@ describe("enemy investigation", () => {
   it("migrates old saves when projecting public state", () => {
     const oldState = createInitialWorld(investigationCampaign, "old-game", "user-1");
     delete (oldState as { investigation?: WorldState["investigation"] }).investigation;
+    delete (oldState.network as { tasks?: WorldState["network"]["tasks"] }).tasks;
     const publicState = toPublicWorldState(oldState);
     expect(publicState.investigation).toEqual({ pressure: 0, locationHeat: {}, surveillanceLocationIds: [], lastActionAt: null });
+    expect(publicState.network.tasks).toEqual([]);
   });
 
   it("processes evidence only after crossing a ten-minute boundary", () => {
@@ -190,5 +192,54 @@ describe("enemy investigation", () => {
     }
     expect(result.state.activeDialogue?.status).toBe("completed");
     expect(result.state.activeDialogue?.transcript.some((turn) => turn.speaker === "system" && turn.text.includes("人影"))).toBe(true);
+  });
+});
+
+describe("autonomous comrade tasks", () => {
+  const taskCampaign: CampaignDefinition = {
+    ...campaign,
+    characters: [{
+      id: "member", name: "Member", publicIdentity: "Clerk", hiddenAlignment: "organization",
+      initialLocationId: "office", recruitable: true,
+      schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
+      reliability: { loyalty: 100, discipline: 100, pressureResistance: 100, courage: 100, competence: 100 },
+    }],
+  };
+
+  const recruitedState = (gameInstanceId: string) => {
+    const state = createInitialWorld(taskCampaign, gameInstanceId, "user-1");
+    state.characters.member.recruited = true;
+    state.network.activeMemberIds.push("member");
+    return state;
+  };
+
+  it("rejects delegation to a character outside the network", () => {
+    const engine = new CampaignEngine(taskCampaign, createInitialWorld(taskCampaign, "unrecruited-task", "user-1"));
+    expect(() => engine.execute({ type: "delegate_comrade_task", memberId: "member", kind: "gather_intel", targetId: "shipment", approach: "balanced", durationMinutes: 0, idempotencyKey: "unrecruited-delegation" })).toThrow("not an active network member");
+  });
+
+  it("lets a recruited comrade complete work while world time advances", () => {
+    const engine = new CampaignEngine(taskCampaign, recruitedState("background-task"));
+    const assigned = engine.execute({ type: "delegate_comrade_task", memberId: "member", kind: "gather_intel", targetId: "shipment", approach: "cautious", durationMinutes: 0, idempotencyKey: "gather-delegation" });
+    expect(assigned.state.currentTime).toBe(taskCampaign.startTime);
+    expect(assigned.state.network.tasks[0]?.status).toBe("active");
+    expect(assigned.state.characters.member.agentTier).toBe("active");
+
+    engine.execute({ type: "wait", durationMinutes: 70, idempotencyKey: "task-wait-70" });
+    expect(engine.getState().network.tasks[0]?.status).toBe("active");
+    const completed = engine.execute({ type: "wait", durationMinutes: 10, idempotencyKey: "task-wait-10" });
+    expect(completed.state.network.tasks[0]?.status).toBe("completed");
+    expect(completed.state.intel.shipment.knownFields).toHaveLength(1);
+    expect(completed.state.characters.member.agentTier).toBe("background");
+    expect(completed.notices.some((notice) => notice.includes("Member"))).toBe(true);
+  });
+
+  it("allows an active assignment to be withdrawn without advancing time", () => {
+    const engine = new CampaignEngine(taskCampaign, recruitedState("cancel-task"));
+    engine.execute({ type: "delegate_comrade_task", memberId: "member", kind: "gather_intel", targetId: "shipment", approach: "balanced", durationMinutes: 0, idempotencyKey: "cancel-delegation" });
+    const cancelled = engine.execute({ type: "cancel_comrade_task", taskId: "cancel-delegation", durationMinutes: 0, idempotencyKey: "cancel-command" });
+    expect(cancelled.state.currentTime).toBe(taskCampaign.startTime);
+    expect(cancelled.state.network.tasks[0]?.status).toBe("cancelled");
+    expect(cancelled.state.characters.member.agentTier).toBe("background");
   });
 });

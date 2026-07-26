@@ -11,6 +11,7 @@ export interface GameRepository {
   createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"]): Promise<WorldState>;
   listGames(ownerUserId: string): Promise<WorldState[]>;
   getGame(gameInstanceId: string, ownerUserId: string): Promise<WorldState | null>;
+  deleteGame(gameInstanceId: string, ownerUserId: string): Promise<boolean>;
   execute(gameInstanceId: string, ownerUserId: string, action: GameAction): Promise<ActionResult | null>;
   getEvents(gameInstanceId: string, ownerUserId: string): Promise<GameEvent[] | null>;
 }

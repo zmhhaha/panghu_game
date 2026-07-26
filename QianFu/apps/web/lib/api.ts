@@ -6,6 +6,7 @@ export interface GameContext {
   campaign: { id: string; version: string; name: string };
   locations: { id: string; name: string; district: string; discovered: boolean }[];
   characters: { id: string; name: string; publicIdentity: string; recruitable: boolean; known: boolean }[];
+  networkMembers: { id: string; name: string; publicIdentity: string }[];
   intel: { id: string; title: string; requiredFields: string[] }[];
 }
 
@@ -27,6 +28,7 @@ export const api = {
   listGames: () => request<{ games: PublicWorldState[] }>("/api/v1/games"),
   createGame: (difficulty: DifficultyConfig["id"]) => request<PublicWorldState>("/api/v1/games", { method: "POST", body: JSON.stringify({ difficulty }) }),
   getGame: (id: string) => request<PublicWorldState>(`/api/v1/games/${id}`),
+  deleteGame: (id: string) => request<{ deleted: true }>(`/api/v1/games/${id}`, { method: "DELETE" }),
   getContext: (id: string) => request<GameContext>(`/api/v1/games/${id}/context`),
   exportGame: (id: string) => `/api/v1/games/${id}/export`,
   act: (id: string, action: GameAction) => request<PublicActionResult>(`/api/v1/games/${id}/actions`, { method: "POST", body: JSON.stringify(action) }),

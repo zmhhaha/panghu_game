@@ -19,6 +19,8 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("wait"), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("record_intel"), intelId: z.string().min(1), fields: z.array(z.string()).max(20), confidenceDelta: z.number().min(0).max(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("transmit_intel"), intelId: z.string().min(1), method: z.enum(["radio", "courier"]), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("delegate_comrade_task"), memberId: z.string().min(1), kind: z.enum(["gather_intel", "verify_intel", "scout_location"]), targetId: z.string().min(1), approach: z.enum(["cautious", "balanced", "urgent"]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("cancel_comrade_task"), taskId: z.string().min(8).max(128), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({
     type: z.literal("dialogue"),
     targetCharacterId: z.string().min(1),
@@ -66,6 +68,9 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
         return { id, name: discovered ? name : "？？？", district: discovered ? district : "区域未确认", discovered };
       }),
       characters: visibleCharacters,
+      networkMembers: LINJIANG_1942.characters
+        .filter((character) => state.network.activeMemberIds.includes(character.id))
+        .map((character) => ({ id: character.id, name: character.name, publicIdentity: character.publicIdentity })),
       intel: LINJIANG_1942.intel.map(({ id, title, requiredFields }) => ({ id, title, requiredFields })),
     });
   } catch (error) { next(error); }
@@ -77,6 +82,15 @@ gamesRouter.get("/:id", async (req, res, next) => {
     const game = await gameRepository.getGame(req.params.id, req.user.id);
     if (!game) { res.status(404).json({ error: "战役不存在" }); return; }
     res.json(toPublicWorldState(game));
+  } catch (error) { next(error); }
+});
+
+gamesRouter.delete("/:id", async (req, res, next) => {
+  if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
+  try {
+    const deleted = await gameRepository.deleteGame(req.params.id, req.user.id);
+    if (!deleted) { res.status(404).json({ error: "战役不存在" }); return; }
+    res.json({ deleted: true });
   } catch (error) { next(error); }
 });
 

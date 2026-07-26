@@ -44,6 +44,11 @@ export class InMemoryGameRepository implements GameRepository {
     return this.findGame(gameInstanceId, ownerUserId)?.engine.getState() ?? null;
   }
 
+  async deleteGame(gameInstanceId: string, ownerUserId: string): Promise<boolean> {
+    if (!this.findGame(gameInstanceId, ownerUserId)) return false;
+    return this.games.delete(gameInstanceId);
+  }
+
   async execute(gameInstanceId: string, ownerUserId: string, action: GameAction) {
     const game = this.findGame(gameInstanceId, ownerUserId);
     if (!game) return null;

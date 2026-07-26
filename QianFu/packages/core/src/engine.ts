@@ -65,7 +65,7 @@ export function createInitialWorld(
     dialogueMemories,
     activeDialogue: null,
     intel,
-    network: { exposure: 0, activeMemberIds: [], compromisedMemberIds: [], availableChannels: ["radio", "courier"] },
+    network: { exposure: 0, activeMemberIds: [], compromisedMemberIds: [], availableChannels: ["radio", "courier"], tasks: [] },
     investigation: {
       pressure: 0,
       locationHeat: Object.fromEntries(campaign.locations.map((location) => [location.id, 0])),
@@ -106,6 +106,7 @@ export class CampaignEngine {
     this.state.investigation.surveillanceLocationIds ??= [];
     this.state.investigation.locationHeat ??= {};
     for (const location of campaign.locations) this.state.investigation.locationHeat[location.id] ??= 0;
+    this.state.network.tasks ??= [];
     for (const character of campaign.characters) {
       this.state.dialogueMemories[character.id] ??= {
         characterId: character.id, summary: "尚未与玩家交谈。", lastPrivateIntent: null, turns: [], lastGoal: null, interactionCount: 0,
@@ -294,6 +295,43 @@ export class CampaignEngine {
         narration = dialogueNarration(next, definition, action, discovery !== null);
         break;
       }
+      case "delegate_comrade_task": {
+        if (action.durationMinutes !== 0) throw new Error("Delegating a comrade task does not advance time");
+        const member = next.characters[action.memberId];
+        if (!member?.recruited || !next.network.activeMemberIds.includes(action.memberId)) throw new Error("Character is not an active network member");
+        if (member.exposed || next.network.compromisedMemberIds.includes(action.memberId)) throw new Error("Compromised members cannot receive new tasks");
+        if (next.network.tasks.some((task) => task.memberId === action.memberId && task.status === "active")) throw new Error("Network member already has an active task");
+        validateComradeTaskTarget(this.campaign, next, action.kind, action.targetId);
+        const taskMinutes = comradeTaskMinutes(action.kind, action.approach);
+        next.network.tasks.push({
+          id: action.idempotencyKey,
+          memberId: action.memberId,
+          kind: action.kind,
+          targetId: action.targetId,
+          approach: action.approach,
+          status: "active",
+          assignedAt: next.currentTime,
+          dueAt: addMinutes(next.currentTime, taskMinutes),
+          completedAt: null,
+          report: null,
+        });
+        member.agentTier = "active";
+        append("comrade.task_assigned", { taskId: action.idempotencyKey, memberId: action.memberId, kind: action.kind, targetId: action.targetId, approach: action.approach, taskMinutes });
+        narration = `任务已经交给${this.campaign.characters.find((item) => item.id === action.memberId)?.name ?? "这名同志"}，对方会按约定自行行动。`;
+        break;
+      }
+      case "cancel_comrade_task": {
+        if (action.durationMinutes !== 0) throw new Error("Cancelling a comrade task does not advance time");
+        const task = next.network.tasks.find((item) => item.id === action.taskId);
+        if (!task || task.status !== "active") throw new Error("Comrade task is not active");
+        task.status = "cancelled";
+        task.completedAt = next.currentTime;
+        task.report = "任务已通过约定渠道撤回，没有产生结果。";
+        if (next.characters[task.memberId]) next.characters[task.memberId].agentTier = "background";
+        append("comrade.task_cancelled", { taskId: task.id, memberId: task.memberId });
+        narration = "撤回指令已经送出。对方会在不暴露联络关系的前提下停止行动。";
+        break;
+      }
       case "wait":
         append("player.waited", { durationMinutes: action.durationMinutes });
         narration = "时间继续向前，城市中的其他人也在行动。";
@@ -306,6 +344,7 @@ export class CampaignEngine {
     // when the clock crosses a ten-minute boundary.
     if (Math.floor(new Date(previousTime).getTime() / 600_000) !== Math.floor(new Date(next.currentTime).getTime() / 600_000)) {
       advanceSchedules(this.campaign, next, append);
+      notices.push(...advanceComradeTasks(this.campaign, next, append));
       notices.push(...advanceEnemyInvestigation(next, append));
       if (next.activeDialogue && notices.length > 0) {
         next.activeDialogue.transcript.push(...notices.map((text) => ({ speaker: "system" as const, text, at: next.currentTime })));
@@ -384,6 +423,111 @@ function unlockNextLocation(campaign: CampaignDefinition, state: WorldState, app
   if (!nextLocation) return;
   state.discoveredLocationIds.push(nextLocation.id);
   append("location.discovered", { locationId: nextLocation.id });
+}
+
+function comradeTaskMinutes(
+  kind: Extract<GameAction, { type: "delegate_comrade_task" }>["kind"],
+  approach: Extract<GameAction, { type: "delegate_comrade_task" }>["approach"],
+): number {
+  const base = kind === "gather_intel" ? 60 : 30;
+  return base + (approach === "cautious" ? 20 : approach === "urgent" ? -10 : 0);
+}
+
+function validateComradeTaskTarget(
+  campaign: CampaignDefinition,
+  state: WorldState,
+  kind: Extract<GameAction, { type: "delegate_comrade_task" }>["kind"],
+  targetId: string,
+) {
+  if (kind === "scout_location") {
+    if (!campaign.locations.some((location) => location.id === targetId)) throw new Error("Unknown task location");
+    if (state.discoveredLocationIds.includes(targetId)) throw new Error("Location has already been discovered");
+    return;
+  }
+  const intel = state.intel[targetId];
+  const definition = campaign.intel.find((item) => item.id === targetId);
+  if (!intel || !definition) throw new Error("Unknown task intelligence item");
+  if (intel.deliveredAt) throw new Error("Delivered intelligence cannot receive another task");
+  if (kind === "verify_intel" && intel.knownFields.length === 0) throw new Error("Intelligence must be discovered before it can be verified");
+  if (kind === "gather_intel" && definition.requiredFields.every((field) => intel.knownFields.includes(field))) throw new Error("All intelligence fields are already known");
+}
+
+function advanceComradeTasks(
+  campaign: CampaignDefinition,
+  state: WorldState,
+  append: (type: string, payload: unknown) => void,
+): string[] {
+  const notices: string[] = [];
+  for (const task of state.network.tasks.filter((item) => item.status === "active" && new Date(item.dueAt) <= new Date(state.currentTime))) {
+    const member = state.characters[task.memberId];
+    const definition = campaign.characters.find((item) => item.id === task.memberId);
+    if (!member || !definition) {
+      task.status = "failed";
+      task.completedAt = state.currentTime;
+      task.report = "联络对象没有按约定出现，任务已经失去执行条件。";
+      notices.push(task.report);
+      append("comrade.task_failed", { taskId: task.id, memberId: task.memberId, report: task.report });
+      continue;
+    }
+
+    const ability = definition.reliability.competence * 0.55
+      + definition.reliability.discipline * 0.25
+      + definition.reliability.courage * 0.1
+      + definition.reliability.loyalty * 0.1;
+    const approachModifier = task.approach === "cautious" ? 10 : task.approach === "urgent" ? -15 : 0;
+    const difficultyPenalty = Math.max(0, state.difficulty.enemyResponseSpeed - 1) * 15;
+    const successChance = clamp(ability + approachModifier - difficultyPenalty, 10, 100);
+    const success = stableRoll(`${state.gameInstanceId}:${task.id}:${task.kind}:${task.targetId}`) < successChance;
+    const evidenceWeight = task.approach === "cautious" ? 2 : task.approach === "urgent" ? 7 : 4;
+    const evidenceLocationId = task.kind === "scout_location" ? task.targetId : member.locationId;
+    recordInvestigationEvidence(state, "courier_pattern", evidenceLocationId, evidenceWeight, append);
+    task.completedAt = state.currentTime;
+    member.agentTier = "background";
+
+    if (success) {
+      task.status = "completed";
+      if (task.kind === "scout_location") {
+        if (!state.discoveredLocationIds.includes(task.targetId)) state.discoveredLocationIds.push(task.targetId);
+        const locationName = campaign.locations.find((location) => location.id === task.targetId)?.name ?? "目标地点";
+        task.report = `${definition.name}确认了${locationName}的进入路线和周边情况。`;
+        append("location.discovered", { locationId: task.targetId, sourceMemberId: task.memberId });
+      } else {
+        const intel = state.intel[task.targetId];
+        const intelDefinition = campaign.intel.find((item) => item.id === task.targetId);
+        if (!intel || !intelDefinition) continue;
+        if (task.kind === "gather_intel") {
+          const missing = intelDefinition.requiredFields.filter((field) => !intel.knownFields.includes(field));
+          const field = missing[stableRoll(`${task.id}:field`) % Math.max(1, missing.length)];
+          if (field) intel.knownFields.push(field);
+          intel.confidence = clamp(intel.confidence + 0.22, 0, 1);
+          intel.collectedSourceIds = [...new Set([...intel.collectedSourceIds, task.memberId])];
+          task.report = `${definition.name}送回了“${intelDefinition.title}”的一项可核对线索。`;
+        } else {
+          intel.confidence = clamp(intel.confidence + 0.18, 0, 1);
+          task.report = `${definition.name}交叉核对了“${intelDefinition.title}”，现有线索可信度有所提高。`;
+        }
+      }
+      if (task.approach === "urgent") state.network.exposure = clamp(state.network.exposure + state.difficulty.enemyResponseSpeed);
+      append("comrade.task_completed", { taskId: task.id, memberId: task.memberId, kind: task.kind, targetId: task.targetId, report: task.report });
+    } else {
+      task.status = "failed";
+      member.stress = clamp(member.stress + (task.approach === "urgent" ? 14 : 8));
+      state.network.exposure = clamp(state.network.exposure + evidenceWeight * state.difficulty.enemyResponseSpeed);
+      task.report = `${definition.name}没有取得可靠结果，并报告行动环境已经变得危险。`;
+      append("comrade.task_failed", { taskId: task.id, memberId: task.memberId, kind: task.kind, targetId: task.targetId, report: task.report });
+    }
+    notices.push(task.report ?? "一项同志任务已经结束。");
+  }
+  return notices;
+}
+
+function stableRoll(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % 100;
 }
 
 function recordInvestigationEvidence(
