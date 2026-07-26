@@ -5,6 +5,7 @@ import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
 import { LINJIANG_1942 } from "@qianfu/content";
 import { campaignOrchestrator } from "../agents/orchestrator.js";
+import { renderReportHtml } from "../reports.js";
 
 export const gamesRouter = Router();
 
@@ -126,14 +127,72 @@ gamesRouter.get("/:id/events", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+gamesRouter.get("/:id/report", async (req, res, next) => {
+  if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
+  try {
+    const state = await gameRepository.getGame(req.params.id, req.user.id);
+    if (!state) { res.status(404).json({ error: "战役不存在" }); return; }
+    if (state.status !== "finished") { res.status(409).json({ error: "战役尚未结算" }); return; }
+    const report = await gameRepository.getReport(req.params.id, req.user.id);
+    if (!report) { res.status(409).json({ error: "结算报告尚未生成" }); return; }
+    res.json(report);
+  } catch (error) { next(error); }
+});
+
+gamesRouter.get("/:id/shares", async (req, res, next) => {
+  if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
+  try {
+    const shares = await gameRepository.listShares(req.params.id, req.user.id);
+    if (!shares) { res.status(404).json({ error: "战役不存在" }); return; }
+    res.json({ shares });
+  } catch (error) { next(error); }
+});
+
+gamesRouter.post("/:id/shares", async (req, res, next) => {
+  if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
+  const parsed = z.object({ expiresInDays: z.union([z.literal(7), z.literal(30), z.literal(90), z.null()]) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "分享有效期无效" }); return; }
+  const expiresAt = parsed.data.expiresInDays === null
+    ? null
+    : new Date(Date.now() + parsed.data.expiresInDays * 86_400_000).toISOString();
+  try {
+    const state = await gameRepository.getGame(req.params.id, req.user.id);
+    if (!state) { res.status(404).json({ error: "战役不存在" }); return; }
+    if (state.status !== "finished") { res.status(409).json({ error: "只有已结算战役可以分享" }); return; }
+    const share = await gameRepository.createShare(req.params.id, req.user.id, expiresAt);
+    if (!share) { res.status(409).json({ error: "结算报告尚未生成" }); return; }
+    res.status(201).json(share);
+  } catch (error) { next(error); }
+});
+
 gamesRouter.get("/:id/export", async (req, res, next) => {
   if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
   try {
     const state = await gameRepository.getGame(req.params.id, req.user.id);
     const events = await gameRepository.getEvents(req.params.id, req.user.id);
     if (!state || !events) { res.status(404).json({ error: "战役不存在" }); return; }
+    const format = req.query.format === "html" ? "html" : "json";
+    if (state.status !== "finished") {
+      if (format === "html") { res.status(409).json({ error: "战役结算后才能导出 HTML 战报" }); return; }
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="qianfu-progress-${state.gameInstanceId}.json"`);
+      res.json({
+        schemaVersion: "1.0.0", kind: "player_progress", exportedAt: new Date().toISOString(),
+        campaign: { id: LINJIANG_1942.id, version: LINJIANG_1942.version, name: LINJIANG_1942.name },
+        state: toPublicWorldState(state), events: toPublicGameEvents(events),
+      });
+      return;
+    }
+    const bundle = await gameRepository.getReport(req.params.id, req.user.id);
+    if (!bundle) { res.status(409).json({ error: "结算报告尚未生成" }); return; }
+    if (format === "html") {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="qianfu-report-${state.gameInstanceId}.html"`);
+      res.send(renderReportHtml(bundle.ownerReport));
+      return;
+    }
     res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="qianfu-${state.gameInstanceId}.json"`);
-    res.json({ schemaVersion: "1.0.0", exportedAt: new Date().toISOString(), campaign: LINJIANG_1942, state: toPublicWorldState(state), events: toPublicGameEvents(events) });
+    res.setHeader("Content-Disposition", `attachment; filename="qianfu-report-${state.gameInstanceId}.json"`);
+    res.json(bundle.ownerReport);
   } catch (error) { next(error); }
 });

@@ -1,0 +1,39 @@
+import type { CampaignReport } from "@qianfu/core";
+import { Clock3, FileCheck2, Radio, ShieldAlert, UserCheck, UsersRound } from "lucide-react";
+
+const dateTime = (iso: string) => new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+}).format(new Date(iso));
+
+const truthLabels = { true: "真实", false: "错误", partial: "部分真实" } as const;
+const alignmentLabels = { organization: "组织同志", enemy: "敌方人员", neutral: "中立人物", variable: "立场受局势影响" } as const;
+const deliveryLabels: Record<string, string> = { radio: "电台", courier: "交通员" };
+
+export function ReportDocument({ report, preview = false }: { report: CampaignReport; preview?: boolean }) {
+  const scoreItems = [
+    ["任务", report.ending.score.mission], ["情报", report.ending.score.intelligence],
+    ["网络", report.ending.score.network], ["掩护", report.ending.score.cover], ["效率", report.ending.score.efficiency],
+  ] as const;
+  return <div className={`min-w-0 ${preview ? "text-sm" : ""}`}>
+    <section className="border-b border-line pb-7">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0"><p className="text-xs text-copper">{report.visibility === "public" ? "公开战役档案" : "私人完整档案"}</p><h1 className={`${preview ? "text-2xl" : "text-3xl sm:text-4xl"} mt-3 break-words font-serif`}>{report.campaign.name}</h1><p className="mt-3 max-w-2xl break-words leading-7 text-paper/75">{report.summary}</p></div>
+        <div className="shrink-0 sm:text-right"><div className={`${preview ? "text-4xl" : "text-6xl"} font-serif text-copper`}>{report.ending.score.grade}</div><p className="mt-1 text-xs text-muted">{report.ending.title} · {report.ending.score.total} 分</p></div>
+      </div>
+      <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted"><span className="flex items-center gap-2"><Clock3 size={13} />{dateTime(report.startedAt)} 至 {dateTime(report.closedAt)}</span><span>{report.difficulty.label}</span><span>报告版本 {report.reportVersion}</span></div>
+    </section>
+
+    <section className="border-b border-line py-7"><h2 className="font-serif text-xl">评分构成</h2><div className="mt-5 grid grid-cols-2 gap-px bg-line sm:grid-cols-5">{scoreItems.map(([label, value], index) => <div key={label} className={`bg-ink px-4 py-4 ${index === scoreItems.length - 1 ? "col-span-2 sm:col-span-1" : ""}`}><p className="text-xs text-muted">{label}</p><p className="mt-2 text-xl">{value}</p></div>)}</div></section>
+
+    <section className="border-b border-line py-7"><h2 className="font-serif text-xl">行动结果</h2><div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Metric icon={<Radio size={15} />} label="传递情报" value={report.statistics.deliveredIntel} /><Metric icon={<UserCheck size={15} />} label="联络同志" value={report.statistics.recruitedComrades} /><Metric icon={<FileCheck2 size={15} />} label="行动次数" value={report.statistics.actionCount} /><Metric icon={<UsersRound size={15} />} label="对话轮次" value={report.statistics.dialogueTurns} /></div><div className="mt-5 grid gap-4 sm:grid-cols-3"><Risk label="个人怀疑" value={report.finalRisk.personalSuspicion} /><Risk label="网络暴露" value={report.finalRisk.networkExposure} /><Risk label="调查压力" value={report.finalRisk.investigationPressure} /></div></section>
+
+    <section className="border-b border-line py-7"><h2 className="font-serif text-xl">情报结算</h2>{report.intel.length === 0 ? <p className="mt-4 text-sm text-muted">没有形成可结算的情报记录。</p> : <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-line text-xs text-muted"><tr><th className="py-3 pr-4 font-normal">情报</th><th className="py-3 pr-4 font-normal">已知字段</th><th className="py-3 pr-4 font-normal">可信度</th><th className="py-3 pr-4 font-normal">传递</th>{report.visibility === "owner" && <th className="py-3 font-normal">结算真相</th>}</tr></thead><tbody className="divide-y divide-line">{report.intel.map((intel) => <tr key={intel.id}><td className="py-3 pr-4">{intel.title}</td><td className="py-3 pr-4 text-muted">{intel.knownFields.join("、") || "未完整确认"}</td><td className="py-3 pr-4">{Math.round(intel.confidence * 100)}%</td><td className="py-3 pr-4 text-muted">{intel.deliveryMethod ? deliveryLabels[intel.deliveryMethod] ?? intel.deliveryMethod : "未送出"}</td>{report.visibility === "owner" && <td className="py-3 text-copper">{intel.actualTruth ? truthLabels[intel.actualTruth] : "未知"}</td>}</tr>)}</tbody></table></div>}</section>
+
+    <section className="border-b border-line py-7"><h2 className="font-serif text-xl">人物去向</h2>{report.comrades.length === 0 ? <p className="mt-4 text-sm text-muted">没有留下可公开的人物记录。</p> : <div className="mt-4 divide-y divide-line">{report.comrades.map((person) => <div key={person.id} className="grid gap-2 py-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><p>{person.name}</p><p className="mt-1 text-xs text-muted">{person.publicIdentity}{person.recruited ? " · 已建立组织联络" : ""}</p></div><p className={`text-xs ${person.outcome === "compromised" ? "text-alert" : "text-safe"}`}>{person.outcome === "compromised" ? "已经暴露" : "仍在行动"}{report.visibility === "owner" && person.actualAlignment ? ` · ${alignmentLabels[person.actualAlignment]}` : ""}</p></div>)}</div>}</section>
+
+    <section className="py-7"><h2 className="font-serif text-xl">关键时间线</h2>{report.timeline.length === 0 ? <p className="mt-4 text-sm text-muted">没有可展示的关键行动记录。</p> : <ol className="mt-4 divide-y divide-line">{report.timeline.map((item) => <li key={`${item.eventSeq}-${item.type}`} className="grid gap-2 py-4 sm:grid-cols-[140px_110px_1fr]"><time className="text-xs text-muted">{dateTime(item.occurredAt)}</time><span className="text-sm text-copper">{item.title}</span><span className="text-sm leading-6 text-paper/75">{item.detail}</span></li>)}</ol>}</section>
+  </div>;
+}
+
+function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) { return <div className="border-l-2 border-copper px-3"><p className="flex items-center gap-2 text-xs text-muted">{icon}{label}</p><p className="mt-2 text-xl">{value}</p></div>; }
+function Risk({ label, value }: { label: string; value: number }) { const bounded = Math.max(0, Math.min(100, value)); return <div><div className="flex justify-between text-xs text-muted"><span className="flex items-center gap-1.5"><ShieldAlert size={12} />{label}</span><span>{Math.round(bounded)}%</span></div><div className="mt-2 h-1.5 bg-line"><div className="h-full bg-alert" style={{ width: `${bounded}%` }} /></div></div>; }

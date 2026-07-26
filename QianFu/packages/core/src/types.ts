@@ -204,6 +204,85 @@ export interface CampaignEnding {
   score: ScoreBreakdown;
 }
 
+export interface CampaignReportTimelineEntry {
+  eventSeq: number;
+  occurredAt: string;
+  type: string;
+  title: string;
+  detail: string;
+}
+
+export interface CampaignReportIntelItem {
+  id: string;
+  title: string;
+  knownFields: string[];
+  confidence: number;
+  deliveredAt: string | null;
+  deliveryMethod: string | null;
+  actualTruth?: IntelDefinition["truth"];
+}
+
+export interface CampaignReportCharacterItem {
+  id: string;
+  name: string;
+  publicIdentity: string;
+  recruited: boolean;
+  exposed: boolean;
+  outcome: "active" | "compromised";
+  actualAlignment?: CharacterDefinition["hiddenAlignment"];
+}
+
+export interface CampaignReport {
+  schemaVersion: "1.0.0";
+  visibility: "owner" | "public";
+  reportId: string;
+  reportVersion: number;
+  gameInstanceId: string;
+  campaign: { id: string; version: string; name: string };
+  difficulty: { id: DifficultyConfig["id"]; label: string };
+  generatedAt: string;
+  startedAt: string;
+  closedAt: string;
+  ending: CampaignEnding;
+  summary: string;
+  statistics: {
+    elapsedMinutes: number;
+    actionCount: number;
+    dialogueTurns: number;
+    deliveredIntel: number;
+    recruitedComrades: number;
+    discoveredLocations: number;
+  };
+  finalRisk: {
+    personalSuspicion: number;
+    networkExposure: number;
+    investigationPressure: number;
+  };
+  timeline: CampaignReportTimelineEntry[];
+  intel: CampaignReportIntelItem[];
+  comrades: CampaignReportCharacterItem[];
+}
+
+export interface CampaignReportBundle {
+  ownerReport: CampaignReport;
+  publicPreview: CampaignReport;
+}
+
+export interface CampaignShareSummary {
+  shareId: string;
+  gameInstanceId: string;
+  reportVersion: number;
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  accessCount: number;
+}
+
+export interface SharedCampaignReport {
+  share: CampaignShareSummary;
+  report: CampaignReport;
+}
+
 export interface WorldState {
   gameInstanceId: string;
   ownerUserId: string;

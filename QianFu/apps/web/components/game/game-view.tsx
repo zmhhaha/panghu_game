@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { DialoguePanel } from "@/components/game/dialogue-panel";
 import { CityMap } from "@/components/game/city-map";
 import { OrganizationNetwork } from "@/components/game/organization-network";
+import { SettlementReport } from "@/components/game/settlement-report";
 
 const travelMinutes: Record<string, Record<string, number>> = {
   "archive-office": { "radio-office": 10, "linjiang-news": 20, "jianghai-hotel": 20, "third-dock": 40, "wu-clock-shop": 30 },
@@ -95,6 +96,8 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
     month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(new Date(state.currentTime));
 
+  if (state.status === "finished") return <SettlementReport gameInstanceId={gameInstanceId} />;
+
   if (state.activeDialogue) {
     const activeNpc = context.characters.find((item) => item.id === state.activeDialogue?.characterId);
     return <DialoguePanel
@@ -126,7 +129,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
           <div className="min-w-0"><h1 className="truncate font-serif text-lg">临江潜线</h1><p className="truncate text-[11px] text-muted">第三号电台 · {state.difficulty.id}</p></div>
         </div>
         <div className="flex items-center gap-2 sm:gap-5">
-          <a href={api.exportGame(gameInstanceId)} title="下载私人战报" className="grid h-9 w-9 place-items-center text-muted hover:text-paper"><Download size={17} /></a>
+          <a href={api.exportGame(gameInstanceId)} title="下载当前玩家档案" className="grid h-9 w-9 place-items-center text-muted hover:text-paper"><Download size={17} /></a>
           <div className="flex items-center gap-2 text-sm text-paper"><Clock3 size={16} className="text-copper" /><span>{formattedTime}</span></div>
         </div>
       </div>

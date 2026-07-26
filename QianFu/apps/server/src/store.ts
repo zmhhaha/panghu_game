@@ -1,14 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { CampaignEngine, createInitialWorld, type DifficultyConfig, type GameAction, type GameEvent, type WorldState } from "@qianfu/core";
+import {
+  CampaignEngine, createInitialWorld, type CampaignReportBundle, type CampaignShareSummary,
+  type DifficultyConfig, type GameAction, type GameEvent, type SharedCampaignReport, type WorldState,
+} from "@qianfu/core";
 import { LINJIANG_1942 } from "@qianfu/content";
 import type { AuthUser } from "./middleware/auth.js";
 import type { GameRepository, UserRecord } from "./repository.js";
+import { buildCampaignReportBundle } from "./reports.js";
 
 interface StoredGame { engine: CampaignEngine; events: GameEvent[]; createdAt: string }
+interface StoredShare { summary: CampaignShareSummary; ownerUserId: string; report: SharedCampaignReport["report"] }
 
 export class InMemoryGameRepository implements GameRepository {
   private readonly users = new Map<string, UserRecord>();
   private readonly games = new Map<string, StoredGame>();
+  private readonly reports = new Map<string, CampaignReportBundle>();
+  private readonly shares = new Map<string, StoredShare>();
 
   async ensureUser(user: AuthUser): Promise<UserRecord> {
     const existing = this.users.get(user.id);
@@ -46,6 +53,8 @@ export class InMemoryGameRepository implements GameRepository {
 
   async deleteGame(gameInstanceId: string, ownerUserId: string): Promise<boolean> {
     if (!this.findGame(gameInstanceId, ownerUserId)) return false;
+    this.reports.delete(gameInstanceId);
+    for (const [shareId, share] of this.shares) if (share.summary.gameInstanceId === gameInstanceId) this.shares.delete(shareId);
     return this.games.delete(gameInstanceId);
   }
 
@@ -54,12 +63,62 @@ export class InMemoryGameRepository implements GameRepository {
     if (!game) return null;
     const result = game.engine.execute(action);
     game.events.push(...result.events);
+    if (result.state.status === "finished" && !this.reports.has(gameInstanceId)) {
+      this.reports.set(gameInstanceId, buildCampaignReportBundle(LINJIANG_1942, result.state, game.events, randomUUID(), new Date().toISOString()));
+    }
     return result;
   }
 
   async getEvents(gameInstanceId: string, ownerUserId: string): Promise<GameEvent[] | null> {
     const game = this.findGame(gameInstanceId, ownerUserId);
     return game ? structuredClone(game.events) : null;
+  }
+
+  async getReport(gameInstanceId: string, ownerUserId: string): Promise<CampaignReportBundle | null> {
+    const game = this.findGame(gameInstanceId, ownerUserId);
+    if (!game) return null;
+    const state = game.engine.getState();
+    if (state.status !== "finished") return null;
+    let report = this.reports.get(gameInstanceId);
+    if (!report) {
+      report = buildCampaignReportBundle(LINJIANG_1942, state, game.events, randomUUID(), new Date().toISOString());
+      this.reports.set(gameInstanceId, report);
+    }
+    return structuredClone(report);
+  }
+
+  async listShares(gameInstanceId: string, ownerUserId: string): Promise<CampaignShareSummary[] | null> {
+    if (!this.findGame(gameInstanceId, ownerUserId)) return null;
+    return [...this.shares.values()]
+      .filter((share) => share.ownerUserId === ownerUserId && share.summary.gameInstanceId === gameInstanceId)
+      .map((share) => structuredClone(share.summary))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async createShare(gameInstanceId: string, ownerUserId: string, expiresAt: string | null): Promise<CampaignShareSummary | null> {
+    const report = await this.getReport(gameInstanceId, ownerUserId);
+    if (!report) return null;
+    const shareId = randomUUID();
+    const summary: CampaignShareSummary = {
+      shareId, gameInstanceId, reportVersion: report.publicPreview.reportVersion,
+      createdAt: new Date().toISOString(), expiresAt, revokedAt: null, accessCount: 0,
+    };
+    this.shares.set(shareId, { summary, ownerUserId, report: structuredClone(report.publicPreview) });
+    return structuredClone(summary);
+  }
+
+  async revokeShare(shareId: string, ownerUserId: string): Promise<boolean> {
+    const share = this.shares.get(shareId);
+    if (!share || share.ownerUserId !== ownerUserId || share.summary.revokedAt) return false;
+    share.summary.revokedAt = new Date().toISOString();
+    return true;
+  }
+
+  async getPublicShare(shareId: string): Promise<SharedCampaignReport | null> {
+    const share = this.shares.get(shareId);
+    if (!share || share.summary.revokedAt || (share.summary.expiresAt && Date.parse(share.summary.expiresAt) <= Date.now())) return null;
+    share.summary.accessCount += 1;
+    return { share: structuredClone(share.summary), report: structuredClone(share.report) };
   }
 }
 

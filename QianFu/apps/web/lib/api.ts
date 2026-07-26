@@ -1,4 +1,7 @@
-import type { ActionResult, DifficultyConfig, GameAction, PublicWorldState } from "@qianfu/core";
+import type {
+  ActionResult, CampaignReportBundle, CampaignShareSummary, DifficultyConfig,
+  GameAction, PublicWorldState, SharedCampaignReport,
+} from "@qianfu/core";
 
 type PublicActionResult = Omit<ActionResult, "state"> & { state: PublicWorldState };
 
@@ -30,6 +33,12 @@ export const api = {
   getGame: (id: string) => request<PublicWorldState>(`/api/v1/games/${id}`),
   deleteGame: (id: string) => request<{ deleted: true }>(`/api/v1/games/${id}`, { method: "DELETE" }),
   getContext: (id: string) => request<GameContext>(`/api/v1/games/${id}/context`),
-  exportGame: (id: string) => `/api/v1/games/${id}/export`,
+  getReport: (id: string) => request<CampaignReportBundle>(`/api/v1/games/${id}/report`),
+  listShares: (id: string) => request<{ shares: CampaignShareSummary[] }>(`/api/v1/games/${id}/shares`),
+  createShare: (id: string, expiresInDays: 7 | 30 | 90 | null) => request<CampaignShareSummary>(`/api/v1/games/${id}/shares`, { method: "POST", body: JSON.stringify({ expiresInDays }) }),
+  revokeShare: (shareId: string) => request<{ revoked: true }>(`/api/v1/manage-shares/${shareId}`, { method: "DELETE" }),
+  getSharedReport: (shareId: string) => request<SharedCampaignReport>(`/api/v1/shares/${shareId}`),
+  exportGame: (id: string, format: "json" | "html" = "json") => `/api/v1/games/${id}/export?format=${format}`,
+  exportShare: (shareId: string, format: "json" | "html") => `/api/v1/shares/${shareId}/export?format=${format}`,
   act: (id: string, action: GameAction) => request<PublicActionResult>(`/api/v1/games/${id}/actions`, { method: "POST", body: JSON.stringify(action) }),
 };

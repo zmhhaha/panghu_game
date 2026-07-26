@@ -72,4 +72,33 @@ CREATE TABLE IF NOT EXISTS game_snapshots (
 CREATE INDEX IF NOT EXISTS game_snapshots_restore_idx
   ON game_snapshots (game_instance_id, state_version DESC);
 
+CREATE TABLE IF NOT EXISTS campaign_reports (
+  id uuid PRIMARY KEY,
+  game_instance_id uuid NOT NULL UNIQUE REFERENCES game_instances(id) ON DELETE CASCADE,
+  owner_user_id text NOT NULL REFERENCES users(id),
+  report_version integer NOT NULL,
+  owner_report jsonb NOT NULL,
+  public_report jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (game_instance_id, report_version)
+);
+
+CREATE TABLE IF NOT EXISTS campaign_shares (
+  id uuid PRIMARY KEY,
+  game_instance_id uuid NOT NULL REFERENCES game_instances(id) ON DELETE CASCADE,
+  owner_user_id text NOT NULL REFERENCES users(id),
+  report_version integer NOT NULL,
+  public_report jsonb NOT NULL,
+  expires_at timestamptz,
+  revoked_at timestamptz,
+  access_count bigint NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS campaign_shares_owner_idx
+  ON campaign_shares (owner_user_id, game_instance_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS campaign_shares_public_lookup_idx
+  ON campaign_shares (id) WHERE revoked_at IS NULL;
+
 COMMIT;
