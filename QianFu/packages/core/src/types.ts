@@ -9,6 +9,23 @@ export type EndingType =
   | "player_terminated";
 
 export type AgentTier = "focus" | "active" | "background" | "dormant";
+export type RecruitmentTestType = "background_check" | "controlled_leak" | "discipline_check" | "low_risk_task";
+export type RecruitmentEvidenceResult = "favorable" | "warning" | "inconclusive";
+export type RecruitmentStage = "contact" | "screening" | "ready" | "recruited";
+
+export interface RecruitmentEvidence {
+  id: string;
+  testType: RecruitmentTestType;
+  result: RecruitmentEvidenceResult;
+  summary: string;
+  observedAt: string;
+}
+
+export interface RecruitmentCase {
+  stage: RecruitmentStage;
+  completedTestTypes: RecruitmentTestType[];
+  evidence: RecruitmentEvidence[];
+}
 
 export interface DifficultyConfig {
   id: "story" | "undercover" | "iron_curtain";
@@ -133,6 +150,7 @@ export interface CharacterState {
   politicalAffinity: number;
   recruited: boolean;
   recruitmentProgress: number;
+  recruitmentCase: RecruitmentCase;
   exposed: boolean;
   agentTier: AgentTier;
 }
@@ -411,7 +429,18 @@ export interface CancelComradeTaskAction extends ActionBase {
   taskId: string;
 }
 
-export type GameAction = MoveAction | ObserveAction | WaitAction | RecordIntelAction | TransmitIntelAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | DelegateComradeTaskAction | CancelComradeTaskAction;
+export interface RecruitmentTestAction extends ActionBase {
+  type: "recruitment_test";
+  targetCharacterId: string;
+  testType: RecruitmentTestType;
+}
+
+export interface RecruitCandidateAction extends ActionBase {
+  type: "recruit_candidate";
+  targetCharacterId: string;
+}
+
+export type GameAction = MoveAction | ObserveAction | WaitAction | RecordIntelAction | TransmitIntelAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
 
 export interface ActionResult {
   state: WorldState;

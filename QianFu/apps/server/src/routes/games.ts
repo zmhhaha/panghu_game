@@ -22,6 +22,8 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("transmit_intel"), intelId: z.string().min(1), method: z.enum(["radio", "courier"]), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("delegate_comrade_task"), memberId: z.string().min(1), kind: z.enum(["gather_intel", "verify_intel", "scout_location"]), targetId: z.string().min(1), approach: z.enum(["cautious", "balanced", "urgent"]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("cancel_comrade_task"), taskId: z.string().min(8).max(128), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("recruitment_test"), targetCharacterId: z.string().min(1), testType: z.enum(["background_check", "controlled_leak", "discipline_check", "low_risk_task"]), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("recruit_candidate"), targetCharacterId: z.string().min(1), durationMinutes: z.literal(30), idempotencyKey: z.string().min(8).max(128) }),
   z.object({
     type: z.literal("dialogue"),
     targetCharacterId: z.string().min(1),
@@ -72,6 +74,30 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
       networkMembers: LINJIANG_1942.characters
         .filter((character) => state.network.activeMemberIds.includes(character.id))
         .map((character) => ({ id: character.id, name: character.name, publicIdentity: character.publicIdentity })),
+      recruitmentCandidates: LINJIANG_1942.characters
+        .filter((character) => character.recruitable && state.knownCharacterIds.includes(character.id))
+        .map((character) => {
+          const candidate = state.characters[character.id];
+          const recruitmentCase = candidate.recruitmentCase ?? { stage: candidate.recruited ? "recruited" : "contact", completedTestTypes: [], evidence: [] };
+          const rapportReady = candidate.familiarity >= 8 && candidate.privateTrust >= 5 && candidate.recruitmentProgress >= 20;
+          const testsReady = new Set(recruitmentCase.completedTestTypes).size >= 3;
+          return {
+            id: character.id,
+            name: character.name,
+            publicIdentity: character.publicIdentity,
+            stage: candidate.recruited ? "recruited" : testsReady && rapportReady ? "ready" : recruitmentCase.stage,
+            completedTestTypes: recruitmentCase.completedTestTypes,
+            evidence: recruitmentCase.evidence,
+            requirements: {
+              contactReady: candidate.familiarity >= 3,
+              cooperationReady: candidate.recruitmentProgress >= 20,
+              rapportReady,
+              testsCompleted: recruitmentCase.completedTestTypes.length,
+              testsRequired: 3,
+            },
+            canRecruit: !candidate.recruited && rapportReady && testsReady && candidate.locationId === state.currentLocationId,
+          };
+        }),
       intel: LINJIANG_1942.intel.map(({ id, title, requiredFields }) => ({ id, title, requiredFields })),
     });
   } catch (error) { next(error); }

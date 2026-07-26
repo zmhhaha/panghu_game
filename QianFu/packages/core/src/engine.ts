@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { DIALOGUE_TEXT_LIMITS } from "./dialogue.js";
 import type {
   ActionResult, CampaignDefinition, CampaignEnding, CharacterState, GameAction,
-  GameEvent, IntelState, ScoreBreakdown, WorldState,
+  GameEvent, IntelState, RecruitmentEvidenceResult, RecruitmentTestType, ScoreBreakdown, WorldState,
 } from "./types.js";
 import { DIFFICULTIES } from "./difficulties.js";
 
@@ -31,6 +31,7 @@ export function createInitialWorld(
       politicalAffinity: 0,
       recruited: false,
       recruitmentProgress: 0,
+      recruitmentCase: { stage: "contact", completedTestTypes: [], evidence: [] },
       exposed: false,
       agentTier: "background",
     },
@@ -108,6 +109,14 @@ export class CampaignEngine {
     for (const location of campaign.locations) this.state.investigation.locationHeat[location.id] ??= 0;
     this.state.network.tasks ??= [];
     for (const character of campaign.characters) {
+      const characterState = this.state.characters[character.id];
+      if (characterState) {
+        characterState.recruitmentCase ??= {
+          stage: characterState.recruited ? "recruited" : "contact",
+          completedTestTypes: [],
+          evidence: [],
+        };
+      }
       this.state.dialogueMemories[character.id] ??= {
         characterId: character.id, summary: "尚未与玩家交谈。", lastPrivateIntent: null, turns: [], lastGoal: null, interactionCount: 0,
       };
@@ -259,6 +268,10 @@ export class CampaignEngine {
         const definition = this.campaign.characters.find((item) => item.id === action.targetCharacterId);
         if (!target || !definition) throw new Error("Unknown character");
         if (target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
+        if (!next.knownCharacterIds.includes(action.targetCharacterId)) {
+          next.knownCharacterIds.push(action.targetCharacterId);
+          append("character.introduced", { characterId: action.targetCharacterId });
+        }
         const textLimit = DIALOGUE_TEXT_LIMITS[action.goal];
         if (action.playerText.trim().length === 0) throw new Error("对话内容不能为空");
         if (action.playerText.length > textLimit) throw new Error(`“${action.goal}”每轮发言最多 ${textLimit} 个字符`);
@@ -330,6 +343,57 @@ export class CampaignEngine {
         if (next.characters[task.memberId]) next.characters[task.memberId].agentTier = "background";
         append("comrade.task_cancelled", { taskId: task.id, memberId: task.memberId });
         narration = "撤回指令已经送出。对方会在不暴露联络关系的前提下停止行动。";
+        break;
+      }
+      case "recruitment_test": {
+        const character = next.characters[action.targetCharacterId];
+        const definition = this.campaign.characters.find((item) => item.id === action.targetCharacterId);
+        if (!character || !definition || !definition.recruitable) throw new Error("该人物不在可招募候选名单中");
+        if (!next.knownCharacterIds.includes(character.id)) throw new Error("尚未建立候选人档案");
+        if (character.recruited) throw new Error("该人物已经加入组织");
+        if (character.recruitmentCase.completedTestTypes.includes(action.testType)) throw new Error("同类甄别已经完成，重复结果没有额外价值");
+        const requiredDuration = recruitmentTestMinutes(action.testType);
+        if (action.durationMinutes !== requiredDuration) throw new Error("甄别行动耗时不符合规则");
+        if (character.familiarity < 3) throw new Error("对候选人了解不足，先通过接触建立基础档案");
+        if (action.testType !== "background_check" && character.locationId !== next.currentLocationId) throw new Error("需要与候选人在同一地点安排这项测试");
+        if (action.testType === "low_risk_task" && character.recruitmentProgress < 20) throw new Error("尚未形成初步合作意向，不能安排低风险任务");
+
+        const result = evaluateRecruitmentTest(definition, action.testType);
+        const evidence = {
+          id: action.idempotencyKey,
+          testType: action.testType,
+          result,
+          summary: recruitmentEvidenceSummary(action.testType, result),
+          observedAt: next.currentTime,
+        };
+        character.recruitmentCase.completedTestTypes.push(action.testType);
+        character.recruitmentCase.evidence.push(evidence);
+        character.recruitmentCase.stage = character.recruitmentCase.completedTestTypes.length >= 3 && character.recruitmentProgress >= 20 ? "ready" : "screening";
+        character.recruitmentProgress = clamp(character.recruitmentProgress + (result === "favorable" ? 12 : result === "inconclusive" ? 7 : 3), 0, 90);
+        const riskWeight = action.testType === "controlled_leak" ? 8 : action.testType === "low_risk_task" ? 5 : 3;
+        recordInvestigationEvidence(next, action.testType === "background_check" ? "covert_observation" : "sensitive_notes", next.currentLocationId, riskWeight, append);
+        if (action.testType === "controlled_leak") next.network.exposure = clamp(next.network.exposure + 3 * next.difficulty.enemyResponseSpeed);
+        append("recruitment.test_completed", { characterId: character.id, evidence });
+        narration = evidence.summary;
+        break;
+      }
+      case "recruit_candidate": {
+        const character = next.characters[action.targetCharacterId];
+        const definition = this.campaign.characters.find((item) => item.id === action.targetCharacterId);
+        if (!character || !definition || !definition.recruitable) throw new Error("该人物不在可招募候选名单中");
+        if (action.durationMinutes !== 30) throw new Error("正式招募需要 30 分钟");
+        if (character.locationId !== next.currentLocationId) throw new Error("正式招募必须当面进行");
+        if (character.recruited) throw new Error("该人物已经加入组织");
+        if (character.familiarity < 8 || character.privateTrust < 5 || character.recruitmentProgress < 20) throw new Error("关系和合作意向尚不足以提出正式招募");
+        if (new Set(character.recruitmentCase.completedTestTypes).size < 3) throw new Error("至少完成三类不同甄别后才能正式招募");
+        character.recruited = true;
+        character.agentTier = "active";
+        character.recruitmentProgress = 100;
+        character.recruitmentCase.stage = "recruited";
+        if (!next.network.activeMemberIds.includes(character.id)) next.network.activeMemberIds.push(character.id);
+        next.network.exposure = clamp(next.network.exposure + 5 * next.difficulty.enemyResponseSpeed);
+        append("character.recruited", { characterId: character.id, completedTestTypes: character.recruitmentCase.completedTestTypes });
+        narration = `${definition.name}接受了有限联络与保密规则，正式进入你的组织网络。甄别证据仍可能存在误差。`;
         break;
       }
       case "wait":
@@ -623,14 +687,8 @@ function resolveDialogue(
   if (action.goal === "recruit_probe") {
     character.interestDependency = clamp(character.interestDependency + (definition.reliability.loyalty < 50 ? 4 : 1));
     if (definition.recruitable && character.familiarity >= 8 && character.privateTrust >= 5) {
-      const evidenceQuality = (definition.reliability.loyalty * 0.4 + definition.reliability.discipline * 0.3 + definition.reliability.competence * 0.3) / 100;
-      character.recruitmentProgress = clamp(character.recruitmentProgress + Math.round(30 + evidenceQuality * 30));
-      if (character.recruitmentProgress >= 100 && evidenceQuality >= 0.52) {
-        character.recruited = true;
-        character.agentTier = "active";
-        if (!state.network.activeMemberIds.includes(character.id)) state.network.activeMemberIds.push(character.id);
-        state.network.exposure = clamp(state.network.exposure + 5);
-      }
+      character.recruitmentProgress = clamp(character.recruitmentProgress + 20, 0, 60);
+      character.recruitmentCase.stage = character.recruitmentCase.completedTestTypes.length >= 3 ? "ready" : "screening";
     }
   }
 
@@ -648,6 +706,55 @@ function resolveDialogue(
   const relationBonus = Math.max(0, character.privateTrust) / 100;
   intel.confidence = clamp(intel.confidence + 0.22 * state.difficulty.intelClarity + 0.12 + relationBonus * 0.12, 0, 1);
   return { intelId: candidate.id, field, verified };
+}
+
+function recruitmentTestMinutes(testType: RecruitmentTestType): number {
+  if (testType === "background_check" || testType === "low_risk_task") return 60;
+  if (testType === "controlled_leak") return 40;
+  return 30;
+}
+
+function evaluateRecruitmentTest(
+  definition: CampaignDefinition["characters"][number],
+  testType: RecruitmentTestType,
+): RecruitmentEvidenceResult {
+  const reliability = definition.reliability;
+  const score = testType === "background_check"
+    ? reliability.loyalty * 0.45 + reliability.pressureResistance * 0.2 + reliability.competence * 0.35
+    : testType === "controlled_leak"
+      ? reliability.discipline * 0.45 + reliability.loyalty * 0.4 + reliability.pressureResistance * 0.15
+      : testType === "discipline_check"
+        ? reliability.discipline * 0.55 + reliability.pressureResistance * 0.3 + reliability.loyalty * 0.15
+        : reliability.competence * 0.45 + reliability.discipline * 0.3 + reliability.courage * 0.25;
+  if (score >= 70) return "favorable";
+  if (score < 50) return "warning";
+  return "inconclusive";
+}
+
+function recruitmentEvidenceSummary(testType: RecruitmentTestType, result: RecruitmentEvidenceResult): string {
+  const summaries: Record<RecruitmentTestType, Record<RecruitmentEvidenceResult, string>> = {
+    background_check: {
+      favorable: "背景中的任职、来往和关键时间点基本能够相互印证。",
+      warning: "背景核查出现无法解释的时间空档，且有一段关系被刻意淡化。",
+      inconclusive: "现有履历大体连贯，但关键时期缺少独立来源佐证。",
+    },
+    controlled_leak: {
+      favorable: "可控消息没有出现在预设范围之外，对方表现出保密意识。",
+      warning: "可控消息沿不该出现的路径扩散，暂时无法确认是疏忽还是有意泄露。",
+      inconclusive: "没有发现明确泄露，但观察时间和接触范围不足以下结论。",
+    },
+    discipline_check: {
+      favorable: "对方按约定时间和备用规则行动，没有擅自扩大接触。",
+      warning: "对方临时改变约定且未按备用规则说明，纪律性值得警惕。",
+      inconclusive: "行动基本完成，但对意外情况的处理不够稳定。",
+    },
+    low_risk_task: {
+      favorable: "低风险任务按边界完成，结果可以被另一条线索核对。",
+      warning: "任务结果存在明显疏漏，对方还试图掩饰过程中的异常。",
+      inconclusive: "任务完成了一部分，但能力与态度仍难以分开判断。",
+    },
+  };
+  return summaries[testType][result];
 }
 
 function dialogueNarration(

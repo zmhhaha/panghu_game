@@ -1,6 +1,6 @@
 import type {
   ActionResult, CampaignReportBundle, CampaignShareSummary, DifficultyConfig,
-  GameAction, PublicWorldState, SharedCampaignReport,
+  GameAction, PublicWorldState, RecruitmentCase, SharedCampaignReport,
 } from "@qianfu/core";
 
 type PublicActionResult = Omit<ActionResult, "state"> & { state: PublicWorldState };
@@ -10,6 +10,22 @@ export interface GameContext {
   locations: { id: string; name: string; district: string; discovered: boolean }[];
   characters: { id: string; name: string; publicIdentity: string; recruitable: boolean; known: boolean }[];
   networkMembers: { id: string; name: string; publicIdentity: string }[];
+  recruitmentCandidates: Array<{
+    id: string;
+    name: string;
+    publicIdentity: string;
+    stage: RecruitmentCase["stage"];
+    completedTestTypes: RecruitmentCase["completedTestTypes"];
+    evidence: RecruitmentCase["evidence"];
+    requirements: {
+      contactReady: boolean;
+      cooperationReady: boolean;
+      rapportReady: boolean;
+      testsCompleted: number;
+      testsRequired: number;
+    };
+    canRecruit: boolean;
+  }>;
   intel: { id: string; title: string; requiredFields: string[] }[];
 }
 

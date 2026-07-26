@@ -107,7 +107,7 @@ describe("CampaignEngine", () => {
     expect(result.state.intel.fact.collectedSourceIds).toEqual(["source"]);
   });
 
-  it("requires staged rapport before a recruit joins the network", () => {
+  it("requires rapport, three distinct screening tests, and an explicit recruitment decision", () => {
     const recruitCampaign: CampaignDefinition = {
       ...campaign,
       characters: [{
@@ -119,12 +119,40 @@ describe("CampaignEngine", () => {
     };
     const engine = new CampaignEngine(recruitCampaign, createInitialWorld(recruitCampaign, "game-recruit", "user-1"));
     engine.execute({ type: "dialogue", targetCharacterId: "recruit", goal: "build_trust", tone: "friendly", playerText: "先从一件小事合作。", durationMinutes: 20, idempotencyKey: "recruit-trust" });
+    engine.execute({ type: "dialogue", targetCharacterId: "recruit", goal: "build_trust", tone: "friendly", playerText: "这段时间的往来可以继续。", durationMinutes: 20, idempotencyKey: "recruit-trust-more" });
+    engine.execute({ type: "dialogue", targetCharacterId: "recruit", goal: "recruit_probe", tone: "formal", playerText: "愿意接受一次低风险测试吗？", durationMinutes: 30, idempotencyKey: "recruit-probe" });
     expect(engine.getState().characters.recruit.recruited).toBe(false);
-    for (let index = 0; index < 3; index += 1) {
-      engine.execute({ type: "dialogue", targetCharacterId: "recruit", goal: "recruit_probe", tone: "formal", playerText: "愿意接受一次低风险测试吗？", durationMinutes: 30, idempotencyKey: `recruit-probe-${index}` });
-    }
-    expect(engine.getState().characters.recruit.recruited).toBe(true);
-    expect(engine.getState().network.activeMemberIds).toContain("recruit");
+    expect(() => engine.execute({ type: "recruit_candidate", targetCharacterId: "recruit", durationMinutes: 30, idempotencyKey: "recruit-too-early" })).toThrow("三类不同甄别");
+
+    const background = engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "background_check", durationMinutes: 60, idempotencyKey: "screen-background" });
+    engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "controlled_leak", durationMinutes: 40, idempotencyKey: "screen-leak" });
+    engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "discipline_check", durationMinutes: 30, idempotencyKey: "screen-discipline" });
+    expect(background.state.characters.recruit.recruitmentCase.evidence[0]?.result).toBe("favorable");
+    expect(() => engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "discipline_check", durationMinutes: 30, idempotencyKey: "screen-duplicate" })).toThrow("同类甄别已经完成");
+    expect(engine.getState().characters.recruit.recruited).toBe(false);
+
+    const recruited = engine.execute({ type: "recruit_candidate", targetCharacterId: "recruit", durationMinutes: 30, idempotencyKey: "recruit-formal" });
+    expect(recruited.state.characters.recruit.recruited).toBe(true);
+    expect(recruited.state.characters.recruit.recruitmentCase.stage).toBe("recruited");
+    expect(recruited.state.network.activeMemberIds).toContain("recruit");
+    expect(JSON.stringify(toPublicGameEvents(background.events))).not.toContain("loyalty");
+    expect(toPublicWorldState(recruited.state).characters.recruit).not.toHaveProperty("recruitmentCase");
+  });
+
+  it("migrates recruitment dossiers in an existing save", () => {
+    const recruitCampaign: CampaignDefinition = {
+      ...campaign,
+      characters: [{
+        id: "legacy-recruit", name: "Legacy", publicIdentity: "Clerk", hiddenAlignment: "neutral",
+        initialLocationId: "office", recruitable: true,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
+        reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 },
+      }],
+    };
+    const oldState = createInitialWorld(recruitCampaign, "legacy-recruitment", "user-1");
+    delete (oldState.characters["legacy-recruit"] as Partial<typeof oldState.characters[string]>).recruitmentCase;
+    const migrated = new CampaignEngine(recruitCampaign, oldState).getState();
+    expect(migrated.characters["legacy-recruit"].recruitmentCase).toEqual({ stage: "contact", completedTestTypes: [], evidence: [] });
   });
 });
 

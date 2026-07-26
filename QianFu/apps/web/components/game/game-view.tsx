@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { DialoguePanel } from "@/components/game/dialogue-panel";
 import { CityMap } from "@/components/game/city-map";
 import { OrganizationNetwork } from "@/components/game/organization-network";
+import { RecruitmentDossier } from "@/components/game/recruitment-dossier";
 import { SettlementReport } from "@/components/game/settlement-report";
 
 const travelMinutes: Record<string, Record<string, number>> = {
@@ -91,6 +92,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const selectedGoal = goals.find((item) => item.id === goal) ?? goals[0];
   const currentLocation = context.locations.find((location) => location.id === state.currentLocationId)?.name ?? "未知地点";
   const selectedCharacter = context.characters.find((character) => character.id === selectedNpc);
+  const selectedCandidate = context.recruitmentCandidates.find((candidate) => candidate.id === selectedNpc);
   const visibleIntel = context.intel.filter((item) => state.intel[item.id]?.knownFields.length > 0);
   const formattedTime = new Intl.DateTimeFormat("zh-CN", {
     month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
@@ -193,6 +195,8 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
             </div>
           </div> : <p className="mt-4 text-sm text-muted">先从现场人物中选择交谈对象。</p>}
         </div>
+
+        <RecruitmentDossier candidate={selectedCandidate} busy={busy} onAction={(action) => void act(action)} />
 
         <OrganizationNetwork state={state} context={context} busy={busy} onAction={(action) => void act(action)} />
 
