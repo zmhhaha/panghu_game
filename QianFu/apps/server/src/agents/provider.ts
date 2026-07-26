@@ -37,6 +37,10 @@ export function parseModelJson(content: string): unknown {
         }
       }
     }
+    if (!/[{}]/.test(trimmed) && trimmed.length <= 800) {
+      const speech = trimmed.replace(/^['"]|['"]$/g, "").trim();
+      if (speech) return { visibleSpeech: speech, privateIntent: "", requestedEffects: [] };
+    }
     throw new Error("LLM returned invalid JSON");
   }
 }
@@ -64,19 +68,37 @@ class OpenAiCompatibleProvider implements AgentProvider {
 
   async complete(system: string, user: string): Promise<unknown> {
     if (!this.baseUrl || !this.apiKey) throw new Error("LLM provider is not configured");
+    const messages = [{ role: "system", content: system }, { role: "user", content: user }];
+    const content = await this.request(messages, 0.7);
+    try {
+      return parseModelJson(content);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "LLM returned invalid JSON") throw error;
+      console.warn(`[QianFu Agent] provider=${this.name} response=repair`);
+      const repaired = await this.request([
+        ...messages,
+        { role: "assistant", content },
+        { role: "user", content: "上一次内容语义不变，只修正格式。仅输出合法JSON对象，字段必须是visibleSpeech字符串、privateIntent字符串、requestedEffects数组。" },
+      ], 0);
+      return parseModelJson(repaired);
+    }
+  }
+
+  private async request(messages: Array<{ role: string; content: string }>, temperature: number): Promise<string> {
+    if (!this.baseUrl || !this.apiKey) throw new Error("LLM provider is not configured");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS ?? 8000));
     try {
       const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST", signal: controller.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
-        body: JSON.stringify({ model: this.model, temperature: 0.7, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
+        body: JSON.stringify({ model: this.model, temperature, response_format: { type: "json_object" }, messages }),
       });
       if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
       const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
       const content = payload.choices?.[0]?.message?.content;
       if (!content) throw new Error("LLM returned no content");
-      return parseModelJson(content);
+      return content;
     } finally { clearTimeout(timer); }
   }
 }

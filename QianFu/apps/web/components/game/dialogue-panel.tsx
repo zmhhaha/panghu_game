@@ -23,13 +23,14 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
   tone: DialogueTone;
   busy: boolean;
   error: string;
-  onSend: (text: string) => void;
+  onSend: (text: string) => Promise<void>;
   onEnd: () => void;
 }) {
   const [text, setText] = useState("");
+  const [pendingTurn, setPendingTurn] = useState<{ text: string; transcriptLength: number } | null>(null);
   const transcriptEnd = useRef<HTMLDivElement>(null);
   const session = state.activeDialogue;
-  useEffect(() => { transcriptEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [session?.transcript.length]);
+  useEffect(() => { transcriptEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [session?.transcript.length, pendingTurn]);
   if (!session) return null;
 
   const activeGoal = session.goal ?? goal;
@@ -40,11 +41,14 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
   const remainingMinutes = Math.max(0, session.allocatedMinutes - session.elapsedMinutes);
   const currentMinute = new Date(state.currentTime).getUTCMinutes();
   const untilWorldTick = 10 - (currentMinute % 10 || 10);
-  const send = () => {
+  const showPendingTurn = pendingTurn !== null && session.transcript.length === pendingTurn.transcriptLength;
+  const send = async () => {
     const message = text.trim();
     if (!message || busy || completed) return;
-    onSend(message);
+    setPendingTurn({ text: message, transcriptLength: session.transcript.length });
     setText("");
+    await onSend(message);
+    setPendingTurn(null);
   };
 
   return <main className="flex min-h-screen flex-col bg-ink text-paper">
@@ -74,13 +78,14 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
       </div>
 
       <div className="min-h-[420px] flex-1 border-y border-line py-4">
-        {session.transcript.length === 0 ? <div className="flex min-h-[360px] items-center justify-center text-center"><div><p className="font-serif text-lg">谈话开始了</p><p className="mt-2 text-sm text-muted">先说第一句话。对方会根据自己的记忆和立场回应。</p></div></div>
-          : <div className="space-y-5">{session.transcript.map((turn, index) => <div key={`${turn.at}-${index}`} className={`flex ${turn.speaker === "player" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[82%] sm:max-w-[70%] ${turn.speaker === "player" ? "border-r-2 border-copper bg-copper/[0.07]" : "border-l-2 border-line bg-panel"} px-4 py-3`}>
-                <p className="mb-1 text-[10px] text-muted">{turn.speaker === "player" ? "你" : npcName}</p>
-                <p className="text-sm leading-7">{turn.text}</p>
+        {session.transcript.length === 0 && !showPendingTurn ? <div className="flex min-h-[360px] items-center justify-center text-center"><div><p className="font-serif text-lg">谈话开始了</p><p className="mt-2 text-sm text-muted">先说第一句话。对方会根据自己的记忆和立场回应。</p></div></div>
+          : <div className="space-y-5">{session.transcript.map((turn, index) => <DialogueBubble key={`${turn.at}-${index}`} speaker={turn.speaker} text={turn.text} npcName={npcName} />)}
+            {showPendingTurn && <><DialogueBubble speaker="player" text={pendingTurn.text} npcName={npcName} /><div className="flex justify-start">
+              <div className="min-w-44 border-l-2 border-line bg-panel px-4 py-3">
+                <p className="mb-1 text-[10px] text-muted">{npcName}</p>
+                <div className="flex items-center gap-2 text-sm text-muted"><span>{npcName}正在斟酌</span><span className="inline-flex w-6 justify-between" aria-hidden="true"><i className="h-1 w-1 animate-pulse bg-copper" /><i className="h-1 w-1 animate-pulse bg-copper [animation-delay:150ms]" /><i className="h-1 w-1 animate-pulse bg-copper [animation-delay:300ms]" /></span></div>
               </div>
-            </div>)}<div ref={transcriptEnd} /></div>}
+            </div></>}<div ref={transcriptEnd} /></div>}
       </div>
 
       {error && <div className="mt-3 border-l-2 border-alert bg-alert/10 px-4 py-2 text-sm text-[#efaaa4]">{error}</div>}
@@ -90,16 +95,25 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
         <Button disabled={busy} onClick={onEnd}><LogOut size={15} />结束对话</Button>
       </div> : <div className="mt-4 border border-line bg-panel p-3">
         <textarea value={text} onChange={(event) => setText(event.target.value)} maxLength={textLimit}
-          onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }}
+          onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }}
           className="min-h-24 w-full resize-none bg-transparent p-1 text-sm leading-6 text-paper outline-none placeholder:text-muted"
           placeholder={`输入这一轮要说的话，最多 ${textLimit} 个字符...`} />
         <div className="mt-2 flex items-center justify-between border-t border-line pt-3">
           <span className="text-[11px] text-muted">{text.length}/{textLimit} · Enter 发送</span>
-          <Button disabled={busy || !text.trim()} onClick={send}><Send size={15} />发送这一轮</Button>
+          <Button disabled={busy || !text.trim()} onClick={() => void send()}><Send size={15} />发送这一轮</Button>
         </div>
       </div>}
     </section>
   </main>;
+}
+
+function DialogueBubble({ speaker, text, npcName }: { speaker: "player" | "npc"; text: string; npcName: string }) {
+  return <div className={`flex ${speaker === "player" ? "justify-end" : "justify-start"}`}>
+    <div className={`max-w-[82%] px-4 py-3 sm:max-w-[70%] ${speaker === "player" ? "border-r-2 border-copper bg-copper/[0.07]" : "border-l-2 border-line bg-panel"}`}>
+      <p className="mb-1 text-[10px] text-muted">{speaker === "player" ? "你" : npcName}</p>
+      <p className="text-sm leading-7">{text}</p>
+    </div>
+  </div>;
 }
 
 function StatusItem({ label, value }: { label: string; value: string }) {

@@ -104,7 +104,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
       tone={state.activeDialogue.tone}
       busy={busy}
       error={error}
-      onSend={(text) => void act({ type: "dialogue_turn", sessionId: state.activeDialogue!.id, playerText: text, durationMinutes: 2, idempotencyKey: crypto.randomUUID() })}
+      onSend={(text) => act({ type: "dialogue_turn", sessionId: state.activeDialogue!.id, playerText: text, durationMinutes: 2, idempotencyKey: crypto.randomUUID() })}
       onEnd={() => void act({ type: "dialogue_end", sessionId: state.activeDialogue!.id, durationMinutes: 0, idempotencyKey: crypto.randomUUID() })}
     />;
   }

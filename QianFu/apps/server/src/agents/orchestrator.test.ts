@@ -1,8 +1,13 @@
 import { createInitialWorld } from "@qianfu/core";
 import { LINJIANG_1942 } from "@qianfu/content";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CampaignOrchestrator } from "./orchestrator.js";
-import { parseModelJson, parseNpcResponse, type AgentProvider } from "./provider.js";
+import { createAgentProvider, parseModelJson, parseNpcResponse, type AgentProvider } from "./provider.js";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe("CampaignOrchestrator", () => {
   it("keeps valid speech when optional model effects have the wrong shape", () => {
@@ -27,6 +32,21 @@ describe("CampaignOrchestrator", () => {
       privateIntent: "继续观察",
       requestedEffects: [],
     });
+  });
+
+  it("asks the provider to repair an unrecoverable response once", async () => {
+    vi.stubEnv("PROVIDER", "deepseek");
+    vi.stubEnv("DEEPSEEK_API_KEY", "test-key");
+    vi.stubEnv("DEEPSEEK_BASE_URL", "https://example.test");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: "{broken" } }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: '{"visibleSpeech":"档案科收存公文，你问这个做什么？","privateIntent":"观察来意","requestedEffects":[]}' } }] }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createAgentProvider()?.complete("system", "user");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ visibleSpeech: "档案科收存公文，你问这个做什么？", privateIntent: "观察来意", requestedEffects: [] });
   });
 
   it("gives an NPC its personality, relationship and recent private memory in one model call", async () => {
