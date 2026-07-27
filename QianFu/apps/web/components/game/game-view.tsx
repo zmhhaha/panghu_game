@@ -112,8 +112,11 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const formattedTime = new Intl.DateTimeFormat("zh-CN", {
     month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(new Date(state.currentTime));
-  const now = new Date(state.currentTime);
-  const currentMinute = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const clockParts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(state.currentTime));
+  const currentMinute = Number(clockParts.find((part) => part.type === "hour")?.value ?? 0) * 60
+    + Number(clockParts.find((part) => part.type === "minute")?.value ?? 0);
   const canRest = currentMinute >= 20 * 60 || currentMinute < 6 * 60;
 
   if (state.status === "finished") return <SettlementReport gameInstanceId={gameInstanceId} />;
