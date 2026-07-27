@@ -7,6 +7,7 @@ type PublicActionResult = Omit<ActionResult, "state"> & { state: PublicWorldStat
 
 export interface GameContext {
   campaign: { id: string; version: string; name: string };
+  settlement: { ready: boolean; pendingReceipts: number };
   locations: { id: string; name: string; district: string; discovered: boolean }[];
   characters: { id: string; name: string; publicIdentity: string; recruitable: boolean; known: boolean; verifiableIntelIds: string[] }[];
   networkMembers: { id: string; name: string; publicIdentity: string }[];
@@ -44,6 +45,7 @@ export interface GameContext {
       confidence: number;
       delivered: boolean;
       missingFields: string[];
+      receiptStatus: "not_sent" | "pending" | "confirmed" | "partial" | "no_receipt" | "courier_delivered";
     }>;
   }>;
 }

@@ -20,6 +20,8 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("wait"), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("record_intel"), intelId: z.string().min(1), fields: z.array(z.string()).max(20), confidenceDelta: z.number().min(0).max(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("transmit_intel"), intelId: z.string().min(1), method: z.enum(["radio", "courier"]), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("cover_work"), workKind: z.enum(["file_sorting", "duty_shift", "submit_report"]), durationMinutes: z.union([z.literal(30), z.literal(60), z.literal(120)]), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("request_leave"), reason: z.enum(["family", "health", "official"]), durationMinutes: z.literal(10), idempotencyKey: z.string().min(8).max(128) }),
   z.object({
     type: z.literal("send_radio_message"),
     items: z.array(z.object({ intelId: z.string().min(1), fields: z.array(z.string().min(1)).min(1).max(20) })).min(1).max(6),
@@ -80,6 +82,10 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
       });
     res.json({
       campaign: { id: LINJIANG_1942.id, version: LINJIANG_1942.version, name: LINJIANG_1942.name },
+      settlement: {
+        ready: state.status === "finished",
+        pendingReceipts: state.radio.transmissions.filter((item) => item.receiptStatus === "pending").length,
+      },
       locations: LINJIANG_1942.locations.map(({ id, name, district }) => {
         const discovered = state.discoveredLocationIds?.includes(id) ?? id === state.currentLocationId;
         return { id, name: discovered ? name : "？？？", district: discovered ? district : "区域未确认", discovered };
@@ -122,7 +128,12 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
           const missingFields = definition.requiredFields.filter((field) => !knownFields.includes(field));
           const delivered = definition.requiredFields.every((field) => deliveredFields.includes(field))
             && Boolean(current?.deliveryMethod && objective.acceptedDeliveryMethods.includes(current.deliveryMethod));
-          return { id: intelId, title: definition.title, requiredFields: definition.requiredFields, knownFields, deliveredFields, confidence: current?.confidence ?? 0, delivered, missingFields };
+          const matchingTransmissions = state.radio.transmissions.filter((transmission) => transmission.items.some((item) => item.intelId === intelId));
+          const latestTransmission = matchingTransmissions.at(-1);
+          const receiptStatus = current?.deliveryMethod === "courier" && delivered
+            ? "courier_delivered"
+            : latestTransmission?.receiptStatus ?? "not_sent";
+          return { id: intelId, title: definition.title, requiredFields: definition.requiredFields, knownFields, deliveredFields, confidence: current?.confidence ?? 0, delivered, missingFields, receiptStatus };
         });
         const allReady = intel.every((item) => item.missingFields.length === 0 && item.confidence >= objective.minimumConfidence);
         const completed = intel.every((item) => item.delivered && item.missingFields.length === 0 && item.confidence >= objective.minimumConfidence);

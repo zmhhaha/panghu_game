@@ -64,6 +64,12 @@ export function buildCampaignReportBundle(
   const ownerReport: CampaignReport = {
     ...base,
     visibility: "owner",
+    coverRecord: {
+      credibility: state.cover.credibility,
+      supervisorSuspicion: state.cover.supervisorSuspicion,
+      consecutiveAbsences: state.cover.consecutiveAbsences,
+      leaveCount: state.cover.leaveCount,
+    },
     intel: visibleIntel.map((definition) => ({
       id: definition.id,
       title: definition.title,
@@ -90,6 +96,7 @@ export function buildCampaignReportBundle(
     ...structuredClone(ownerReport),
     visibility: "public",
     intel: ownerReport.intel.map(({ actualTruth: _actualTruth, ...intel }) => intel),
+    coverRecord: undefined,
     comrades: ownerReport.comrades.map(({ actualAlignment: _actualAlignment, ...character }) => character),
   };
 

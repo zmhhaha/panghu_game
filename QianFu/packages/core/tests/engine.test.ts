@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CampaignEngine, createInitialWorld, toPublicGameEvents, toPublicWorldState, type CampaignDefinition, type WorldState } from "../src/index.js";
+import { CampaignEngine, calculateScore, createInitialWorld, toPublicGameEvents, toPublicWorldState, type CampaignDefinition, type WorldState } from "../src/index.js";
 
 const campaign: CampaignDefinition = {
   id: "test", version: "1.0.0", engineVersion: "1.0.0", name: "Test",
@@ -153,6 +153,54 @@ describe("CampaignEngine", () => {
     delete (oldState.characters["legacy-recruit"] as Partial<typeof oldState.characters[string]>).recruitmentCase;
     const migrated = new CampaignEngine(recruitCampaign, oldState).getState();
     expect(migrated.characters["legacy-recruit"].recruitmentCase).toEqual({ stage: "contact", completedTestTypes: [], evidence: [] });
+  });
+});
+
+describe("public cover identity", () => {
+  const coverCampaign: CampaignDefinition = {
+    ...campaign,
+    locations: [{ id: "archive-office", name: "Archive", district: "A", travelMinutes: {} }],
+    objectives: [{ ...campaign.objectives[0], deadline: "1942-05-20T20:00:00.000Z" }],
+  };
+
+  it("records completed public work and prevents the daily absence penalty", () => {
+    const engine = new CampaignEngine(coverCampaign, createInitialWorld(coverCampaign, "cover-work", "user-1"));
+    const worked = engine.execute({ type: "cover_work", workKind: "file_sorting", durationMinutes: 60, idempotencyKey: "cover-file-work" });
+    expect(worked.state.cover.credibility).toBe(73);
+    expect(worked.state.cover.observations.at(-1)?.type).toBe("work_completed");
+    const endOfShift = engine.execute({ type: "wait", durationMinutes: 480, idempotencyKey: "cover-wait-shift" });
+    expect(endOfShift.state.cover.consecutiveAbsences).toBe(0);
+    expect(endOfShift.events.some((event) => event.type === "cover.absence_recorded")).toBe(false);
+  });
+
+  it("accepts leave as a public record instead of treating it as an unexplained absence", () => {
+    const engine = new CampaignEngine(coverCampaign, createInitialWorld(coverCampaign, "cover-leave", "user-1"));
+    const leave = engine.execute({ type: "request_leave", reason: "family", durationMinutes: 10, idempotencyKey: "cover-leave-request" });
+    expect(leave.state.cover.workStatus).toBe("on_leave");
+    const endOfShift = engine.execute({ type: "wait", durationMinutes: 530, idempotencyKey: "cover-leave-wait" });
+    expect(endOfShift.state.cover.consecutiveAbsences).toBe(0);
+    expect(endOfShift.events.some((event) => event.type === "cover.absence_recorded")).toBe(false);
+  });
+
+  it("escalates repeated unexplained absences into a supervisor check", () => {
+    const engine = new CampaignEngine(coverCampaign, createInitialWorld(coverCampaign, "cover-absence", "user-1"));
+    const result = engine.execute({ type: "wait", durationMinutes: 1980, idempotencyKey: "cover-two-days" });
+    expect(result.state.cover.consecutiveAbsences).toBe(2);
+    expect(result.state.cover.supervisorSuspicion).toBeGreaterThanOrEqual(32);
+    expect(result.events.some((event) => event.type === "cover.supervisor_check")).toBe(true);
+    expect(result.state.personalSuspicion).toBeGreaterThan(0);
+  });
+
+  it("migrates missing cover records and includes cover state in the score", () => {
+    const legacy = createInitialWorld(coverCampaign, "cover-legacy", "user-1");
+    delete (legacy as Partial<WorldState>).cover;
+    expect(new CampaignEngine(coverCampaign, legacy).getState().cover.workStatus).toBe("awaiting_shift");
+    expect(toPublicWorldState(legacy).cover.credibility).toBe(65);
+    const baseline = createInitialWorld(coverCampaign, "cover-score-base", "user-1");
+    const damaged = structuredClone(baseline);
+    damaged.cover.credibility = 0;
+    damaged.cover.supervisorSuspicion = 100;
+    expect(calculateScore(coverCampaign, damaged).cover).toBeLessThan(calculateScore(coverCampaign, baseline).cover);
   });
 });
 

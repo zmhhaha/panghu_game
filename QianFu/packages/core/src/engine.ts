@@ -11,6 +11,22 @@ const addMinutes = (iso: string, minutes: number) =>
 
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value));
 
+function createInitialCoverState(): WorldState["cover"] {
+  return {
+    workStatus: "awaiting_shift",
+    credibility: 65,
+    supervisorSuspicion: 0,
+    consecutiveAbsences: 0,
+    leaveCount: 0,
+    completedWorkDates: [],
+    lastAttendanceEvaluatedDate: null,
+    leaveUntil: null,
+    leaveReason: null,
+    lastWorkAt: null,
+    observations: [],
+  };
+}
+
 export function createInitialWorld(
   campaign: CampaignDefinition,
   gameInstanceId: string,
@@ -62,6 +78,7 @@ export function createInitialWorld(
     playerEnergy: 100,
     playerStress: 0,
     personalSuspicion: 0,
+    cover: createInitialCoverState(),
     characters,
     dialogueMemories,
     activeDialogue: null,
@@ -116,6 +133,13 @@ export class CampaignEngine {
     this.state.investigation.locationHeat ??= {};
     for (const location of campaign.locations) this.state.investigation.locationHeat[location.id] ??= 0;
     this.state.network.tasks ??= [];
+    this.state.cover ??= createInitialCoverState();
+    this.state.cover.completedWorkDates ??= [];
+    this.state.cover.observations ??= [];
+    this.state.cover.lastAttendanceEvaluatedDate ??= null;
+    this.state.cover.leaveUntil ??= null;
+    this.state.cover.leaveReason ??= null;
+    this.state.cover.lastWorkAt ??= null;
     this.state.radio ??= {
       codebooks: [
         { id: "one_time_pad", usageCount: 0, usesRemaining: 2, lastUsedAt: null },
@@ -472,6 +496,46 @@ export class CampaignEngine {
         narration = `${definition.name}接受了有限联络与保密规则，正式进入你的组织网络。甄别证据仍可能存在误差。`;
         break;
       }
+      case "cover_work": {
+        if (next.currentLocationId !== "archive-office") throw new Error("公开工作必须在机要楼档案科完成");
+        if (!isCoverWorkHours(next.currentTime)) throw new Error("当前不在公开工作时段");
+        if (next.cover.leaveUntil && new Date(next.cover.leaveUntil) >= new Date(next.currentTime)) throw new Error("请假期间不能安排公开工作");
+        const requiredDuration = coverWorkMinutes(action.workKind);
+        if (action.durationMinutes !== requiredDuration) throw new Error("公开工作耗时不符合规则");
+        const date = coverDate(next.currentTime);
+        if (next.cover.completedWorkDates.includes(date)) throw new Error("今天已经完成过公开工作");
+        next.cover.completedWorkDates.push(date);
+        next.cover.completedWorkDates = next.cover.completedWorkDates.slice(-30);
+        next.cover.workStatus = "working";
+        next.cover.consecutiveAbsences = 0;
+        next.cover.lastWorkAt = addMinutes(next.currentTime, action.durationMinutes);
+        const benefit = action.workKind === "duty_shift" ? 10 : action.workKind === "file_sorting" ? 8 : 6;
+        next.cover.credibility = clamp(next.cover.credibility + benefit);
+        next.cover.supervisorSuspicion = clamp(next.cover.supervisorSuspicion - (action.workKind === "submit_report" ? 8 : 4));
+        next.personalSuspicion = clamp(next.personalSuspicion - 1);
+        const summary = coverWorkSummary(action.workKind);
+        addCoverObservation(next, "work_completed", summary);
+        append("cover.work_completed", { workKind: action.workKind, summary });
+        narration = summary;
+        break;
+      }
+      case "request_leave": {
+        if (next.currentLocationId !== "archive-office") throw new Error("请假需要在机要楼档案科办理");
+        if (!isCoverWorkHours(next.currentTime)) throw new Error("当前无法办理请假");
+        if (action.durationMinutes !== 10) throw new Error("办理请假需要 10 分钟");
+        if (next.cover.leaveUntil && new Date(next.cover.leaveUntil) >= new Date(next.currentTime)) throw new Error("当前已有生效中的请假记录");
+        next.cover.leaveUntil = endOfCoverShift(next.currentTime);
+        next.cover.leaveReason = action.reason;
+        next.cover.leaveCount += 1;
+        next.cover.workStatus = "on_leave";
+        next.cover.credibility = clamp(next.cover.credibility - 2);
+        next.cover.supervisorSuspicion = clamp(next.cover.supervisorSuspicion + (next.cover.leaveCount > 1 ? 2 : 0));
+        const summary = `你的${leaveReasonLabel(action.reason)}请假已登记，今天的缺席将有公开记录。`;
+        addCoverObservation(next, "leave_approved", summary);
+        append("cover.leave_approved", { reason: action.reason, leaveUntil: next.cover.leaveUntil, summary });
+        narration = summary;
+        break;
+      }
       case "wait":
         append("player.waited", { durationMinutes: action.durationMinutes });
         narration = "时间继续向前，城市中的其他人也在行动。";
@@ -490,6 +554,7 @@ export class CampaignEngine {
       const tickNotices = [
         ...advanceComradeTasks(this.campaign, next, append),
         ...advanceRadioReceipts(next, append),
+        ...advanceCoverIdentity(next, append),
         ...advanceEnemyInvestigation(next, append),
       ];
       notices.push(...tickNotices);
@@ -833,6 +898,81 @@ function advanceEnemyInvestigation(state: WorldState, append: (type: string, pay
   return [notice];
 }
 
+function advanceCoverIdentity(state: WorldState, append: (type: string, payload: unknown) => void): string[] {
+  const cover = state.cover;
+  const date = coverDate(state.currentTime);
+  const minute = minuteOfDay(state.currentTime);
+  const leaveActive = Boolean(cover.leaveUntil && new Date(cover.leaveUntil) >= new Date(state.currentTime));
+  if (!leaveActive && cover.leaveUntil && new Date(cover.leaveUntil) < new Date(state.currentTime)) {
+    cover.leaveUntil = null;
+    cover.leaveReason = null;
+  }
+
+  if (minute >= 17 * 60 && cover.lastAttendanceEvaluatedDate !== date) {
+    cover.lastAttendanceEvaluatedDate = date;
+    if (!cover.completedWorkDates.includes(date) && !leaveActive) {
+      cover.workStatus = "unexcused_absence";
+      cover.consecutiveAbsences += 1;
+      cover.credibility = clamp(cover.credibility - 16);
+      cover.supervisorSuspicion = clamp(cover.supervisorSuspicion + 12);
+      state.personalSuspicion = clamp(state.personalSuspicion + 4 * state.difficulty.enemyResponseSpeed);
+      recordInvestigationEvidence(state, "sensitive_notes", state.currentLocationId, 4, append);
+      const summary = "档案科登记了你今天的异常缺勤，同事开始留意你的行踪。";
+      addCoverObservation(state, "absence_recorded", summary);
+      append("cover.absence_recorded", { date, consecutiveAbsences: cover.consecutiveAbsences, summary });
+      const notices = [summary];
+      if (cover.consecutiveAbsences >= 2 || cover.supervisorSuspicion >= 30) {
+        cover.supervisorSuspicion = clamp(cover.supervisorSuspicion + 8);
+        state.personalSuspicion = clamp(state.personalSuspicion + 3 * state.difficulty.enemyResponseSpeed);
+        const checkSummary = "上级要求你在下次到岗时说明近期缺勤和异常出入。";
+        addCoverObservation(state, "supervisor_check", checkSummary);
+        append("cover.supervisor_check", { date, summary: checkSummary });
+        notices.push(checkSummary);
+      }
+      return notices;
+    }
+  }
+
+  if (leaveActive) cover.workStatus = "on_leave";
+  else if (cover.completedWorkDates.includes(date) && isCoverWorkHours(state.currentTime)) cover.workStatus = "working";
+  else if (minute >= 10 * 60 && minute < 17 * 60 && !cover.completedWorkDates.includes(date)) cover.workStatus = "unexcused_absence";
+  else if (minute < 17 * 60) cover.workStatus = "awaiting_shift";
+  else if (cover.workStatus === "on_leave") cover.workStatus = "awaiting_shift";
+  return [];
+}
+
+function addCoverObservation(state: WorldState, type: WorldState["cover"]["observations"][number]["type"], summary: string) {
+  state.cover.observations.push({ id: randomUUID(), type, summary, observedAt: state.currentTime });
+  state.cover.observations = state.cover.observations.slice(-12);
+}
+
+function coverDate(iso: string) {
+  return iso.slice(0, 10);
+}
+
+function isCoverWorkHours(iso: string) {
+  const minute = minuteOfDay(iso);
+  return minute >= 8 * 60 && minute < 17 * 60;
+}
+
+function endOfCoverShift(iso: string) {
+  return `${coverDate(iso)}T17:00:00.000Z`;
+}
+
+function coverWorkMinutes(kind: Extract<GameAction, { type: "cover_work" }>["workKind"]) {
+  return kind === "file_sorting" ? 60 : kind === "duty_shift" ? 120 : 30;
+}
+
+function coverWorkSummary(kind: Extract<GameAction, { type: "cover_work" }>["workKind"]) {
+  if (kind === "file_sorting") return "你按公开流程整理了档案，留下了一整段可被核对的工作记录。";
+  if (kind === "duty_shift") return "你完成了值班，几位同事都看见你按时留在岗位上。";
+  return "你提交了例行报告，上级对你的工作记录暂时没有新的追问。";
+}
+
+function leaveReasonLabel(reason: Extract<GameAction, { type: "request_leave" }>["reason"]) {
+  return reason === "family" ? "家庭事务" : reason === "health" ? "身体不适" : "公务外出";
+}
+
 function minuteOfDay(iso: string): number {
   const date = new Date(iso);
   return date.getUTCHours() * 60 + date.getUTCMinutes();
@@ -1022,7 +1162,7 @@ export function calculateScore(campaign: CampaignDefinition, state: WorldState):
   const confidenceValues = Object.values(state.intel).filter((item) => item.knownFields.length > 0).map((item) => item.confidence);
   const intelligence = confidenceValues.length ? Math.round(confidenceValues.reduce((a, b) => a + b, 0) / confidenceValues.length * 15) : 0;
   const network = Math.round((1 - state.network.exposure / 100) * 20);
-  const cover = Math.round((1 - state.personalSuspicion / 100) * 15);
+  const cover = Math.round((((1 - state.personalSuspicion / 100) * 0.45) + (state.cover.credibility / 100 * 0.35) + ((1 - state.cover.supervisorSuspicion / 100) * 0.2)) * 15);
   const efficiency = Math.round((state.playerEnergy / 100) * 10);
   const total = clamp(mission + intelligence + network + cover + efficiency);
   const grade = total >= 90 ? "S" : total >= 80 ? "A" : total >= 70 ? "B" : total >= 60 ? "C" : total >= 40 ? "D" : "E";

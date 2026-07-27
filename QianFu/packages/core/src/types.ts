@@ -9,6 +9,9 @@ export type EndingType =
   | "player_terminated";
 
 export type AgentTier = "focus" | "active" | "background" | "dormant";
+export type CoverWorkStatus = "awaiting_shift" | "working" | "on_leave" | "unexcused_absence";
+export type CoverWorkKind = "file_sorting" | "duty_shift" | "submit_report";
+export type LeaveReason = "family" | "health" | "official";
 export type RecruitmentTestType = "background_check" | "controlled_leak" | "discipline_check" | "low_risk_task";
 export type RecruitmentEvidenceResult = "favorable" | "warning" | "inconclusive";
 export type RecruitmentStage = "contact" | "screening" | "ready" | "recruited";
@@ -25,6 +28,27 @@ export interface RecruitmentCase {
   stage: RecruitmentStage;
   completedTestTypes: RecruitmentTestType[];
   evidence: RecruitmentEvidence[];
+}
+
+export interface CoverObservation {
+  id: string;
+  type: "work_completed" | "leave_approved" | "absence_recorded" | "supervisor_check";
+  summary: string;
+  observedAt: string;
+}
+
+export interface CoverState {
+  workStatus: CoverWorkStatus;
+  credibility: number;
+  supervisorSuspicion: number;
+  consecutiveAbsences: number;
+  leaveCount: number;
+  completedWorkDates: string[];
+  lastAttendanceEvaluatedDate: string | null;
+  leaveUntil: string | null;
+  leaveReason: LeaveReason | null;
+  lastWorkAt: string | null;
+  observations: CoverObservation[];
 }
 
 export interface DifficultyConfig {
@@ -340,6 +364,12 @@ export interface CampaignReport {
     networkExposure: number;
     investigationPressure: number;
   };
+  coverRecord?: {
+    credibility: number;
+    supervisorSuspicion: number;
+    consecutiveAbsences: number;
+    leaveCount: number;
+  };
   timeline: CampaignReportTimelineEntry[];
   intel: CampaignReportIntelItem[];
   comrades: CampaignReportCharacterItem[];
@@ -382,6 +412,7 @@ export interface WorldState {
   playerEnergy: number;
   playerStress: number;
   personalSuspicion: number;
+  cover: CoverState;
   characters: Record<string, CharacterState>;
   dialogueMemories: Record<string, DialogueMemory>;
   activeDialogue: DialogueSession | null;
@@ -471,6 +502,16 @@ export interface DialogueStartAction extends ActionBase {
   targetIntelId?: string;
 }
 
+export interface CoverWorkAction extends ActionBase {
+  type: "cover_work";
+  workKind: CoverWorkKind;
+}
+
+export interface RequestLeaveAction extends ActionBase {
+  type: "request_leave";
+  reason: LeaveReason;
+}
+
 export interface DialogueTurnAction extends ActionBase {
   type: "dialogue_turn";
   sessionId: string;
@@ -516,7 +557,7 @@ export interface RecruitCandidateAction extends ActionBase {
   targetCharacterId: string;
 }
 
-export type GameAction = MoveAction | ObserveAction | WaitAction | RecordIntelAction | TransmitIntelAction | SendRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
+export type GameAction = MoveAction | ObserveAction | WaitAction | RecordIntelAction | TransmitIntelAction | CoverWorkAction | RequestLeaveAction | SendRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
 
 export interface ActionResult {
   state: WorldState;

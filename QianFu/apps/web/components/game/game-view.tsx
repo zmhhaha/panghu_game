@@ -17,6 +17,7 @@ import { IntelligenceBoard } from "@/components/game/intelligence-board";
 import { SettlementReport } from "@/components/game/settlement-report";
 import { MissionObjectives } from "@/components/game/mission-objectives";
 import { ActionTimeline } from "@/components/game/action-timeline";
+import { CoverIdentityPanel } from "@/components/game/cover-identity-panel";
 
 const travelMinutes: Record<string, Record<string, number>> = {
   "archive-office": { "radio-office": 10, "linjiang-news": 20, "jianghai-hotel": 20, "third-dock": 40, "wu-clock-shop": 30 },
@@ -162,6 +163,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
             <Timer size={15} />等待 10 分钟
           </Button>
         </div>
+        <CoverIdentityPanel state={state} busy={busy} onAction={(action) => void act(action)} />
       </aside>
 
       <section className="min-w-0 p-4 sm:p-6 lg:p-8">
