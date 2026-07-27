@@ -211,7 +211,9 @@ export class CampaignEngine {
     switch (action.type) {
       case "dialogue_start": {
         const target = next.characters[action.targetCharacterId];
-        if (!target || target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
+        const targetDefinition = this.campaign.characters.find((item) => item.id === action.targetCharacterId);
+        if (!target || !targetDefinition || target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
+        if (!isCharacterAvailableAt(targetDefinition, next.currentTime)) throw new Error("该人物当前不在公开作息中，无法安排会面");
         if (!next.knownCharacterIds.includes(action.targetCharacterId)) throw new Error("尚未获得此人的引介或公开身份线索，不能直接攀谈");
         if (next.activeDialogue?.status === "active") throw new Error("Another dialogue is already active");
         if (action.goal === "verify_intel") {
@@ -284,8 +286,10 @@ export class CampaignEngine {
       }
       case "observe": {
         const target = next.characters[action.targetCharacterId];
-        if (!target) throw new Error("Unknown character");
+        const definition = this.campaign.characters.find((item) => item.id === action.targetCharacterId);
+        if (!target || !definition) throw new Error("Unknown character");
         if (target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
+        if (!isCharacterAvailableAt(definition, next.currentTime)) throw new Error("目标已离开公开活动地点");
         target.familiarity = clamp(target.familiarity + 2);
         next.personalSuspicion = clamp(next.personalSuspicion + 1 * next.difficulty.enemyResponseSpeed);
         recordInvestigationEvidence(next, "covert_observation", next.currentLocationId, 6, append);
@@ -375,6 +379,7 @@ export class CampaignEngine {
         const definition = this.campaign.characters.find((item) => item.id === action.targetCharacterId);
         if (!target || !definition) throw new Error("Unknown character");
         if (target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
+        if (!isCharacterAvailableAt(definition, next.currentTime)) throw new Error("该人物当前不在公开作息中，无法安排会面");
         if (!next.knownCharacterIds.includes(action.targetCharacterId)) throw new Error("尚未获得此人的引介或公开身份线索，不能直接攀谈");
         const textLimit = DIALOGUE_TEXT_LIMITS[action.goal];
         if (action.playerText.trim().length === 0) throw new Error("对话内容不能为空");
@@ -460,6 +465,7 @@ export class CampaignEngine {
         if (action.durationMinutes !== requiredDuration) throw new Error("甄别行动耗时不符合规则");
         if (character.familiarity < 3) throw new Error("对候选人了解不足，先通过接触建立基础档案");
         if (action.testType !== "background_check" && character.locationId !== next.currentLocationId) throw new Error("需要与候选人在同一地点安排这项测试");
+        if (action.testType !== "background_check" && !isCharacterAvailableAt(definition, next.currentTime)) throw new Error("候选人当前不在公开作息中，无法安排当面测试");
         if (action.testType === "low_risk_task" && character.recruitmentProgress < 20) throw new Error("尚未形成初步合作意向，不能安排低风险任务");
 
         validateRecruitmentPlan(action.plan);
@@ -489,6 +495,7 @@ export class CampaignEngine {
         if (!character || !definition || !definition.recruitable) throw new Error("该人物不在可招募候选名单中");
         if (action.durationMinutes !== 30) throw new Error("正式招募需要 30 分钟");
         if (character.locationId !== next.currentLocationId) throw new Error("正式招募必须当面进行");
+        if (!isCharacterAvailableAt(definition, next.currentTime)) throw new Error("候选人当前不在公开作息中，无法安排会面");
         if (character.recruited) throw new Error("该人物已经加入组织");
         if (character.familiarity < 8 || character.privateTrust < 5 || character.recruitmentProgress < 20) throw new Error("关系和合作意向尚不足以提出正式招募");
         if (new Set(character.recruitmentCase.completedTestTypes).size < 3) throw new Error("至少完成三类不同甄别后才能正式招募");
@@ -552,12 +559,12 @@ export class CampaignEngine {
         break;
       case "rest": {
         if (action.durationMinutes !== 0) throw new Error("Rest duration is calculated by the server");
-        const rest = calculateRest(next.currentTime, action.wakeHour);
-        if (!rest) throw new Error("只能在夜间开始休息，并且至少需要六小时睡眠");
+        const rest = calculateRest(next.currentTime, action.sleepMinutes);
+        if (!rest) throw new Error("只能在夜间开始休息，时长为一至十二小时且以三十分钟为单位");
         elapsedDuration = rest.minutes;
         energyRecovery = rest.recovery;
-        append("player.rested", { wakeHour: action.wakeHour, durationMinutes: rest.minutes, recovery: rest.recovery });
-        narration = `你收起了当天的行动安排，休息至次日 ${String(action.wakeHour).padStart(2, "0")}:00。`;
+        append("player.rested", { durationMinutes: rest.minutes, recovery: rest.recovery });
+        narration = `你收起了当天的行动安排，休息了 ${formatRestDuration(rest.minutes)}。`;
         break;
       }
     }
@@ -580,6 +587,16 @@ export class CampaignEngine {
       notices.push(...tickNotices);
       if (next.activeDialogue && tickNotices.length > 0) {
         next.activeDialogue.transcript.push(...tickNotices.map((text) => ({ speaker: "system" as const, text, at: next.currentTime })));
+      }
+      if (next.activeDialogue?.status === "active") {
+        const speaker = this.campaign.characters.find((character) => character.id === next.activeDialogue?.characterId);
+        if (speaker && !isCharacterAvailableAt(speaker, next.currentTime)) {
+          next.activeDialogue.status = "completed";
+          const notice = `${speaker.name}结束了交谈，按自己的作息离开了公开场所。`;
+          next.activeDialogue.transcript.push({ speaker: "system", text: notice, at: next.currentTime });
+          append("dialogue.interrupted", { characterId: speaker.id, reason: "schedule" });
+          notices.push(notice);
+        }
       }
     }
     next.currentTime = finalTime;
@@ -1052,15 +1069,27 @@ function minuteOfDay(iso: string): number {
   return date.getUTCHours() * 60 + date.getUTCMinutes();
 }
 
-function calculateRest(currentTime: string, wakeHour: 6 | 7 | 8): { minutes: number; recovery: number } | null {
-  const now = new Date(currentTime);
+export function isCharacterAvailableAt(definition: CampaignDefinition["characters"][number], currentTime: string): boolean {
+  const minute = minuteOfDay(currentTime);
+  return definition.schedule.some((entry) => minute >= entry.startMinute && minute < entry.endMinute);
+}
+
+function calculateRest(currentTime: string, sleepMinutes: number): { minutes: number; recovery: number } | null {
   const currentMinute = minuteOfDay(currentTime);
-  if (currentMinute < 0 || (currentMinute >= 5 * 60 && currentMinute < 20 * 60)) return null;
-  const wake = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), wakeHour, 0, 0, 0));
-  if (currentMinute >= 20 * 60) wake.setUTCDate(wake.getUTCDate() + 1);
-  const minutes = Math.round((wake.getTime() - now.getTime()) / 60_000);
-  if (minutes < 6 * 60) return null;
-  return { minutes, recovery: Math.min(80, 24 + Math.floor(minutes / 60) * 8) };
+  if (!Number.isInteger(sleepMinutes) || sleepMinutes < 60 || sleepMinutes > 12 * 60 || sleepMinutes % 30 !== 0) return null;
+  if (currentMinute >= 6 * 60 && currentMinute < 20 * 60) return null;
+  const recovery = sleepMinutes < 6 * 60
+    ? Math.floor(sleepMinutes / 60) * 5
+    : sleepMinutes <= 8 * 60
+      ? 30 + Math.floor((sleepMinutes - 6 * 60) / 60) * 10
+      : 50 + Math.floor((sleepMinutes - 8 * 60) / 60) * 2;
+  return { minutes: sleepMinutes, recovery };
+}
+
+function formatRestDuration(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours} 小时 ${remainder} 分钟` : `${hours} 小时`;
 }
 
 function actionEnergyCost(action: GameAction, elapsedDuration: number, startedAt: string): number {

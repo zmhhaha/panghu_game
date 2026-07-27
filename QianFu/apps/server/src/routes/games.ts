@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { COVER_PROFILES, getDifficultyVisibility, toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
+import { COVER_PROFILES, getDifficultyVisibility, isCharacterAvailableAt, toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
 import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
 import { LINJIANG_1942 } from "@qianfu/content";
@@ -19,7 +19,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("move"), destinationId: z.string().min(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("observe"), targetCharacterId: z.string().min(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("wait"), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
-  z.object({ type: z.literal("rest"), wakeHour: z.union([z.literal(6), z.literal(7), z.literal(8)]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("rest"), sleepMinutes: z.number().int().min(60).max(720).multipleOf(30), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("record_intel"), intelId: z.string().min(1), fields: z.array(z.string()).max(20), confidenceDelta: z.number().min(0).max(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("transmit_intel"), intelId: z.string().min(1), method: z.enum(["radio", "courier"]), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("cover_work"), workKind: z.enum(["file_sorting", "duty_shift", "submit_report", "settle_accounts", "visit_clients", "stock_check", "submit_column", "street_research", "proofread_copy"]), durationMinutes: z.union([z.literal(30), z.literal(60), z.literal(120)]), idempotencyKey: z.string().min(8).max(128) }),
@@ -74,7 +74,7 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
     const state = await gameRepository.getGame(req.params.id, req.user.id);
     if (!state) { res.status(404).json({ error: "战役不存在" }); return; }
     const visibleCharacters = LINJIANG_1942.characters
-      .filter((character) => state.characters[character.id]?.locationId === state.currentLocationId)
+      .filter((character) => state.characters[character.id]?.locationId === state.currentLocationId && isCharacterAvailableAt(character, state.currentTime))
       .map((character) => {
         const known = state.knownCharacterIds?.includes(character.id) ?? false;
         const verifiableIntelIds = LINJIANG_1942.intel

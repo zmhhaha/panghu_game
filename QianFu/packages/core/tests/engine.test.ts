@@ -217,11 +217,33 @@ describe("public cover identity", () => {
     state.currentTime = "1942-05-12T20:00:00.000Z";
     state.playerEnergy = 24;
     const engine = new CampaignEngine(coverCampaign, state);
-    const result = engine.execute({ type: "rest", wakeHour: 7, durationMinutes: 0, idempotencyKey: "night-rest-action" });
-    expect(result.state.currentTime).toBe("1942-05-13T07:00:00.000Z");
-    expect(result.state.playerEnergy).toBeGreaterThan(90);
+    const result = engine.execute({ type: "rest", sleepMinutes: 8 * 60, durationMinutes: 0, idempotencyKey: "night-rest-action" });
+    expect(result.state.currentTime).toBe("1942-05-13T04:00:00.000Z");
+    expect(result.state.playerEnergy).toBe(74);
     expect(result.events.some((event) => event.type === "player.rested")).toBe(true);
-    expect(() => engine.execute({ type: "rest", wakeHour: 7, durationMinutes: 0, idempotencyKey: "day-rest-action" })).toThrow("只能在夜间");
+    const shortRestState = createInitialWorld(coverCampaign, "short-night-rest", "user-1");
+    shortRestState.currentTime = "1942-05-12T20:00:00.000Z";
+    shortRestState.playerEnergy = 24;
+    const shortRest = new CampaignEngine(coverCampaign, shortRestState).execute({ type: "rest", sleepMinutes: 3 * 60, durationMinutes: 0, idempotencyKey: "short-rest-action" });
+    expect(shortRest.state.playerEnergy).toBe(39);
+    const dayState = createInitialWorld(coverCampaign, "day-rest", "user-1");
+    dayState.currentTime = "1942-05-12T10:00:00.000Z";
+    expect(() => new CampaignEngine(coverCampaign, dayState).execute({ type: "rest", sleepMinutes: 8 * 60, durationMinutes: 0, idempotencyKey: "day-rest-action" })).toThrow("只能在夜间");
+  });
+
+  it("does not allow conversations with NPCs outside their scheduled public routine", () => {
+    const scheduledCampaign: CampaignDefinition = {
+      ...coverCampaign,
+      characters: [{
+        id: "chen-jingwen", name: "Chen", publicIdentity: "Chief", hiddenAlignment: "neutral", initialLocationId: "archive-office", recruitable: false,
+        schedule: [{ startMinute: 480, endMinute: 960, locationId: "archive-office", activity: "work" }],
+        reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 },
+      }],
+    };
+    const state = createInitialWorld(scheduledCampaign, "after-hours-contact", "user-1");
+    state.currentTime = "1942-05-12T22:00:00.000Z";
+    const engine = new CampaignEngine(scheduledCampaign, state);
+    expect(() => engine.execute({ type: "dialogue_start", targetCharacterId: "chen-jingwen", goal: "small_talk", tone: "neutral", allocatedMinutes: 10, durationMinutes: 0, idempotencyKey: "after-hours-dialogue" })).toThrow("公开作息");
   });
 
   it("uses a public work lead to introduce a location and contact before secret dialogue", () => {

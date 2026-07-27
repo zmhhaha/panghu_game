@@ -493,7 +493,7 @@ export interface WaitAction extends ActionBase {
 
 export interface RestAction extends ActionBase {
   type: "rest";
-  wakeHour: 6 | 7 | 8;
+  sleepMinutes: number;
 }
 
 export interface RecordIntelAction extends ActionBase {

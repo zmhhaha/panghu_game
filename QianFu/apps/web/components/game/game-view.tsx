@@ -55,7 +55,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const [goal, setGoal] = useState<DialogueGoal>("small_talk");
   const [tone, setTone] = useState<DialogueTone>("neutral");
   const [targetIntelId, setTargetIntelId] = useState("");
-  const [wakeHour, setWakeHour] = useState<6 | 7 | 8>(7);
+  const [sleepMinutes, setSleepMinutes] = useState(8 * 60);
 
   const load = async () => {
     try {
@@ -114,10 +114,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   }).format(new Date(state.currentTime));
   const now = new Date(state.currentTime);
   const currentMinute = now.getUTCHours() * 60 + now.getUTCMinutes();
-  const restMinutes = currentMinute >= 20 * 60
-    ? 24 * 60 - currentMinute + wakeHour * 60
-    : wakeHour * 60 - currentMinute;
-  const canRest = (currentMinute >= 20 * 60 || currentMinute < 5 * 60) && restMinutes >= 6 * 60;
+  const canRest = currentMinute >= 20 * 60 || currentMinute < 6 * 60;
 
   if (state.status === "finished") return <SettlementReport gameInstanceId={gameInstanceId} />;
 
@@ -171,12 +168,12 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
             <Timer size={15} />等待 10 分钟
           </Button>
           <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
-            <select aria-label="起床时间" value={wakeHour} onChange={(event) => setWakeHour(Number(event.target.value) as 6 | 7 | 8)} className="h-10 min-w-0 border border-line bg-panel px-2 text-xs text-paper outline-none focus:border-copper">
-              <option value={6}>06:00 起床</option><option value={7}>07:00 起床</option><option value={8}>08:00 起床</option>
+            <select aria-label="休息时长" value={sleepMinutes} onChange={(event) => setSleepMinutes(Number(event.target.value))} className="h-10 min-w-0 border border-line bg-panel px-2 text-xs text-paper outline-none focus:border-copper">
+              {Array.from({ length: 23 }, (_, index) => (index + 2) * 30).map((minutes) => <option key={minutes} value={minutes}>{formatSleepDuration(minutes)}</option>)}
             </select>
-            <Button variant="outline" disabled={busy || state.status !== "active" || !canRest} title={canRest ? "结束当日行动并休息" : "仅可在夜间开始至少六小时的休息"}
-              onClick={() => void act({ type: "rest", wakeHour, durationMinutes: 0, idempotencyKey: crypto.randomUUID() })}>
-              <BedDouble size={15} />休息至
+            <Button variant="outline" disabled={busy || state.status !== "active" || !canRest} title={canRest ? "结束当前行动并休息" : "仅可在夜间开始休息"}
+              onClick={() => void act({ type: "rest", sleepMinutes, durationMinutes: 0, idempotencyKey: crypto.randomUUID() })}>
+              <BedDouble size={15} />休息
             </Button>
           </div>
         </div>
@@ -262,4 +259,10 @@ function SectionLabel({ icon, text }: { icon: React.ReactNode; text: string }) {
 function Meter({ label, value, color }: { label: string; value: number; color: string }) {
   const bounded = Math.max(0, Math.min(100, value));
   return <div><div className="mb-2 flex justify-between text-xs text-muted"><span>{label}</span><span>{Math.round(bounded)}%</span></div><div className="h-1.5 bg-line"><div className={`h-full ${color}`} style={{ width: `${bounded}%` }} /></div></div>;
+}
+
+function formatSleepDuration(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const duration = minutes % 60 ? `${hours} 小时 30 分钟` : `${hours} 小时`;
+  return `${duration}休息${minutes < 6 * 60 ? "（恢复较少）" : minutes >= 8 * 60 ? "（充分恢复）" : ""}`;
 }

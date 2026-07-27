@@ -55,7 +55,7 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
   };
   const title = labels[event.type] ?? "行动记录";
   const text = event.type === "player.moved" ? `你前往了${location ?? "未知地点"}。`
-    : event.type === "player.rested" ? `你休息至 ${String(payload.wakeHour ?? "").padStart(2, "0")}:00，恢复了 ${Number(payload.recovery ?? 0)} 点精力。`
+    : event.type === "player.rested" ? `你休息了 ${formatRestDuration(Number(payload.durationMinutes ?? 0))}，恢复了 ${Number(payload.recovery ?? 0)} 点精力。`
     : event.type === "intel.recorded" ? `你记录了${intel ?? "一项情报"}。`
       : event.type === "intel.transmitted" ? `你通过${payload.method === "radio" ? "电台" : "交通员"}传递了${intel ?? "情报"}。`
         : event.type === "dialogue.started" || event.type === "dialogue.ended" ? `${character ?? "目标人物"}${event.type === "dialogue.started" ? "开始与你交谈" : "的对话结束"}。`
@@ -65,4 +65,9 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
 
 function formatTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+}
+
+function formatRestDuration(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  return minutes % 60 ? `${hours} 小时 30 分钟` : `${hours} 小时`;
 }

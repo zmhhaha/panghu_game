@@ -158,10 +158,15 @@ function describeEvent(campaign: CampaignDefinition, event: GameEvent): Campaign
     "comrade.task_failed": ["委派受挫", String(payload.report ?? "一项委派任务未能完成")],
     "investigation.surveillance_started": ["敌情变化", `${location?.name ?? "一处地点"}附近出现疑似监视`],
     "player.moved": ["转移地点", `抵达${location?.name ?? "新的地点"}`],
-    "player.rested": ["夜间休息", `休息至 ${String(payload.wakeHour ?? "").padStart(2, "0")}:00，恢复了 ${Number(payload.recovery ?? 0)} 点精力`],
+    "player.rested": ["夜间休息", `休息 ${formatRestDuration(Number(payload.durationMinutes ?? 0))}，恢复了 ${Number(payload.recovery ?? 0)} 点精力`],
   };
   const [title, detail] = details[event.type] ?? ["行动记录", "时间线产生了新的变化"];
   return { eventSeq: event.eventSeq, occurredAt: event.occurredAt, type: event.type, title, detail };
+}
+
+function formatRestDuration(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  return minutes % 60 ? `${hours} 小时 30 分钟` : `${hours} 小时`;
 }
 
 export function renderReportHtml(report: CampaignReport): string {
