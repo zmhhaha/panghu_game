@@ -68,6 +68,7 @@ export function buildCampaignReportBundle(
       id: definition.id,
       title: definition.title,
       knownFields: [...state.intel[definition.id].knownFields],
+      deliveredFields: [...state.intel[definition.id].deliveredFields],
       confidence: state.intel[definition.id].confidence,
       deliveredAt: state.intel[definition.id].deliveredAt,
       deliveryMethod: state.intel[definition.id].deliveryMethod,
@@ -108,7 +109,7 @@ function buildTimeline(campaign: CampaignDefinition, events: GameEvent[]): Campa
   const important = events.filter((event) => [
     "character.introduced", "character.identified", "intel.dialogue_discovered", "intel.transmitted",
     "character.recruitment_progress", "comrade.task_completed", "comrade.task_failed",
-    "investigation.surveillance_started", "player.moved",
+    "radio.message_sent", "radio.receipt_received", "investigation.surveillance_started", "player.moved",
   ].includes(event.type));
   return important.slice(-40).map((event) => describeEvent(campaign, event));
 }
@@ -126,6 +127,8 @@ function describeEvent(campaign: CampaignDefinition, event: GameEvent): Campaign
     "character.identified": ["确认身份", `确认了${character?.name ?? "目标人物"}的公开身份`],
     "intel.dialogue_discovered": ["获得线索", `从${character?.name ?? "谈话对象"}处获得一项可核对线索`],
     "intel.transmitted": ["传递情报", `${intel?.title ?? "一项情报"}通过${deliveryLabels[String(payload.method)] ?? "约定渠道"}送出`],
+    "radio.message_sent": ["发出电文", `从${location?.name ?? "一处地点"}发出包含 ${Number(payload.fieldCount ?? 0)} 个字段的电文`],
+    "radio.receipt_received": ["组织回执", String(payload.summary ?? "组织返回了电文接收结果")],
     "character.recruitment_progress": ["组织联络", Boolean(payload.recruited) ? `${character?.name ?? "候选人"}接受了联络安排` : `继续考察${character?.name ?? "候选人"}`],
     "comrade.task_completed": ["同志回报", String(payload.report ?? "一项委派任务已经完成")],
     "comrade.task_failed": ["委派受挫", String(payload.report ?? "一项委派任务未能完成")],
@@ -139,6 +142,6 @@ function describeEvent(campaign: CampaignDefinition, event: GameEvent): Campaign
 export function renderReportHtml(report: CampaignReport): string {
   const escape = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]!));
   const rows = report.timeline.map((item) => `<li><time>${escape(new Date(item.occurredAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }))}</time><strong>${escape(item.title)}</strong><span>${escape(item.detail)}</span></li>`).join("");
-  const intel = report.intel.map((item) => `<tr><td>${escape(item.title)}</td><td>${escape(item.knownFields.join("、") || "未完整确认")}</td><td>${Math.round(item.confidence * 100)}%</td><td>${escape(item.deliveryMethod ? deliveryLabels[item.deliveryMethod] ?? item.deliveryMethod : "未送出")}</td></tr>`).join("");
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><meta name="viewport" content="width=device-width"><title>${escape(report.campaign.name)} - 战役档案</title><style>body{margin:0;background:#151817;color:#e5e8e4;font:15px/1.7 Arial,sans-serif}main{max-width:900px;margin:auto;padding:48px 24px}h1,h2{font-family:serif;font-weight:500}small,time{color:#929b96}header{border-bottom:1px solid #343b38;padding-bottom:24px}.grade{font-size:52px;color:#76a7a1}section{margin-top:36px}dl{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}dl div,table{border:1px solid #343b38;padding:14px}dt{color:#929b96;font-size:12px}dd{margin:4px 0 0;font-size:20px}table{width:100%;border-collapse:collapse}td,th{padding:10px;border-bottom:1px solid #343b38;text-align:left}li{display:grid;grid-template-columns:150px 110px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid #343b38}@media(max-width:650px){dl{grid-template-columns:1fr}li{grid-template-columns:1fr;gap:2px}}</style></head><body><main><header><small>潜线 · 战役结算档案</small><h1>${escape(report.campaign.name)}</h1><p>${escape(report.summary)}</p><div class="grade">${escape(report.ending.score.grade)}</div><small>${escape(report.ending.title)} · ${escape(report.difficulty.label)}</small></header><section><h2>行动概览</h2><dl><div><dt>总评分</dt><dd>${report.ending.score.total}</dd></div><div><dt>传递情报</dt><dd>${report.statistics.deliveredIntel}</dd></div><div><dt>联络同志</dt><dd>${report.statistics.recruitedComrades}</dd></div></dl></section><section><h2>情报结算</h2><table><thead><tr><th>情报</th><th>已知内容</th><th>可信度</th><th>状态</th></tr></thead><tbody>${intel}</tbody></table></section><section><h2>关键时间线</h2><ol>${rows || "<li><span>没有可公开的关键行动记录</span></li>"}</ol></section></main></body></html>`;
+  const intel = report.intel.map((item) => `<tr><td>${escape(item.title)}</td><td>${escape(item.knownFields.join("、") || "未完整确认")}</td><td>${escape(item.deliveredFields?.join("、") || "未确认送达")}</td><td>${Math.round(item.confidence * 100)}%</td><td>${escape(item.deliveryMethod ? deliveryLabels[item.deliveryMethod] ?? item.deliveryMethod : "未送出")}</td></tr>`).join("");
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><meta name="viewport" content="width=device-width"><title>${escape(report.campaign.name)} - 战役档案</title><style>body{margin:0;background:#151817;color:#e5e8e4;font:15px/1.7 Arial,sans-serif}main{max-width:900px;margin:auto;padding:48px 24px}h1,h2{font-family:serif;font-weight:500}small,time{color:#929b96}header{border-bottom:1px solid #343b38;padding-bottom:24px}.grade{font-size:52px;color:#76a7a1}section{margin-top:36px}dl{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}dl div,table{border:1px solid #343b38;padding:14px}dt{color:#929b96;font-size:12px}dd{margin:4px 0 0;font-size:20px}table{width:100%;border-collapse:collapse}td,th{padding:10px;border-bottom:1px solid #343b38;text-align:left}li{display:grid;grid-template-columns:150px 110px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid #343b38}@media(max-width:650px){dl{grid-template-columns:1fr}li{grid-template-columns:1fr;gap:2px}}</style></head><body><main><header><small>潜线 · 战役结算档案</small><h1>${escape(report.campaign.name)}</h1><p>${escape(report.summary)}</p><div class="grade">${escape(report.ending.score.grade)}</div><small>${escape(report.ending.title)} · ${escape(report.difficulty.label)}</small></header><section><h2>行动概览</h2><dl><div><dt>总评分</dt><dd>${report.ending.score.total}</dd></div><div><dt>传递情报</dt><dd>${report.statistics.deliveredIntel}</dd></div><div><dt>联络同志</dt><dd>${report.statistics.recruitedComrades}</dd></div></dl></section><section><h2>情报结算</h2><table><thead><tr><th>情报</th><th>已知内容</th><th>确认送达</th><th>可信度</th><th>方式</th></tr></thead><tbody>${intel}</tbody></table></section><section><h2>关键时间线</h2><ol>${rows || "<li><span>没有可公开的关键行动记录</span></li>"}</ol></section></main></body></html>`;
 }

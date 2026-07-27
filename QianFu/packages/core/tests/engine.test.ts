@@ -170,10 +170,14 @@ describe("enemy investigation", () => {
   it("migrates old saves when projecting public state", () => {
     const oldState = createInitialWorld(investigationCampaign, "old-game", "user-1");
     delete (oldState as { investigation?: WorldState["investigation"] }).investigation;
+    delete (oldState as { radio?: WorldState["radio"] }).radio;
     delete (oldState.network as { tasks?: WorldState["network"]["tasks"] }).tasks;
+    delete (oldState.intel.shipment as Partial<typeof oldState.intel[string]>).deliveredFields;
     const publicState = toPublicWorldState(oldState);
     expect(publicState.investigation).toEqual({ pressure: 0, locationHeat: {}, surveillanceLocationIds: [], lastActionAt: null });
     expect(publicState.network.tasks).toEqual([]);
+    expect(publicState.radio.transmissions).toEqual([]);
+    expect(publicState.intel.shipment.deliveredFields).toEqual([]);
   });
 
   it("processes evidence only after crossing a ten-minute boundary", () => {
@@ -220,6 +224,76 @@ describe("enemy investigation", () => {
     }
     expect(result.state.activeDialogue?.status).toBe("completed");
     expect(result.state.activeDialogue?.transcript.some((turn) => turn.speaker === "system" && turn.text.includes("人影"))).toBe(true);
+  });
+});
+
+describe("radio transmission workflow", () => {
+  const radioCampaign: CampaignDefinition = {
+    ...campaign,
+    locations: [{ id: "wu-clock-shop", name: "Clock Shop", district: "A", travelMinutes: {} }],
+    intel: [
+      { id: "shipment", title: "Shipment", truth: "true", requiredFields: ["time"], sourceCharacterIds: [], expiresAt: "1942-05-13T20:00:00.000Z" },
+      { id: "radio-window", title: "Window", truth: "true", requiredFields: ["start"], sourceCharacterIds: [], expiresAt: "1942-05-13T20:00:00.000Z" },
+    ],
+  };
+
+  it("selects fields, calculates server-side duration, and settles only after a receipt", () => {
+    const engine = new CampaignEngine(radioCampaign, createInitialWorld(radioCampaign, "radio-game", "user-1", "undercover"));
+    engine.execute({ type: "record_intel", intelId: "shipment", fields: ["time"], confidenceDelta: 0.9, durationMinutes: 10, idempotencyKey: "radio-record-shipment" });
+    engine.execute({ type: "record_intel", intelId: "radio-window", fields: ["start"], confidenceDelta: 0.8, durationMinutes: 10, idempotencyKey: "radio-record-window" });
+    const sent = engine.execute({
+      type: "send_radio_message", items: [{ intelId: "shipment", fields: ["time"] }],
+      format: "full", codebookId: "one_time_pad", timing: "scheduled", locationId: "wu-clock-shop",
+      durationMinutes: 0, idempotencyKey: "radio-send",
+    });
+    expect(sent.state.currentTime).toBe("1942-05-12T10:40:00.000Z");
+    expect(sent.state.radio.transmissions[0]?.receiptStatus).toBe("pending");
+    expect(sent.state.intel.shipment.deliveredFields).toEqual([]);
+    expect(sent.state.radio.codebooks.find((item) => item.id === "one_time_pad")?.usesRemaining).toBe(1);
+    expect(sent.state.status).toBe("active");
+
+    const receipt = engine.execute({ type: "wait", durationMinutes: 20, idempotencyKey: "radio-wait-receipt" });
+    expect(receipt.state.radio.transmissions[0]?.receiptStatus).toBe("confirmed");
+    expect(receipt.state.intel.shipment.deliveredFields).toEqual(["time"]);
+    expect(receipt.state.status).toBe("finished");
+    expect(receipt.notices.some((notice) => notice.includes("完整收到"))).toBe(true);
+  });
+
+  it("rejects unknown fields and unavailable codebook pages without advancing time", () => {
+    const state = createInitialWorld(radioCampaign, "invalid-radio-game", "user-1");
+    state.intel.shipment.knownFields = ["time"];
+    state.radio.codebooks.find((item) => item.id === "one_time_pad")!.usesRemaining = 0;
+    const engine = new CampaignEngine(radioCampaign, state);
+    expect(() => engine.execute({
+      type: "send_radio_message", items: [{ intelId: "shipment", fields: ["place"] }],
+      format: "compressed", codebookId: "book_cipher", timing: "immediate", locationId: "wu-clock-shop",
+      durationMinutes: 0, idempotencyKey: "radio-unknown-field",
+    })).toThrow("尚未掌握");
+    expect(() => engine.execute({
+      type: "send_radio_message", items: [{ intelId: "shipment", fields: ["time"] }],
+      format: "compressed", codebookId: "one_time_pad", timing: "immediate", locationId: "wu-clock-shop",
+      durationMinutes: 0, idempotencyKey: "radio-empty-pad",
+    })).toThrow("已经用尽");
+    expect(engine.getState().currentTime).toBe(radioCampaign.startTime);
+  });
+
+  it("keeps a campaign open while an on-time transmission is awaiting its receipt", () => {
+    const closeDeadlineCampaign: CampaignDefinition = {
+      ...radioCampaign,
+      objectives: [{ ...radioCampaign.objectives[0], deadline: "1942-05-12T08:40:00.000Z" }],
+    };
+    const state = createInitialWorld(closeDeadlineCampaign, "pending-deadline", "user-1");
+    state.intel.shipment.knownFields = ["time"];
+    state.intel.shipment.confidence = 0.9;
+    const engine = new CampaignEngine(closeDeadlineCampaign, state);
+    const sent = engine.execute({
+      type: "send_radio_message", items: [{ intelId: "shipment", fields: ["time"] }],
+      format: "compressed", codebookId: "one_time_pad", timing: "immediate", locationId: "wu-clock-shop",
+      durationMinutes: 0, idempotencyKey: "deadline-radio-send",
+    });
+    expect(sent.state.currentTime).toBe("1942-05-12T08:40:00.000Z");
+    expect(sent.state.status).toBe("active");
+    expect(sent.state.radio.transmissions[0]?.receiptStatus).toBe("pending");
   });
 });
 

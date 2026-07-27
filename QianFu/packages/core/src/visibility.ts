@@ -3,7 +3,7 @@ import type { CharacterState, GameEvent, IntelState, WorldState } from "./types.
 export type PublicCharacterState = Pick<CharacterState, "id" | "templateId" | "locationId" | "recruited" | "exposed" | "agentTier">;
 export type PublicWorldState = Omit<WorldState, "characters" | "intel" | "dialogueMemories" | "investigation"> & {
   characters: Record<string, PublicCharacterState>;
-  intel: Record<string, Pick<IntelState, "id" | "knownFields" | "confidence" | "deliveredAt" | "deliveryMethod">>;
+  intel: Record<string, Pick<IntelState, "id" | "knownFields" | "confidence" | "deliveredFields" | "deliveredAt" | "deliveryMethod">>;
   investigation: Pick<WorldState["investigation"], "pressure" | "locationHeat" | "surveillanceLocationIds" | "lastActionAt">;
 };
 
@@ -25,12 +25,20 @@ export function toPublicWorldState(state: WorldState): PublicWorldState {
       id: intel.id,
       knownFields: intel.knownFields,
       confidence: intel.confidence,
+      deliveredFields: intel.deliveredFields ?? (intel.deliveredAt ? [...intel.knownFields] : []),
       deliveredAt: intel.deliveredAt,
       deliveryMethod: intel.deliveryMethod,
     }]),
   );
   const clonedState = structuredClone(state);
   clonedState.network.tasks ??= [];
+  clonedState.radio ??= {
+    codebooks: [
+      { id: "one_time_pad", usageCount: 0, usesRemaining: 2, lastUsedAt: null },
+      { id: "book_cipher", usageCount: 0, usesRemaining: null, lastUsedAt: null },
+    ],
+    transmissions: [],
+  };
   const privateInvestigation = clonedState.investigation ?? {
     pressure: 0,
     locationHeat: {},

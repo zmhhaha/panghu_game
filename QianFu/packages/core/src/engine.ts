@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { DIALOGUE_TEXT_LIMITS } from "./dialogue.js";
 import type {
   ActionResult, CampaignDefinition, CampaignEnding, CharacterState, GameAction,
-  GameEvent, IntelState, RecruitmentEvidenceResult, RecruitmentTestType, ScoreBreakdown, WorldState,
+  GameEvent, IntelState, RadioMessageFormat, RecruitmentEvidenceResult, RecruitmentTestType, ScoreBreakdown, WorldState,
 } from "./types.js";
 import { DIFFICULTIES } from "./difficulties.js";
 
@@ -42,7 +42,7 @@ export function createInitialWorld(
 
   const intel = Object.fromEntries(campaign.intel.map((item): [string, IntelState] => [
     item.id,
-    { id: item.id, knownFields: [], confidence: 0, collectedSourceIds: [], deliveredAt: null, deliveryMethod: null },
+    { id: item.id, knownFields: [], confidence: 0, collectedSourceIds: [], deliveredFields: [], deliveredAt: null, deliveryMethod: null },
   ]));
 
   return {
@@ -67,6 +67,13 @@ export function createInitialWorld(
     activeDialogue: null,
     intel,
     network: { exposure: 0, activeMemberIds: [], compromisedMemberIds: [], availableChannels: ["radio", "courier"], tasks: [] },
+    radio: {
+      codebooks: [
+        { id: "one_time_pad", usageCount: 0, usesRemaining: 2, lastUsedAt: null },
+        { id: "book_cipher", usageCount: 0, usesRemaining: null, lastUsedAt: null },
+      ],
+      transmissions: [],
+    },
     investigation: {
       pressure: 0,
       locationHeat: Object.fromEntries(campaign.locations.map((location) => [location.id, 0])),
@@ -108,6 +115,15 @@ export class CampaignEngine {
     this.state.investigation.locationHeat ??= {};
     for (const location of campaign.locations) this.state.investigation.locationHeat[location.id] ??= 0;
     this.state.network.tasks ??= [];
+    this.state.radio ??= {
+      codebooks: [
+        { id: "one_time_pad", usageCount: 0, usesRemaining: 2, lastUsedAt: null },
+        { id: "book_cipher", usageCount: 0, usesRemaining: null, lastUsedAt: null },
+      ],
+      transmissions: [],
+    };
+    this.state.radio.transmissions ??= [];
+    for (const intel of Object.values(this.state.intel)) intel.deliveredFields ??= intel.deliveredAt ? [...intel.knownFields] : [];
     for (const character of campaign.characters) {
       const characterState = this.state.characters[character.id];
       if (characterState) {
@@ -253,14 +269,63 @@ export class CampaignEngine {
         if (!intel) throw new Error("Unknown intelligence item");
         if (!next.network.availableChannels.includes(action.method)) throw new Error("Delivery channel is unavailable");
         if (intel.knownFields.length === 0) throw new Error("Cannot transmit intelligence with no known fields");
-        if (intel.deliveredAt) throw new Error("Intelligence has already been transmitted");
+        const remainingFields = intel.knownFields.filter((field) => !intel.deliveredFields.includes(field));
+        if (remainingFields.length === 0) throw new Error("Intelligence has already been transmitted");
         intel.deliveredAt = addMinutes(next.currentTime, action.durationMinutes);
+        intel.deliveredFields = [...new Set([...intel.deliveredFields, ...remainingFields])];
         intel.deliveryMethod = action.method;
         next.network.exposure = clamp(next.network.exposure + (action.method === "radio" ? 4 : 2) * next.difficulty.enemyResponseSpeed);
         next.personalSuspicion = clamp(next.personalSuspicion + (action.method === "radio" ? 2 : 1) * next.difficulty.enemyResponseSpeed);
         recordInvestigationEvidence(next, action.method === "radio" ? "radio_signal" : "courier_pattern", next.currentLocationId, action.method === "radio" ? 18 : 7, append);
         append("intel.transmitted", { intelId: action.intelId, method: action.method });
         narration = "情报已经送出，最终价值将在组织确认后结算。";
+        break;
+      }
+      case "send_radio_message": {
+        if (action.durationMinutes !== 0) throw new Error("电文耗时由服务端计算");
+        if (action.locationId !== next.currentLocationId) throw new Error("必须先抵达选定的发报地点");
+        const siteRisk = radioSiteRisk(action.locationId);
+        if (siteRisk === null) throw new Error("当前地点无法安全架设电台");
+        const items = normalizeRadioItems(this.campaign, next, action.items);
+        const fieldCount = items.reduce((total, item) => total + item.fields.length, 0);
+        if (fieldCount === 0) throw new Error("电文至少需要包含一个已知且未送达的字段");
+        const codebook = next.radio.codebooks.find((item) => item.id === action.codebookId);
+        if (!codebook) throw new Error("密码本不可用");
+        if (codebook.usesRemaining !== null && codebook.usesRemaining <= 0) throw new Error("一次一密页已经用尽");
+        const scheduledWindowKnown = next.intel["radio-window"]?.knownFields.length > 0;
+        if (action.timing === "scheduled" && !scheduledWindowKnown) throw new Error("尚未掌握组织收报窗口");
+
+        const waitMinutes = action.timing === "scheduled" ? minutesUntilRadioWindow(next.currentTime) : 0;
+        const operationMinutes = radioOperationMinutes(fieldCount, action.format, action.codebookId);
+        elapsedDuration = waitMinutes + operationMinutes;
+        const completedAt = addMinutes(next.currentTime, elapsedDuration);
+        const receiptDueAt = addMinutes(completedAt, action.timing === "scheduled" ? 20 : 40);
+        const repeatedCodebook = codebook.usageCount > 0 && codebook.id === "book_cipher";
+        const signalWeight = Math.round(siteRisk + operationMinutes / 3 + (action.timing === "immediate" ? 8 : 0) + (repeatedCodebook ? 6 : 0));
+        codebook.usageCount += 1;
+        codebook.lastUsedAt = completedAt;
+        if (codebook.usesRemaining !== null) codebook.usesRemaining -= 1;
+        next.radio.transmissions.push({
+          id: action.idempotencyKey,
+          items,
+          format: action.format,
+          codebookId: action.codebookId,
+          timing: action.timing,
+          locationId: action.locationId,
+          fieldCount,
+          durationMinutes: elapsedDuration,
+          sentAt: next.currentTime,
+          completedAt,
+          receiptDueAt,
+          receiptStatus: "pending",
+          receiptSummary: "电文已经发出，正在等待组织回执。",
+        });
+        next.radio.transmissions = next.radio.transmissions.slice(-30);
+        next.network.exposure = clamp(next.network.exposure + signalWeight * 0.3 * next.difficulty.enemyResponseSpeed);
+        next.personalSuspicion = clamp(next.personalSuspicion + Math.max(1, siteRisk / 4) * next.difficulty.enemyResponseSpeed);
+        recordInvestigationEvidence(next, "radio_signal", action.locationId, signalWeight, append);
+        append("radio.message_sent", { transmissionId: action.idempotencyKey, items, format: action.format, codebookId: action.codebookId, timing: action.timing, locationId: action.locationId, fieldCount, durationMinutes: elapsedDuration, receiptDueAt });
+        narration = `电文已在${elapsedDuration}分钟内完成编码、发送和清理。组织回执预计稍后抵达。`;
         break;
       }
       case "dialogue": {
@@ -403,17 +468,25 @@ export class CampaignEngine {
     }
 
     const previousTime = next.currentTime;
-    next.currentTime = addMinutes(next.currentTime, elapsedDuration);
-    // Dialogue turns use two-minute slices, but world events are resolved only
-    // when the clock crosses a ten-minute boundary.
-    if (Math.floor(new Date(previousTime).getTime() / 600_000) !== Math.floor(new Date(next.currentTime).getTime() / 600_000)) {
+    const finalTime = addMinutes(next.currentTime, elapsedDuration);
+    const previousBucket = Math.floor(new Date(previousTime).getTime() / 600_000);
+    const finalBucket = Math.floor(new Date(finalTime).getTime() / 600_000);
+    // Dialogue turns use two-minute slices. Longer actions still resolve every
+    // crossed ten-minute world boundary instead of collapsing them into one tick.
+    for (let bucket = previousBucket + 1; bucket <= finalBucket; bucket += 1) {
+      next.currentTime = new Date(bucket * 600_000).toISOString();
       advanceSchedules(this.campaign, next, append);
-      notices.push(...advanceComradeTasks(this.campaign, next, append));
-      notices.push(...advanceEnemyInvestigation(next, append));
-      if (next.activeDialogue && notices.length > 0) {
-        next.activeDialogue.transcript.push(...notices.map((text) => ({ speaker: "system" as const, text, at: next.currentTime })));
+      const tickNotices = [
+        ...advanceComradeTasks(this.campaign, next, append),
+        ...advanceRadioReceipts(next, append),
+        ...advanceEnemyInvestigation(next, append),
+      ];
+      notices.push(...tickNotices);
+      if (next.activeDialogue && tickNotices.length > 0) {
+        next.activeDialogue.transcript.push(...tickNotices.map((text) => ({ speaker: "system" as const, text, at: next.currentTime })));
       }
     }
+    next.currentTime = finalTime;
     next.playerEnergy = clamp(next.playerEnergy - Math.ceil(elapsedDuration / 30));
     next.stateVersion += 1;
     this.state = next;
@@ -514,6 +587,99 @@ function validateComradeTaskTarget(
   if (intel.deliveredAt) throw new Error("Delivered intelligence cannot receive another task");
   if (kind === "verify_intel" && intel.knownFields.length === 0) throw new Error("Intelligence must be discovered before it can be verified");
   if (kind === "gather_intel" && definition.requiredFields.every((field) => intel.knownFields.includes(field))) throw new Error("All intelligence fields are already known");
+}
+
+function radioSiteRisk(locationId: string): number | null {
+  if (locationId === "wu-clock-shop") return 4;
+  if (locationId === "jianghai-hotel") return 10;
+  if (locationId === "radio-office") return 18;
+  return null;
+}
+
+function normalizeRadioItems(
+  campaign: CampaignDefinition,
+  state: WorldState,
+  requestedItems: Extract<GameAction, { type: "send_radio_message" }>["items"],
+) {
+  if (requestedItems.length === 0 || requestedItems.length > 6) throw new Error("电文包含的情报项数量无效");
+  const seenIntel = new Set<string>();
+  return requestedItems.map((requested) => {
+    if (seenIntel.has(requested.intelId)) throw new Error("同一情报不能在一封电文中重复出现");
+    seenIntel.add(requested.intelId);
+    const intel = state.intel[requested.intelId];
+    const definition = campaign.intel.find((item) => item.id === requested.intelId);
+    if (!intel || !definition) throw new Error("电文包含未知情报");
+    const fields = [...new Set(requested.fields)];
+    if (fields.length === 0 || fields.length > 20) throw new Error("每项情报至少选择一个字段");
+    for (const field of fields) {
+      if (!definition.requiredFields.includes(field) || !intel.knownFields.includes(field)) throw new Error("不能发送尚未掌握的情报字段");
+      if (intel.deliveredFields.includes(field)) throw new Error("不能重复发送已经确认送达的字段");
+    }
+    return { intelId: requested.intelId, fields };
+  });
+}
+
+function radioOperationMinutes(fieldCount: number, format: RadioMessageFormat, codebookId: "one_time_pad" | "book_cipher"): number {
+  const encoding = codebookId === "one_time_pad" ? 20 : 10;
+  const fieldsPerTenMinutes = format === "compressed" ? 4 : 2;
+  const transmission = Math.max(10, Math.ceil(fieldCount / fieldsPerTenMinutes) * 10);
+  return encoding + transmission + 10;
+}
+
+function minutesUntilRadioWindow(iso: string): number {
+  const minute = minuteOfDay(iso);
+  const windows = [600, 900, 1260];
+  const next = windows.find((window) => window >= minute);
+  return next === undefined ? 1440 - minute + windows[0] : next - minute;
+}
+
+function advanceRadioReceipts(
+  state: WorldState,
+  append: (type: string, payload: unknown) => void,
+): string[] {
+  const notices: string[] = [];
+  for (const transmission of state.radio.transmissions.filter((item) => item.receiptStatus === "pending" && new Date(item.receiptDueAt) <= new Date(state.currentTime))) {
+    const confidenceValues = transmission.items.map((item) => state.intel[item.intelId]?.confidence ?? 0);
+    const averageConfidence = confidenceValues.length ? confidenceValues.reduce((sum, value) => sum + value, 0) / confidenceValues.length : 0;
+    const codebookBonus = transmission.codebookId === "one_time_pad" ? 15 : 5;
+    const formatBonus = transmission.format === "full" ? 10 : 0;
+    const timingBonus = transmission.timing === "scheduled" ? 10 : 0;
+    const heatPenalty = Math.min(20, state.investigation.locationHeat[transmission.locationId] ?? 0);
+    const difficultyPenalty = Math.max(0, state.difficulty.enemyResponseSpeed - 1) * 12;
+    const receptionScore = averageConfidence * 60 + codebookBonus + formatBonus + timingBonus - heatPenalty - difficultyPenalty;
+
+    if (receptionScore >= 68) {
+      transmission.receiptStatus = "confirmed";
+      transmission.receiptSummary = "组织回执确认：电文完整收到，已进入情报核验流程。";
+    } else if (receptionScore >= 45) {
+      transmission.receiptStatus = "partial";
+      transmission.receiptSummary = "组织回执不完整：部分报码无法辨认，需要补发关键字段。";
+    } else {
+      transmission.receiptStatus = "no_receipt";
+      transmission.receiptSummary = "约定时间内没有收到有效回执，无法确认电文是否送达。";
+    }
+
+    const deliveredItems = transmission.receiptStatus === "confirmed"
+      ? transmission.items
+      : transmission.receiptStatus === "partial"
+        ? transmission.items.map((item) => ({ ...item, fields: item.fields.slice(0, 1) }))
+        : [];
+    for (const delivered of deliveredItems) {
+      const intel = state.intel[delivered.intelId];
+      if (!intel) continue;
+      intel.deliveredFields = [...new Set([...intel.deliveredFields, ...delivered.fields])];
+      intel.deliveredAt = state.currentTime;
+      intel.deliveryMethod = "radio";
+    }
+    append("radio.receipt_received", {
+      transmissionId: transmission.id,
+      status: transmission.receiptStatus,
+      deliveredItems,
+      summary: transmission.receiptSummary,
+    });
+    notices.push(transmission.receiptSummary);
+  }
+  return notices;
 }
 
 function advanceComradeTasks(
@@ -799,6 +965,10 @@ export function evaluateEnding(campaign: CampaignDefinition, state: WorldState):
     return { type: costly ? "costly_success" : "complete_success", title: costly ? "代价成功" : "完整成功", reasons: ["核心情报已按要求送达"], score };
   }
   if (Date.parse(state.currentTime) >= deadline) {
+    const pendingBeforeDeadline = state.radio.transmissions.some((transmission) =>
+      transmission.receiptStatus === "pending" && Date.parse(transmission.completedAt) <= deadline,
+    );
+    if (pendingBeforeDeadline) return null;
     const sentFalseIntel = campaign.intel.some((definition) => definition.truth === "false" && state.intel[definition.id]?.deliveredAt);
     return { type: sentFalseIntel ? "intelligence_failure" : "mission_failure", title: sentFalseIntel ? "情报失败" : "任务失败", reasons: [sentFalseIntel ? "错误情报已经送达组织" : "核心任务超过截止时间"], score };
   }
@@ -810,7 +980,7 @@ function objectiveSatisfied(campaign: CampaignDefinition, state: WorldState, obj
     const intel = state.intel[id];
     const definition = campaign.intel.find((item) => item.id === id);
     if (!intel?.deliveredAt || !definition || definition.truth === "false") return false;
-    const hasRequiredFields = definition.requiredFields.every((field) => intel.knownFields.includes(field));
+    const hasRequiredFields = definition.requiredFields.every((field) => intel.deliveredFields.includes(field));
     const acceptedMethod = intel.deliveryMethod !== null && objective.acceptedDeliveryMethods.includes(intel.deliveryMethod);
     return hasRequiredFields && acceptedMethod && intel.confidence >= objective.minimumConfidence;
   });

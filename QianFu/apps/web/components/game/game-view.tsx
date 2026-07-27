@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import type { DialogueGoal, DialogueTone, PublicWorldState } from "@qianfu/core";
 import {
   ArrowLeft, ChevronRight, Clock3, Download, Eye, FileText, MapPin,
-  MessageSquare, Radio, ShieldAlert, Timer, UserRound, UsersRound,
+  MessageSquare, ShieldAlert, Timer, UserRound, UsersRound,
 } from "lucide-react";
 import { api, type GameContext } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { DialoguePanel } from "@/components/game/dialogue-panel";
 import { CityMap } from "@/components/game/city-map";
 import { OrganizationNetwork } from "@/components/game/organization-network";
 import { RecruitmentDossier } from "@/components/game/recruitment-dossier";
+import { IntelligenceBoard } from "@/components/game/intelligence-board";
 import { SettlementReport } from "@/components/game/settlement-report";
 
 const travelMinutes: Record<string, Record<string, number>> = {
@@ -93,7 +94,6 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const currentLocation = context.locations.find((location) => location.id === state.currentLocationId)?.name ?? "未知地点";
   const selectedCharacter = context.characters.find((character) => character.id === selectedNpc);
   const selectedCandidate = context.recruitmentCandidates.find((candidate) => candidate.id === selectedNpc);
-  const visibleIntel = context.intel.filter((item) => state.intel[item.id]?.knownFields.length > 0);
   const formattedTime = new Intl.DateTimeFormat("zh-CN", {
     month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(new Date(state.currentTime));
@@ -211,13 +211,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
         <div className="mt-4 space-y-4"><Meter label="个人怀疑" value={state.personalSuspicion} color="bg-alert" /><Meter label="调查压力" value={state.investigation.pressure} color="bg-alert" /><Meter label="网络暴露" value={state.network.exposure} color="bg-copper" /><Meter label="行动精力" value={state.playerEnergy} color="bg-safe" /></div>
         {state.investigation.surveillanceLocationIds.length > 0 && <div className="mt-4 border-l-2 border-alert bg-alert/10 px-3 py-2"><p className="text-[10px] text-muted">疑似监视区域</p><p className="mt-1 text-xs leading-5 text-[#efaaa4]">{state.investigation.surveillanceLocationIds.map((id) => context.locations.find((location) => location.id === id)?.name ?? "未知地点").join("、")}</p></div>}
 
-        <div className="mt-7 border-t border-line pt-5">
-          <SectionLabel icon={<FileText size={15} />} text={`情报板 ${visibleIntel.length}/${context.intel.length}`} />
-          {visibleIntel.length === 0 ? <p className="mt-3 text-sm leading-6 text-muted">还没有可以记录的情报碎片。</p> : <div className="mt-3 divide-y divide-line">{visibleIntel.map((item) => {
-            const intel = state.intel[item.id];
-            return <div key={item.id} className="py-3"><div className="flex items-start justify-between gap-2"><p className="text-sm">{item.title}</p><span className="text-[10px] text-muted">{Math.round(intel.confidence * 100)}%</span></div><p className="mt-1 text-xs text-muted">{intel.knownFields.join("、")}</p>{!intel.deliveredAt && <div className="mt-3 flex gap-2"><button disabled={busy} onClick={() => void act({ type: "transmit_intel", intelId: item.id, method: "radio", durationMinutes: 30, idempotencyKey: crypto.randomUUID() })} className="flex items-center gap-1.5 border border-line px-2 py-1.5 text-[11px] text-muted hover:border-copper hover:text-paper"><Radio size={12} />电台 30分</button><button disabled={busy} onClick={() => void act({ type: "transmit_intel", intelId: item.id, method: "courier", durationMinutes: 60, idempotencyKey: crypto.randomUUID() })} className="flex items-center gap-1.5 border border-line px-2 py-1.5 text-[11px] text-muted hover:border-copper hover:text-paper"><UserRound size={12} />交通员 60分</button></div>}</div>;
-          })}</div>}
-        </div>
+        <IntelligenceBoard state={state} context={context} busy={busy} onAction={(action) => void act(action)} />
 
         <div className="mt-7 border-t border-line pt-5"><SectionLabel icon={<FileText size={15} />} text="核心任务" /><p className="mt-3 text-sm leading-7 text-paper/75">三天内确认无线电设备的运输时间、地点与内容，并在截止前安全送出。</p></div>
       </aside>

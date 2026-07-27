@@ -160,8 +160,46 @@ export interface IntelState {
   knownFields: string[];
   confidence: number;
   collectedSourceIds: string[];
+  deliveredFields: string[];
   deliveredAt: string | null;
   deliveryMethod: string | null;
+}
+
+export type RadioMessageFormat = "compressed" | "full";
+export type RadioTiming = "scheduled" | "immediate";
+export type RadioReceiptStatus = "pending" | "confirmed" | "partial" | "no_receipt";
+
+export interface RadioCodebookState {
+  id: "one_time_pad" | "book_cipher";
+  usageCount: number;
+  usesRemaining: number | null;
+  lastUsedAt: string | null;
+}
+
+export interface RadioMessageItem {
+  intelId: string;
+  fields: string[];
+}
+
+export interface RadioTransmission {
+  id: string;
+  items: RadioMessageItem[];
+  format: RadioMessageFormat;
+  codebookId: RadioCodebookState["id"];
+  timing: RadioTiming;
+  locationId: string;
+  fieldCount: number;
+  durationMinutes: number;
+  sentAt: string;
+  completedAt: string;
+  receiptDueAt: string;
+  receiptStatus: RadioReceiptStatus;
+  receiptSummary: string;
+}
+
+export interface RadioState {
+  codebooks: RadioCodebookState[];
+  transmissions: RadioTransmission[];
 }
 
 export type ComradeTaskKind = "gather_intel" | "verify_intel" | "scout_location";
@@ -234,6 +272,7 @@ export interface CampaignReportIntelItem {
   id: string;
   title: string;
   knownFields: string[];
+  deliveredFields?: string[];
   confidence: number;
   deliveredAt: string | null;
   deliveryMethod: string | null;
@@ -323,6 +362,7 @@ export interface WorldState {
   activeDialogue: DialogueSession | null;
   intel: Record<string, IntelState>;
   network: NetworkState;
+  radio: RadioState;
   investigation: EnemyInvestigationState;
   ending: CampaignEnding | null;
   closedAt: string | null;
@@ -416,6 +456,15 @@ export interface DialogueEndAction extends ActionBase {
   sessionId: string;
 }
 
+export interface SendRadioMessageAction extends ActionBase {
+  type: "send_radio_message";
+  items: RadioMessageItem[];
+  format: RadioMessageFormat;
+  codebookId: RadioCodebookState["id"];
+  timing: RadioTiming;
+  locationId: string;
+}
+
 export interface DelegateComradeTaskAction extends ActionBase {
   type: "delegate_comrade_task";
   memberId: string;
@@ -440,7 +489,7 @@ export interface RecruitCandidateAction extends ActionBase {
   targetCharacterId: string;
 }
 
-export type GameAction = MoveAction | ObserveAction | WaitAction | RecordIntelAction | TransmitIntelAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
+export type GameAction = MoveAction | ObserveAction | WaitAction | RecordIntelAction | TransmitIntelAction | SendRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
 
 export interface ActionResult {
   state: WorldState;
