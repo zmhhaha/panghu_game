@@ -113,6 +113,31 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
           };
         }),
       intel: LINJIANG_1942.intel.map(({ id, title, requiredFields, fieldLabels }) => ({ id, title, requiredFields, fieldLabels: fieldLabels ?? {} })),
+      objectives: LINJIANG_1942.objectives.map((objective) => {
+        const intel = objective.requiredIntelIds.map((intelId) => {
+          const definition = LINJIANG_1942.intel.find((item) => item.id === intelId)!;
+          const current = state.intel[intelId];
+          const knownFields = current?.knownFields ?? [];
+          const deliveredFields = current?.deliveredFields ?? (current?.deliveredAt ? [...knownFields] : []);
+          const missingFields = definition.requiredFields.filter((field) => !knownFields.includes(field));
+          const delivered = definition.requiredFields.every((field) => deliveredFields.includes(field))
+            && Boolean(current?.deliveryMethod && objective.acceptedDeliveryMethods.includes(current.deliveryMethod));
+          return { id: intelId, title: definition.title, requiredFields: definition.requiredFields, knownFields, deliveredFields, confidence: current?.confidence ?? 0, delivered, missingFields };
+        });
+        const allReady = intel.every((item) => item.missingFields.length === 0 && item.confidence >= objective.minimumConfidence);
+        const completed = intel.every((item) => item.delivered && item.missingFields.length === 0 && item.confidence >= objective.minimumConfidence);
+        const remainingMinutes = Math.max(0, Math.round((Date.parse(objective.deadline) - Date.parse(state.currentTime)) / 60_000));
+        return {
+          id: objective.id,
+          title: objective.id === "confirm-radio-shipment" ? "确认无线电设备运输并安全送出" : objective.id,
+          deadline: objective.deadline,
+          minimumConfidence: objective.minimumConfidence,
+          acceptedDeliveryMethods: objective.acceptedDeliveryMethods,
+          status: completed ? "completed" : remainingMinutes === 0 ? "overdue" : allReady ? "ready_to_transmit" : "in_progress",
+          remainingMinutes,
+          intel,
+        };
+      }),
     });
   } catch (error) { next(error); }
 });

@@ -1,6 +1,6 @@
 import type {
   ActionResult, CampaignReportBundle, CampaignShareSummary, DifficultyConfig,
-  GameAction, PublicWorldState, RecruitmentCase, SharedCampaignReport,
+  GameAction, GameEvent, PublicWorldState, RecruitmentCase, SharedCampaignReport,
 } from "@qianfu/core";
 
 type PublicActionResult = Omit<ActionResult, "state"> & { state: PublicWorldState };
@@ -27,6 +27,25 @@ export interface GameContext {
     canRecruit: boolean;
   }>;
   intel: { id: string; title: string; requiredFields: string[]; fieldLabels: Record<string, string> }[];
+  objectives: Array<{
+    id: string;
+    title: string;
+    deadline: string;
+    minimumConfidence: number;
+    acceptedDeliveryMethods: string[];
+    status: "in_progress" | "ready_to_transmit" | "completed" | "overdue";
+    remainingMinutes: number;
+    intel: Array<{
+      id: string;
+      title: string;
+      requiredFields: string[];
+      knownFields: string[];
+      deliveredFields: string[];
+      confidence: number;
+      delivered: boolean;
+      missingFields: string[];
+    }>;
+  }>;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -49,6 +68,7 @@ export const api = {
   getGame: (id: string) => request<PublicWorldState>(`/api/v1/games/${id}`),
   deleteGame: (id: string) => request<{ deleted: true }>(`/api/v1/games/${id}`, { method: "DELETE" }),
   getContext: (id: string) => request<GameContext>(`/api/v1/games/${id}/context`),
+  getEvents: (id: string) => request<{ events: GameEvent[] }>(`/api/v1/games/${id}/events`),
   getReport: (id: string) => request<CampaignReportBundle>(`/api/v1/games/${id}/report`),
   listShares: (id: string) => request<{ shares: CampaignShareSummary[] }>(`/api/v1/games/${id}/shares`),
   createShare: (id: string, expiresInDays: 7 | 30 | 90 | null) => request<CampaignShareSummary>(`/api/v1/games/${id}/shares`, { method: "POST", body: JSON.stringify({ expiresInDays }) }),

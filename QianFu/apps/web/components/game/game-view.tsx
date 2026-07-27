@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { DialogueGoal, DialogueTone, PublicWorldState } from "@qianfu/core";
+import type { DialogueGoal, DialogueTone, GameEvent, PublicWorldState } from "@qianfu/core";
 import {
-  ArrowLeft, ChevronRight, Clock3, Download, Eye, FileText, MapPin,
+  ArrowLeft, ChevronRight, Clock3, Download, MapPin,
   MessageSquare, ShieldAlert, Timer, UserRound, UsersRound,
 } from "lucide-react";
 import { api, type GameContext } from "@/lib/api";
@@ -15,6 +15,8 @@ import { OrganizationNetwork } from "@/components/game/organization-network";
 import { RecruitmentDossier } from "@/components/game/recruitment-dossier";
 import { IntelligenceBoard } from "@/components/game/intelligence-board";
 import { SettlementReport } from "@/components/game/settlement-report";
+import { MissionObjectives } from "@/components/game/mission-objectives";
+import { ActionTimeline } from "@/components/game/action-timeline";
 
 const travelMinutes: Record<string, Record<string, number>> = {
   "archive-office": { "radio-office": 10, "linjiang-news": 20, "jianghai-hotel": 20, "third-dock": 40, "wu-clock-shop": 30 },
@@ -44,7 +46,7 @@ const tones: Array<{ id: DialogueTone; label: string }> = [
 export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const [state, setState] = useState<PublicWorldState | null>(null);
   const [context, setContext] = useState<GameContext | null>(null);
-  const [log, setLog] = useState<string[]>([]);
+  const [events, setEvents] = useState<GameEvent[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [selectedNpc, setSelectedNpc] = useState("");
@@ -54,9 +56,10 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
 
   const load = async () => {
     try {
-      const [game, publicContext] = await Promise.all([api.getGame(gameInstanceId), api.getContext(gameInstanceId)]);
+      const [game, publicContext, eventLog] = await Promise.all([api.getGame(gameInstanceId), api.getContext(gameInstanceId), api.getEvents(gameInstanceId)]);
       setState(game);
       setContext(publicContext);
+      setEvents(eventLog.events);
       setError("");
       setSelectedNpc((current) => publicContext.characters.some((character) => character.id === current)
         ? current : publicContext.characters[0]?.id ?? "");
@@ -73,7 +76,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
     try {
       const result = await api.act(gameInstanceId, action);
       setState(result.state);
-      setLog((items) => [...(result.notices ?? []), result.npcReply ?? result.narration, ...items].filter(Boolean).slice(0, 8));
+      setEvents((items) => [...items, ...result.events]);
       const publicContext = await api.getContext(gameInstanceId);
       setContext(publicContext);
       setSelectedNpc((current) => publicContext.characters.some((character) => character.id === current)
@@ -216,10 +219,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
 
         <OrganizationNetwork state={state} context={context} busy={busy} onAction={(action) => void act(action)} />
 
-        <div className="mt-8 border-t border-line pt-6">
-          <SectionLabel icon={<Eye size={15} />} text="最近动静" />
-          {log.length === 0 ? <p className="mt-3 text-sm text-muted">尚无新的行动记录。</p> : <ol className="mt-3 space-y-3">{log.slice(0, 5).map((entry, index) => <li key={`${entry}-${index}`} className="flex gap-3 text-sm leading-6"><span className="mt-2 h-1.5 w-1.5 shrink-0 bg-copper" /><span className={index === 0 ? "text-paper" : "text-muted"}>{entry}</span></li>)}</ol>}
-        </div>
+        <ActionTimeline events={events} context={context} />
       </section>
 
       <aside className="border-t border-line p-4 sm:p-6 lg:min-h-[calc(100vh-4rem)] lg:border-l lg:border-t-0">
@@ -229,7 +229,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
 
         <IntelligenceBoard state={state} context={context} busy={busy} onAction={(action) => void act(action)} />
 
-        <div className="mt-7 border-t border-line pt-5"><SectionLabel icon={<FileText size={15} />} text="核心任务" /><p className="mt-3 text-sm leading-7 text-paper/75">三天内确认无线电设备的运输时间、地点与内容，并在截止前安全送出。</p></div>
+        <MissionObjectives state={state} context={context} />
       </aside>
     </div>
   </main>;
