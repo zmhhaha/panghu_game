@@ -1066,7 +1066,17 @@ function leaveReasonLabel(reason: Extract<GameAction, { type: "request_leave" }>
 
 function minuteOfDay(iso: string): number {
   const date = new Date(iso);
-  return date.getUTCHours() * 60 + date.getUTCMinutes();
+  // Campaign timestamps are stored as UTC instants. All player-facing schedules
+  // use the campaign's fixed Shanghai setting, matching the web UI.
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
 }
 
 export function isCharacterAvailableAt(definition: CampaignDefinition["characters"][number], currentTime: string): boolean {
