@@ -348,6 +348,7 @@ export interface CampaignReportTimelineEntry {
 export interface CampaignReportIntelItem {
   id: string;
   title: string;
+  fieldLabels: Record<string, string>;
   knownFields: string[];
   deliveredFields?: string[];
   confidence: number;
