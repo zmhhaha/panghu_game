@@ -14,4 +14,12 @@ describe("campaign content", () => {
     broken.objectives[0].requiredIntelIds.push("missing-intel");
     expect(validateCampaign(broken).errors).toContain("objective confirm-radio-shipment references unknown intel missing-intel");
   });
+
+  it("rejects invalid field labels and source provenance mappings", () => {
+    const broken = structuredClone(LINJIANG_1942);
+    broken.intel[0].fieldLabels = { missing: "Missing" };
+    broken.intel[0].sourceOrigins = { "not-a-source": "shared-document" };
+    expect(validateCampaign(broken).errors).toContain(`intel ${broken.intel[0].id} labels unknown field missing`);
+    expect(validateCampaign(broken).errors).toContain(`intel ${broken.intel[0].id} maps origin for non-source not-a-source`);
+  });
 });

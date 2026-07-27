@@ -43,6 +43,12 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
     for (const characterId of item.sourceCharacterIds) {
       if (!characters.has(characterId)) errors.push(`intel ${item.id} references unknown source ${characterId}`);
     }
+    for (const field of Object.keys(item.fieldLabels ?? {})) {
+      if (!item.requiredFields.includes(field)) errors.push(`intel ${item.id} labels unknown field ${field}`);
+    }
+    for (const sourceId of Object.keys(item.sourceOrigins ?? {})) {
+      if (!item.sourceCharacterIds.includes(sourceId)) errors.push(`intel ${item.id} maps origin for non-source ${sourceId}`);
+    }
   }
   for (const objective of campaign.objectives) {
     if (Number.isNaN(Date.parse(objective.deadline))) errors.push(`objective ${objective.id} has invalid deadline`);

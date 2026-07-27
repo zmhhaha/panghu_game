@@ -42,6 +42,7 @@ export class CampaignOrchestrator {
     if (action.playerText.length > textLimit) throw new Error(`“${session.goal}”每轮发言最多 ${textLimit} 个字符`);
     const prepared = await this.prepareDialogue(state, {
       type: "dialogue", targetCharacterId: session.characterId, goal: session.goal, tone: session.tone,
+      targetIntelId: session.targetIntelId ?? undefined,
       playerText: action.playerText, durationMinutes: 2, idempotencyKey: action.idempotencyKey,
     });
     return { ...action, agentOutcome: prepared.action.agentOutcome };
@@ -95,8 +96,10 @@ export class CampaignOrchestrator {
 
   private buildDirectorSummary(state: WorldState, action: DialogueAction): string {
     const location = LINJIANG_1942.locations.find((item) => item.id === state.currentLocationId);
+    const targetIntel = action.targetIntelId ? LINJIANG_1942.intel.find((item) => item.id === action.targetIntelId) : null;
     const session = state.activeDialogue;
-    return `时间：${state.currentTime}；地点：${location?.name ?? "未知"}；交谈目标：${action.goal}；本次会话已进行${session?.elapsedMinutes ?? 0}分钟，共${session?.allocatedMinutes ?? action.durationMinutes}分钟。世界规则和情报判定由主控系统负责。`;
+    const target = targetIntel ? `；核验对象：${targetIntel.title}（玩家已知字段：${state.intel[targetIntel.id]?.knownFields.map((field) => targetIntel.fieldLabels?.[field] ?? field).join("、") || "无"}）` : "";
+    return `时间：${state.currentTime}；地点：${location?.name ?? "未知"}；交谈目标：${action.goal}${target}；本次会话已进行${session?.elapsedMinutes ?? 0}分钟，共${session?.allocatedMinutes ?? action.durationMinutes}分钟。世界规则和情报判定由主控系统负责。`;
   }
 }
 

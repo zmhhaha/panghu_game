@@ -58,6 +58,7 @@ describe("CampaignOrchestrator", () => {
       characterId,
       goal: "build_trust",
       tone: "friendly",
+      targetIntelId: null,
       allocatedMinutes: 20,
       elapsedMinutes: 2,
       maxTurns: 10,

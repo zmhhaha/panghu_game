@@ -8,7 +8,7 @@ type PublicActionResult = Omit<ActionResult, "state"> & { state: PublicWorldStat
 export interface GameContext {
   campaign: { id: string; version: string; name: string };
   locations: { id: string; name: string; district: string; discovered: boolean }[];
-  characters: { id: string; name: string; publicIdentity: string; recruitable: boolean; known: boolean }[];
+  characters: { id: string; name: string; publicIdentity: string; recruitable: boolean; known: boolean; verifiableIntelIds: string[] }[];
   networkMembers: { id: string; name: string; publicIdentity: string }[];
   recruitmentCandidates: Array<{
     id: string;
@@ -26,7 +26,7 @@ export interface GameContext {
     };
     canRecruit: boolean;
   }>;
-  intel: { id: string; title: string; requiredFields: string[] }[];
+  intel: { id: string; title: string; requiredFields: string[]; fieldLabels: Record<string, string> }[];
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

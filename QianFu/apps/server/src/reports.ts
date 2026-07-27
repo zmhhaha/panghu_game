@@ -73,6 +73,7 @@ export function buildCampaignReportBundle(
       deliveredAt: state.intel[definition.id].deliveredAt,
       deliveryMethod: state.intel[definition.id].deliveryMethod,
       actualTruth: definition.truth,
+      evidenceSummary: summarizeIntelEvidence(state.intel[definition.id]),
     })),
     comrades: visibleCharacters.map((definition) => ({
       id: definition.id,
@@ -93,6 +94,15 @@ export function buildCampaignReportBundle(
   };
 
   return { ownerReport, publicPreview };
+}
+
+function summarizeIntelEvidence(intel: WorldState["intel"][string]) {
+  return {
+    totalRecords: intel.evidence?.length ?? 0,
+    corroboratedFields: new Set((intel.evidence ?? []).filter((item) => item.assessment === "corroborates").map((item) => item.field)).size,
+    conflictingFields: new Set((intel.evidence ?? []).filter((item) => item.assessment === "contradicts").map((item) => item.field)).size,
+    dependentRecords: (intel.evidence ?? []).filter((item) => item.assessment === "dependent").length,
+  };
 }
 
 function reportSummary(state: WorldState): string {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { DIALOGUE_TEXT_LIMITS } from "./dialogue.js";
 import type {
   ActionResult, CampaignDefinition, CampaignEnding, CharacterState, GameAction,
-  GameEvent, IntelState, RadioMessageFormat, RecruitmentEvidenceResult, RecruitmentTestType, ScoreBreakdown, WorldState,
+  GameEvent, IntelEvidenceSourceType, IntelState, RadioMessageFormat, RecruitmentEvidenceResult, RecruitmentTestType, ScoreBreakdown, WorldState,
 } from "./types.js";
 import { DIFFICULTIES } from "./difficulties.js";
 
@@ -42,7 +42,7 @@ export function createInitialWorld(
 
   const intel = Object.fromEntries(campaign.intel.map((item): [string, IntelState] => [
     item.id,
-    { id: item.id, knownFields: [], confidence: 0, collectedSourceIds: [], deliveredFields: [], deliveredAt: null, deliveryMethod: null },
+    { id: item.id, knownFields: [], confidence: 0, collectedSourceIds: [], evidence: [], deliveredFields: [], deliveredAt: null, deliveryMethod: null },
   ]));
 
   return {
@@ -101,6 +101,7 @@ export class CampaignEngine {
       characterId: character.id, summary: "尚未与玩家交谈。", lastPrivateIntent: null, turns: [], lastGoal: null, interactionCount: 0,
     }]));
     this.state.activeDialogue ??= null;
+    if (this.state.activeDialogue) this.state.activeDialogue.targetIntelId ??= null;
     this.state.discoveredLocationIds ??= campaign.locations.slice(0, 3).map((location) => location.id);
     this.state.knownCharacterIds ??= [];
     this.state.investigation ??= {
@@ -123,7 +124,10 @@ export class CampaignEngine {
       transmissions: [],
     };
     this.state.radio.transmissions ??= [];
-    for (const intel of Object.values(this.state.intel)) intel.deliveredFields ??= intel.deliveredAt ? [...intel.knownFields] : [];
+    for (const intel of Object.values(this.state.intel)) {
+      intel.evidence ??= [];
+      intel.deliveredFields ??= intel.deliveredAt ? [...intel.knownFields] : [];
+    }
     for (const character of campaign.characters) {
       const characterState = this.state.characters[character.id];
       if (characterState) {
@@ -172,13 +176,18 @@ export class CampaignEngine {
         const target = next.characters[action.targetCharacterId];
         if (!target || target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
         if (next.activeDialogue?.status === "active") throw new Error("Another dialogue is already active");
+        if (action.goal === "verify_intel") {
+          if (!action.targetIntelId) throw new Error("核验对话必须选择具体情报");
+          const intelDefinition = this.campaign.intel.find((item) => item.id === action.targetIntelId);
+          if (!intelDefinition?.sourceCharacterIds.includes(action.targetCharacterId) || !next.intel[action.targetIntelId]?.knownFields.length) throw new Error("该人物无法核验所选情报");
+        }
         if (!next.knownCharacterIds.includes(action.targetCharacterId)) {
           next.knownCharacterIds.push(action.targetCharacterId);
           append("character.introduced", { characterId: action.targetCharacterId });
         }
         const minTurns = action.allocatedMinutes / 2;
-        next.activeDialogue = { id: action.idempotencyKey, characterId: action.targetCharacterId, goal: action.goal, tone: action.tone, allocatedMinutes: action.allocatedMinutes, elapsedMinutes: 0, maxTurns: minTurns, turnCount: 0, status: "active", transcript: [] };
-        append("dialogue.started", { characterId: action.targetCharacterId, goal: action.goal, allocatedMinutes: action.allocatedMinutes, maxTurns: minTurns });
+        next.activeDialogue = { id: action.idempotencyKey, characterId: action.targetCharacterId, goal: action.goal, tone: action.tone, targetIntelId: action.targetIntelId ?? null, allocatedMinutes: action.allocatedMinutes, elapsedMinutes: 0, maxTurns: minTurns, turnCount: 0, status: "active", transcript: [] };
+        append("dialogue.started", { characterId: action.targetCharacterId, goal: action.goal, targetIntelId: action.targetIntelId, allocatedMinutes: action.allocatedMinutes, maxTurns: minTurns });
         narration = "你坐下来，开始观察对方的反应。";
         break;
       }
@@ -191,7 +200,7 @@ export class CampaignEngine {
         if (action.playerText.length > textLimit) throw new Error(`“${session.goal}”每轮发言最多 ${textLimit} 个字符`);
         const definition = this.campaign.characters.find((item) => item.id === session.characterId);
         if (!definition) throw new Error("Unknown character");
-        const legacyAction = { type: "dialogue" as const, targetCharacterId: session.characterId, goal: session.goal, tone: session.tone, playerText: action.playerText, durationMinutes: 10, idempotencyKey: action.idempotencyKey };
+        const legacyAction = { type: "dialogue" as const, targetCharacterId: session.characterId, goal: session.goal, tone: session.tone, targetIntelId: session.targetIntelId ?? undefined, playerText: action.playerText, durationMinutes: 10, idempotencyKey: action.idempotencyKey };
         const discovery = resolveDialogue(this.campaign, next, definition, legacyAction);
         const memory = next.dialogueMemories[definition.id];
         if (!memory) throw new Error("Dialogue memory is unavailable");
@@ -257,7 +266,9 @@ export class CampaignEngine {
         const intel = next.intel[action.intelId];
         const definition = this.campaign.intel.find((item) => item.id === action.intelId);
         if (!intel || !definition) throw new Error("Unknown intelligence item");
-        intel.knownFields = [...new Set([...intel.knownFields, ...action.fields.filter((field) => definition.requiredFields.includes(field))])];
+        const acceptedFields = action.fields.filter((field) => definition.requiredFields.includes(field));
+        intel.knownFields = [...new Set([...intel.knownFields, ...acceptedFields])];
+        for (const field of acceptedFields) addIntelEvidence(this.campaign, next, definition, field, "player-record", "个人记录", "document", `${action.idempotencyKey}:${field}`, false);
         intel.confidence = clamp(intel.confidence + action.confidenceDelta, 0, 1);
         recordInvestigationEvidence(next, "sensitive_notes", next.currentLocationId, 3, append);
         append("intel.recorded", { intelId: action.intelId, fields: action.fields });
@@ -728,13 +739,21 @@ function advanceComradeTasks(
         if (task.kind === "gather_intel") {
           const missing = intelDefinition.requiredFields.filter((field) => !intel.knownFields.includes(field));
           const field = missing[stableRoll(`${task.id}:field`) % Math.max(1, missing.length)];
-          if (field) intel.knownFields.push(field);
-          intel.confidence = clamp(intel.confidence + 0.22, 0, 1);
+          if (field) {
+            intel.knownFields.push(field);
+            addIntelEvidence(campaign, state, intelDefinition, field, task.memberId, definition.name, "comrade_report", `${task.id}:${field}`);
+          }
           intel.collectedSourceIds = [...new Set([...intel.collectedSourceIds, task.memberId])];
           task.report = `${definition.name}送回了“${intelDefinition.title}”的一项可核对线索。`;
         } else {
-          intel.confidence = clamp(intel.confidence + 0.18, 0, 1);
-          task.report = `${definition.name}交叉核对了“${intelDefinition.title}”，现有线索可信度有所提高。`;
+          const field = [...intel.knownFields]
+            .sort((a, b) => intel.evidence.filter((item) => item.field === a).length - intel.evidence.filter((item) => item.field === b).length)[0];
+          const evidence = field
+            ? addIntelEvidence(campaign, state, intelDefinition, field, task.memberId, definition.name, "comrade_report", `${task.id}:${field}`)
+            : null;
+          task.report = evidence
+            ? `${definition.name}交叉核对了“${intelDefinition.title}”中的一项记录。`
+            : `${definition.name}没有找到可进一步核对的新来源。`;
         }
       }
       if (task.approach === "urgent") state.network.exposure = clamp(state.network.exposure + state.difficulty.enemyResponseSpeed);
@@ -840,7 +859,7 @@ function resolveDialogue(
   state: WorldState,
   definition: CampaignDefinition["characters"][number],
   action: Extract<GameAction, { type: "dialogue" }>,
-): { intelId: string; field: string | null; verified: boolean } | null {
+): { intelId: string; field: string; verified: boolean; assessment: string } | null {
   const character = state.characters[definition.id];
   const toneTrust = action.tone === "friendly" ? 3 : action.tone === "threatening" ? -4 : action.tone === "formal" ? 1 : 0;
   const pressure = action.goal === "apply_pressure" ? 7 : action.tone === "threatening" ? 5 : 0;
@@ -861,17 +880,73 @@ function resolveDialogue(
   const canShare = character.familiarity >= 5 && character.privateTrust >= 2 && action.goal === "request_information";
   if (!canShare && action.goal !== "verify_intel") return null;
   const candidate = action.goal === "verify_intel"
-    ? campaign.intel.find((item) => item.sourceCharacterIds.includes(definition.id) && state.intel[item.id].knownFields.length > 0 && !state.intel[item.id].collectedSourceIds.includes(definition.id))
+    ? campaign.intel.find((item) => (!action.targetIntelId || item.id === action.targetIntelId)
+      && item.sourceCharacterIds.includes(definition.id)
+      && state.intel[item.id].knownFields.some((field) => !state.intel[item.id].evidence.some((evidence) => evidence.field === field && evidence.sourceId === definition.id)))
     : campaign.intel.find((item) => item.sourceCharacterIds.includes(definition.id) && state.intel[item.id].knownFields.length < item.requiredFields.length);
   if (!candidate) return null;
   const intel = state.intel[candidate.id];
   const verified = action.goal === "verify_intel";
-  const field = verified ? null : candidate.requiredFields[intel.knownFields.length];
-  if (field) intel.knownFields = [...intel.knownFields, field];
+  const field = verified
+    ? [...intel.knownFields].sort((a, b) => intel.evidence.filter((item) => item.field === a).length - intel.evidence.filter((item) => item.field === b).length)
+      .find((item) => !intel.evidence.some((evidence) => evidence.field === item && evidence.sourceId === definition.id))
+    : candidate.requiredFields[intel.knownFields.length];
+  if (!field) return null;
+  if (!intel.knownFields.includes(field)) {
+    intel.knownFields = [...intel.knownFields, field];
+  }
   intel.collectedSourceIds = [...new Set([...intel.collectedSourceIds, definition.id])];
-  const relationBonus = Math.max(0, character.privateTrust) / 100;
-  intel.confidence = clamp(intel.confidence + 0.22 * state.difficulty.intelClarity + 0.12 + relationBonus * 0.12, 0, 1);
-  return { intelId: candidate.id, field, verified };
+  const evidence = addIntelEvidence(campaign, state, candidate, field, definition.id, definition.name, "testimony", `${action.idempotencyKey}:${candidate.id}:${field}`);
+  return evidence ? { intelId: candidate.id, field, verified, assessment: evidence.assessment } : null;
+}
+
+function addIntelEvidence(
+  campaign: CampaignDefinition,
+  state: WorldState,
+  definition: CampaignDefinition["intel"][number],
+  field: string,
+  sourceId: string,
+  sourceLabel: string,
+  sourceType: IntelEvidenceSourceType,
+  evidenceId: string,
+  adjustConfidence = true,
+) {
+  const intel = state.intel[definition.id];
+  if (!intel || intel.evidence.some((item) => item.field === field && item.sourceId === sourceId)) return null;
+  const fieldEvidence = intel.evidence.filter((item) => item.field === field);
+  const upstreamSourceId = definition.sourceOrigins?.[sourceId] ?? sourceId;
+  const hasSameUpstream = fieldEvidence.some((item) => item.upstreamSourceId === upstreamSourceId);
+  const hasIndependentSource = fieldEvidence.some((item) => item.upstreamSourceId !== upstreamSourceId);
+  const sourceIndex = definition.sourceCharacterIds.indexOf(sourceId);
+  const assessment = definition.truth === "partial" && sourceIndex > 0 && hasIndependentSource
+    ? "contradicts" as const
+    : hasSameUpstream
+      ? "dependent" as const
+      : hasIndependentSource
+        ? "corroborates" as const
+        : "unverified" as const;
+  const fieldLabel = definition.fieldLabels?.[field] ?? field;
+  const summary = assessment === "corroborates"
+    ? `${sourceLabel}从独立来源印证了“${fieldLabel}”。`
+    : assessment === "contradicts"
+      ? `${sourceLabel}对“${fieldLabel}”给出了与现有记录不一致的说法。`
+      : assessment === "dependent"
+        ? `${sourceLabel}提到“${fieldLabel}”，但线索与已有记录来自同一上游。`
+        : `${sourceLabel}提供了关于“${fieldLabel}”的线索，尚缺独立来源核验。`;
+  const evidence = { id: evidenceId, field, sourceId, sourceLabel, sourceType, upstreamSourceId, assessment, summary, collectedAt: state.currentTime };
+  intel.evidence.push(evidence);
+  intel.evidence = intel.evidence.slice(-80);
+  if (adjustConfidence) {
+    const delta = assessment === "corroborates"
+      ? 0.25 * state.difficulty.intelClarity + 0.15
+      : assessment === "dependent"
+        ? 0.08
+        : assessment === "contradicts"
+          ? -0.12 * state.difficulty.deceptionFrequency
+          : 0.2 * state.difficulty.intelClarity + 0.08;
+    intel.confidence = clamp(intel.confidence + delta, 0, 1);
+  }
+  return evidence;
 }
 
 function recruitmentTestMinutes(testType: RecruitmentTestType): number {

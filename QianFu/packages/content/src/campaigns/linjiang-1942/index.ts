@@ -84,4 +84,27 @@ const draft: CampaignDefinition = {
   objectives: [{ id: "confirm-radio-shipment", required: true, deadline: "1942-05-15T22:00:00.000Z", requiredIntelIds: ["shipment-time", "shipment-place", "shipment-cargo"], minimumConfidence: 0.7, acceptedDeliveryMethods: ["radio", "courier"], recipientId: "organization" }],
 };
 
+const fieldLabels: Record<string, Record<string, string>> = {
+  "shipment-time": { date: "运输日期", hour: "具体时刻" },
+  "shipment-place": { dock: "装卸码头", warehouse: "中转仓库" },
+  "shipment-cargo": { category: "货物类别", quantity: "货物数量" },
+  "vehicle-route": { origin: "车辆起点", checkpoint: "途经检查站" },
+  "escort-list": { leader: "押运负责人", unit: "押运单位" },
+  "radio-window": { date: "收报日期", start: "窗口开始", duration: "窗口时长" },
+  "false-warehouse": { warehouse: "仓库编号" },
+  "archive-audit": { scope: "核查范围", investigator: "调查负责人" },
+  "hotel-meeting": { room: "会面房间", attendees: "出席人员" },
+  "inspection-order": { checkpoint: "封锁检查站", start: "封锁时间" },
+};
+
+const sharedSourceOrigins: Record<string, Record<string, string>> = {
+  "hotel-meeting": { "luo-boan": "hotel-guest-register", "chen-jingwen": "hotel-guest-register" },
+  "inspection-order": { "lin-ruolan": "security-circular", "han-shijie": "security-circular" },
+};
+
+for (const intel of draft.intel) {
+  intel.fieldLabels = fieldLabels[intel.id];
+  intel.sourceOrigins = sharedSourceOrigins[intel.id];
+}
+
 export const LINJIANG_1942 = assertValidCampaign(draft);

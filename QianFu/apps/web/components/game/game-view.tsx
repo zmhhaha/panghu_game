@@ -50,6 +50,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const [selectedNpc, setSelectedNpc] = useState("");
   const [goal, setGoal] = useState<DialogueGoal>("small_talk");
   const [tone, setTone] = useState<DialogueTone>("neutral");
+  const [targetIntelId, setTargetIntelId] = useState("");
 
   const load = async () => {
     try {
@@ -84,6 +85,13 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
     }
   };
 
+  useEffect(() => {
+    if (goal !== "verify_intel") return;
+    const character = context?.characters.find((item) => item.id === selectedNpc);
+    const options = context?.intel.filter((intel) => character?.verifiableIntelIds.includes(intel.id)) ?? [];
+    setTargetIntelId((current) => options.some((intel) => intel.id === current) ? current : options[0]?.id ?? "");
+  }, [goal, selectedNpc, context]);
+
   if (!state || !context) {
     return <main className="flex min-h-screen items-center justify-center bg-ink text-sm text-muted">
       {error || "正在读取战役档案..."}
@@ -93,6 +101,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const selectedGoal = goals.find((item) => item.id === goal) ?? goals[0];
   const currentLocation = context.locations.find((location) => location.id === state.currentLocationId)?.name ?? "未知地点";
   const selectedCharacter = context.characters.find((character) => character.id === selectedNpc);
+  const verifiableIntel = context.intel.filter((intel) => selectedCharacter?.verifiableIntelIds.includes(intel.id));
   const selectedCandidate = context.recruitmentCandidates.find((candidate) => candidate.id === selectedNpc);
   const formattedTime = new Intl.DateTimeFormat("zh-CN", {
     month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
@@ -119,6 +128,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
     if (!selectedNpc) return;
     void act({
       type: "dialogue_start", targetCharacterId: selectedNpc, goal, tone,
+      targetIntelId: goal === "verify_intel" ? targetIntelId : undefined,
       allocatedMinutes: selectedGoal.duration, durationMinutes: 0, idempotencyKey: crypto.randomUUID(),
     });
   };
@@ -189,9 +199,15 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
                 </select>
               </label>
             </div>
+            {goal === "verify_intel" && <label className="mt-3 block text-xs text-muted">核验哪份情报
+              <select value={targetIntelId} onChange={(event) => setTargetIntelId(event.target.value)} className="mt-2 h-11 w-full border border-line bg-panel px-3 text-sm text-paper outline-none focus:border-copper">
+                <option value="">请选择已掌握且对方可能知情的情报</option>
+                {verifiableIntel.map((intel) => <option key={intel.id} value={intel.id}>{intel.title}</option>)}
+              </select>
+            </label>}
             <div className="mt-4 flex flex-col gap-3 border-l-2 border-copper bg-copper/[0.06] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div><p className="text-sm">{selectedGoal.label}</p><p className="mt-1 text-xs text-muted">{selectedGoal.description}。每轮 2 分钟，外部事件每 10 分钟结算。</p></div>
-              <Button className="shrink-0" disabled={busy || state.status !== "active"} onClick={startDialogue}><MessageSquare size={15} />进入对话</Button>
+              <Button className="shrink-0" disabled={busy || state.status !== "active" || (goal === "verify_intel" && !targetIntelId)} onClick={startDialogue}><MessageSquare size={15} />进入对话</Button>
             </div>
           </div> : <p className="mt-4 text-sm text-muted">先从现场人物中选择交谈对象。</p>}
         </div>

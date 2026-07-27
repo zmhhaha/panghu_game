@@ -1,9 +1,10 @@
-import type { CharacterState, GameEvent, IntelState, WorldState } from "./types.js";
+import type { CharacterState, GameEvent, IntelEvidence, IntelState, WorldState } from "./types.js";
 
 export type PublicCharacterState = Pick<CharacterState, "id" | "templateId" | "locationId" | "recruited" | "exposed" | "agentTier">;
+export type PublicIntelEvidence = Omit<IntelEvidence, "sourceId" | "upstreamSourceId">;
 export type PublicWorldState = Omit<WorldState, "characters" | "intel" | "dialogueMemories" | "investigation"> & {
   characters: Record<string, PublicCharacterState>;
-  intel: Record<string, Pick<IntelState, "id" | "knownFields" | "confidence" | "deliveredFields" | "deliveredAt" | "deliveryMethod">>;
+  intel: Record<string, Pick<IntelState, "id" | "knownFields" | "confidence" | "deliveredFields" | "deliveredAt" | "deliveryMethod"> & { evidence: PublicIntelEvidence[] }>;
   investigation: Pick<WorldState["investigation"], "pressure" | "locationHeat" | "surveillanceLocationIds" | "lastActionAt">;
 };
 
@@ -25,6 +26,7 @@ export function toPublicWorldState(state: WorldState): PublicWorldState {
       id: intel.id,
       knownFields: intel.knownFields,
       confidence: intel.confidence,
+      evidence: (intel.evidence ?? []).map(({ sourceId: _sourceId, upstreamSourceId: _upstreamSourceId, ...evidence }) => structuredClone(evidence)),
       deliveredFields: intel.deliveredFields ?? (intel.deliveredAt ? [...intel.knownFields] : []),
       deliveredAt: intel.deliveredAt,
       deliveryMethod: intel.deliveryMethod,

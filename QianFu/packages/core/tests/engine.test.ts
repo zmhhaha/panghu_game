@@ -156,6 +156,74 @@ describe("CampaignEngine", () => {
   });
 });
 
+describe("field-level intelligence evidence", () => {
+  const evidenceCampaign: CampaignDefinition = {
+    ...campaign,
+    characters: ["source-a", "source-b", "source-c"].map((id) => ({
+      id, name: id.toUpperCase(), publicIdentity: "Clerk", hiddenAlignment: "neutral" as const,
+      initialLocationId: "office", recruitable: false,
+      schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
+      reliability: { loyalty: 60, discipline: 60, pressureResistance: 60, courage: 60, competence: 60 },
+    })),
+    intel: [{
+      id: "shipment", title: "Shipment", truth: "true", requiredFields: ["time"], fieldLabels: { time: "Departure time" },
+      sourceCharacterIds: ["source-a", "source-b", "source-c"],
+      sourceOrigins: { "source-a": "shared-register", "source-b": "shared-register" },
+      expiresAt: "1942-05-13T20:00:00.000Z",
+    }],
+  };
+
+  function preparedState(gameId: string, definition = evidenceCampaign) {
+    const state = createInitialWorld(definition, gameId, "user-1");
+    for (const character of Object.values(state.characters)) {
+      character.familiarity = 10;
+      character.privateTrust = 10;
+    }
+    return state;
+  }
+
+  it("distinguishes independent corroboration from repetition of the same upstream source", () => {
+    const engine = new CampaignEngine(evidenceCampaign, preparedState("evidence-chain"));
+    engine.execute({ type: "dialogue", targetCharacterId: "source-a", goal: "request_information", tone: "neutral", playerText: "When?", durationMinutes: 30, idempotencyKey: "evidence-first" });
+    engine.execute({ type: "dialogue", targetCharacterId: "source-b", goal: "verify_intel", targetIntelId: "shipment", tone: "neutral", playerText: "Can you confirm?", durationMinutes: 20, idempotencyKey: "evidence-dependent" });
+    engine.execute({ type: "dialogue", targetCharacterId: "source-c", goal: "verify_intel", targetIntelId: "shipment", tone: "neutral", playerText: "What did you see?", durationMinutes: 20, idempotencyKey: "evidence-independent" });
+    const evidence = engine.getState().intel.shipment.evidence;
+    expect(evidence.map((item) => item.assessment)).toEqual(["unverified", "dependent", "corroborates"]);
+    expect(engine.getState().intel.shipment.knownFields).toEqual(["time"]);
+    const publicEvidence = toPublicWorldState(engine.getState()).intel.shipment.evidence;
+    expect(publicEvidence).toHaveLength(3);
+    expect(publicEvidence[0]).not.toHaveProperty("sourceId");
+    expect(publicEvidence[0]).not.toHaveProperty("upstreamSourceId");
+  });
+
+  it("records a contradiction when an independent source disputes partial intelligence", () => {
+    const partialCampaign: CampaignDefinition = {
+      ...evidenceCampaign,
+      intel: [{ ...evidenceCampaign.intel[0], truth: "partial" }],
+    };
+    const engine = new CampaignEngine(partialCampaign, preparedState("evidence-conflict", partialCampaign));
+    engine.execute({ type: "dialogue", targetCharacterId: "source-a", goal: "request_information", tone: "neutral", playerText: "When?", durationMinutes: 30, idempotencyKey: "conflict-first" });
+    engine.execute({ type: "dialogue", targetCharacterId: "source-c", goal: "verify_intel", targetIntelId: "shipment", tone: "neutral", playerText: "Can you verify it?", durationMinutes: 20, idempotencyKey: "conflict-second" });
+    expect(engine.getState().intel.shipment.evidence.at(-1)?.assessment).toBe("contradicts");
+  });
+
+  it("requires and preserves a specific intelligence target for verification dialogue", () => {
+    const state = preparedState("targeted-verification");
+    state.intel.shipment.knownFields = ["time"];
+    const engine = new CampaignEngine(evidenceCampaign, state);
+    expect(() => engine.execute({ type: "dialogue_start", targetCharacterId: "source-a", goal: "verify_intel", tone: "formal", allocatedMinutes: 20, durationMinutes: 0, idempotencyKey: "verify-without-target" })).toThrow("必须选择具体情报");
+    const started = engine.execute({ type: "dialogue_start", targetCharacterId: "source-a", goal: "verify_intel", targetIntelId: "shipment", tone: "formal", allocatedMinutes: 20, durationMinutes: 0, idempotencyKey: "verify-with-target" });
+    expect(started.state.activeDialogue?.targetIntelId).toBe("shipment");
+  });
+
+  it("migrates old saves without evidence records", () => {
+    const state = createInitialWorld(evidenceCampaign, "legacy-evidence", "user-1");
+    delete (state.intel.shipment as Partial<typeof state.intel[string]>).evidence;
+    expect(new CampaignEngine(evidenceCampaign, state).getState().intel.shipment.evidence).toEqual([]);
+    expect(toPublicWorldState(state).intel.shipment.evidence).toEqual([]);
+  });
+});
+
 describe("enemy investigation", () => {
   const investigationCampaign: CampaignDefinition = {
     ...campaign,

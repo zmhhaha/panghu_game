@@ -12,7 +12,7 @@ export const gamesRouter = Router();
 const difficultySchema = z.enum(["story", "undercover", "iron_curtain"]);
 const duration = z.number().int().nonnegative().multipleOf(10);
 const actionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("dialogue_start"), targetCharacterId: z.string().min(1), goal: z.enum(["small_talk", "build_trust", "probe_attitude", "request_information", "verify_intel", "apply_pressure", "recruit_probe", "long_talk"]), tone: z.enum(["neutral", "friendly", "formal", "urgent", "threatening"]), allocatedMinutes: z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(60)]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("dialogue_start"), targetCharacterId: z.string().min(1), goal: z.enum(["small_talk", "build_trust", "probe_attitude", "request_information", "verify_intel", "apply_pressure", "recruit_probe", "long_talk"]), tone: z.enum(["neutral", "friendly", "formal", "urgent", "threatening"]), targetIntelId: z.string().min(1).optional(), allocatedMinutes: z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(60)]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("dialogue_turn"), sessionId: z.string().min(8), playerText: z.string().trim().min(1).max(DIALOGUE_MAX_TEXT_LENGTH), durationMinutes: z.literal(2), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("dialogue_end"), sessionId: z.string().min(8), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("move"), destinationId: z.string().min(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
@@ -40,6 +40,7 @@ const actionSchema = z.discriminatedUnion("type", [
     goal: z.enum(["small_talk", "build_trust", "probe_attitude", "request_information", "verify_intel", "apply_pressure", "recruit_probe", "long_talk"]),
     tone: z.enum(["neutral", "friendly", "formal", "urgent", "threatening"]),
     playerText: z.string().trim().min(1).max(DIALOGUE_MAX_TEXT_LENGTH),
+    targetIntelId: z.string().min(1).optional(),
     durationMinutes: z.number().int().positive().multipleOf(10).max(60),
     idempotencyKey: z.string().min(8).max(128),
   }),
@@ -72,7 +73,10 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
       .filter((character) => state.characters[character.id]?.locationId === state.currentLocationId)
       .map((character) => {
         const known = state.knownCharacterIds?.includes(character.id) ?? false;
-        return { id: character.id, name: known ? character.name : "？？？", publicIdentity: known ? character.publicIdentity : "尚未认识", recruitable: known && character.recruitable, known };
+        const verifiableIntelIds = LINJIANG_1942.intel
+          .filter((intel) => intel.sourceCharacterIds.includes(character.id) && (state.intel[intel.id]?.knownFields.length ?? 0) > 0)
+          .map((intel) => intel.id);
+        return { id: character.id, name: known ? character.name : "？？？", publicIdentity: known ? character.publicIdentity : "尚未认识", recruitable: known && character.recruitable, known, verifiableIntelIds };
       });
     res.json({
       campaign: { id: LINJIANG_1942.id, version: LINJIANG_1942.version, name: LINJIANG_1942.name },
@@ -108,7 +112,7 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
             canRecruit: !candidate.recruited && rapportReady && testsReady && candidate.locationId === state.currentLocationId,
           };
         }),
-      intel: LINJIANG_1942.intel.map(({ id, title, requiredFields }) => ({ id, title, requiredFields })),
+      intel: LINJIANG_1942.intel.map(({ id, title, requiredFields, fieldLabels }) => ({ id, title, requiredFields, fieldLabels: fieldLabels ?? {} })),
     });
   } catch (error) { next(error); }
 });

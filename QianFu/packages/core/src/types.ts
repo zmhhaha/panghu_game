@@ -99,6 +99,7 @@ export interface DialogueSession {
   characterId: string;
   goal: DialogueGoal;
   tone: DialogueTone;
+  targetIntelId: string | null;
   allocatedMinutes: number;
   elapsedMinutes: number;
   maxTurns: number;
@@ -112,7 +113,9 @@ export interface IntelDefinition {
   title: string;
   truth: "true" | "false" | "partial";
   requiredFields: string[];
+  fieldLabels?: Record<string, string>;
   sourceCharacterIds: string[];
+  sourceOrigins?: Record<string, string>;
   expiresAt: string;
 }
 
@@ -160,9 +163,25 @@ export interface IntelState {
   knownFields: string[];
   confidence: number;
   collectedSourceIds: string[];
+  evidence: IntelEvidence[];
   deliveredFields: string[];
   deliveredAt: string | null;
   deliveryMethod: string | null;
+}
+
+export type IntelEvidenceAssessment = "unverified" | "corroborates" | "contradicts" | "dependent";
+export type IntelEvidenceSourceType = "testimony" | "document" | "observation" | "comrade_report";
+
+export interface IntelEvidence {
+  id: string;
+  field: string;
+  sourceId: string;
+  sourceLabel: string;
+  sourceType: IntelEvidenceSourceType;
+  upstreamSourceId: string;
+  assessment: IntelEvidenceAssessment;
+  summary: string;
+  collectedAt: string;
 }
 
 export type RadioMessageFormat = "compressed" | "full";
@@ -277,6 +296,12 @@ export interface CampaignReportIntelItem {
   deliveredAt: string | null;
   deliveryMethod: string | null;
   actualTruth?: IntelDefinition["truth"];
+  evidenceSummary: {
+    totalRecords: number;
+    corroboratedFields: number;
+    conflictingFields: number;
+    dependentRecords: number;
+  };
 }
 
 export interface CampaignReportCharacterItem {
@@ -428,6 +453,7 @@ export interface DialogueAction extends ActionBase {
   goal: DialogueGoal;
   tone: DialogueTone;
   playerText: string;
+  targetIntelId?: string;
   agentOutcome?: {
     visibleSpeech: string;
     privateIntent: string;
@@ -442,6 +468,7 @@ export interface DialogueStartAction extends ActionBase {
   goal: DialogueGoal;
   tone: DialogueTone;
   allocatedMinutes: 10 | 20 | 30 | 60;
+  targetIntelId?: string;
 }
 
 export interface DialogueTurnAction extends ActionBase {
