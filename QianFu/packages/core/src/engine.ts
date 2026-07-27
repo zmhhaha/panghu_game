@@ -5,14 +5,16 @@ import type {
   GameEvent, IntelEvidenceSourceType, IntelState, RadioMessageFormat, RecruitmentEvidenceResult, RecruitmentTestType, ScoreBreakdown, WorldState,
 } from "./types.js";
 import { DIFFICULTIES } from "./difficulties.js";
+import { getCoverProfile } from "./cover-profiles.js";
 
 const addMinutes = (iso: string, minutes: number) =>
   new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
 
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value));
 
-function createInitialCoverState(): WorldState["cover"] {
+function createInitialCoverState(profileId: WorldState["cover"]["profileId"] = "archive_clerk"): WorldState["cover"] {
   return {
+    profileId,
     workStatus: "awaiting_shift",
     credibility: 65,
     supervisorSuspicion: 0,
@@ -32,7 +34,10 @@ export function createInitialWorld(
   gameInstanceId: string,
   ownerUserId: string,
   difficultyId: keyof typeof DIFFICULTIES = "undercover",
+  coverProfileId: WorldState["cover"]["profileId"] = "archive_clerk",
 ): WorldState {
+  const coverProfile = getCoverProfile(coverProfileId);
+  const profileApplies = campaign.locations.some((location) => location.id === coverProfile.startingLocationId);
   const characters = Object.fromEntries(campaign.characters.map((character): [string, CharacterState] => [
     character.id,
     {
@@ -69,16 +74,16 @@ export function createInitialWorld(
     engineVersion: campaign.engineVersion,
     difficulty: DIFFICULTIES[difficultyId],
     currentTime: campaign.startTime,
-    currentLocationId: campaign.locations[0]?.id ?? "",
-    discoveredLocationIds: campaign.locations.slice(0, 3).map((location) => location.id),
-    knownCharacterIds: [],
+    currentLocationId: profileApplies ? coverProfile.startingLocationId : campaign.locations[0]?.id ?? "",
+    discoveredLocationIds: profileApplies ? [coverProfile.startingLocationId] : campaign.locations.slice(0, 3).map((location) => location.id),
+    knownCharacterIds: profileApplies ? coverProfile.initialContactCharacterIds.filter((id) => characters[id]) : Object.keys(characters),
     status: "active",
     stateVersion: 0,
     lastEventSeq: 0,
     playerEnergy: 100,
     playerStress: 0,
     personalSuspicion: 0,
-    cover: createInitialCoverState(),
+    cover: createInitialCoverState(coverProfile.id),
     characters,
     dialogueMemories,
     activeDialogue: null,
@@ -118,8 +123,10 @@ export class CampaignEngine {
       characterId: character.id, summary: "尚未与玩家交谈。", lastPrivateIntent: null, turns: [], lastGoal: null, interactionCount: 0,
     }]));
     this.state.activeDialogue ??= null;
+    this.state.cover ??= createInitialCoverState();
+    this.state.cover.profileId ??= "archive_clerk";
     if (this.state.activeDialogue) this.state.activeDialogue.targetIntelId ??= null;
-    this.state.discoveredLocationIds ??= campaign.locations.slice(0, 3).map((location) => location.id);
+    this.state.discoveredLocationIds ??= [this.state.currentLocationId];
     this.state.knownCharacterIds ??= [];
     this.state.investigation ??= {
       pressure: 0,
@@ -199,15 +206,12 @@ export class CampaignEngine {
       case "dialogue_start": {
         const target = next.characters[action.targetCharacterId];
         if (!target || target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
+        if (!next.knownCharacterIds.includes(action.targetCharacterId)) throw new Error("尚未获得此人的引介或公开身份线索，不能直接攀谈");
         if (next.activeDialogue?.status === "active") throw new Error("Another dialogue is already active");
         if (action.goal === "verify_intel") {
           if (!action.targetIntelId) throw new Error("核验对话必须选择具体情报");
           const intelDefinition = this.campaign.intel.find((item) => item.id === action.targetIntelId);
           if (!intelDefinition?.sourceCharacterIds.includes(action.targetCharacterId) || !next.intel[action.targetIntelId]?.knownFields.length) throw new Error("该人物无法核验所选情报");
-        }
-        if (!next.knownCharacterIds.includes(action.targetCharacterId)) {
-          next.knownCharacterIds.push(action.targetCharacterId);
-          append("character.introduced", { characterId: action.targetCharacterId });
         }
         const minTurns = action.allocatedMinutes / 2;
         next.activeDialogue = { id: action.idempotencyKey, characterId: action.targetCharacterId, goal: action.goal, tone: action.tone, targetIntelId: action.targetIntelId ?? null, allocatedMinutes: action.allocatedMinutes, elapsedMinutes: 0, maxTurns: minTurns, turnCount: 0, status: "active", transcript: [] };
@@ -276,10 +280,6 @@ export class CampaignEngine {
         if (!target) throw new Error("Unknown character");
         if (target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
         target.familiarity = clamp(target.familiarity + 2);
-        if (!next.knownCharacterIds.includes(target.id)) {
-          next.knownCharacterIds.push(target.id);
-          append("character.identified", { characterId: target.id });
-        }
         next.personalSuspicion = clamp(next.personalSuspicion + 1 * next.difficulty.enemyResponseSpeed);
         recordInvestigationEvidence(next, "covert_observation", next.currentLocationId, 6, append);
         append("character.observed", { characterId: target.id });
@@ -368,10 +368,7 @@ export class CampaignEngine {
         const definition = this.campaign.characters.find((item) => item.id === action.targetCharacterId);
         if (!target || !definition) throw new Error("Unknown character");
         if (target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
-        if (!next.knownCharacterIds.includes(action.targetCharacterId)) {
-          next.knownCharacterIds.push(action.targetCharacterId);
-          append("character.introduced", { characterId: action.targetCharacterId });
-        }
+        if (!next.knownCharacterIds.includes(action.targetCharacterId)) throw new Error("尚未获得此人的引介或公开身份线索，不能直接攀谈");
         const textLimit = DIALOGUE_TEXT_LIMITS[action.goal];
         if (action.playerText.trim().length === 0) throw new Error("对话内容不能为空");
         if (action.playerText.length > textLimit) throw new Error(`“${action.goal}”每轮发言最多 ${textLimit} 个字符`);
@@ -497,8 +494,10 @@ export class CampaignEngine {
         break;
       }
       case "cover_work": {
-        if (next.currentLocationId !== "archive-office") throw new Error("公开工作必须在机要楼档案科完成");
-        if (!isCoverWorkHours(next.currentTime)) throw new Error("当前不在公开工作时段");
+        const profile = getCoverProfile(next.cover.profileId);
+        if (!profile.workLocationIds.includes(next.currentLocationId)) throw new Error(`公开工作需要在${profile.title}的活动范围内完成`);
+        if (!isCoverWorkHours(next.currentTime, next.cover.profileId)) throw new Error("当前不在公开工作时段");
+        if (!profile.workKinds.includes(action.workKind)) throw new Error("该工作不属于当前公开身份");
         if (next.cover.leaveUntil && new Date(next.cover.leaveUntil) >= new Date(next.currentTime)) throw new Error("请假期间不能安排公开工作");
         const requiredDuration = coverWorkMinutes(action.workKind);
         if (action.durationMinutes !== requiredDuration) throw new Error("公开工作耗时不符合规则");
@@ -509,7 +508,7 @@ export class CampaignEngine {
         next.cover.workStatus = "working";
         next.cover.consecutiveAbsences = 0;
         next.cover.lastWorkAt = addMinutes(next.currentTime, action.durationMinutes);
-        const benefit = action.workKind === "duty_shift" ? 10 : action.workKind === "file_sorting" ? 8 : 6;
+        const benefit = coverWorkBenefit(action.workKind);
         next.cover.credibility = clamp(next.cover.credibility + benefit);
         next.cover.supervisorSuspicion = clamp(next.cover.supervisorSuspicion - (action.workKind === "submit_report" ? 8 : 4));
         next.personalSuspicion = clamp(next.personalSuspicion - 1);
@@ -520,11 +519,12 @@ export class CampaignEngine {
         break;
       }
       case "request_leave": {
-        if (next.currentLocationId !== "archive-office") throw new Error("请假需要在机要楼档案科办理");
-        if (!isCoverWorkHours(next.currentTime)) throw new Error("当前无法办理请假");
+        const profile = getCoverProfile(next.cover.profileId);
+        if (!profile.workLocationIds.includes(next.currentLocationId)) throw new Error("需要在公开身份的活动范围内安排请假");
+        if (!isCoverWorkHours(next.currentTime, next.cover.profileId)) throw new Error("当前无法办理请假");
         if (action.durationMinutes !== 10) throw new Error("办理请假需要 10 分钟");
         if (next.cover.leaveUntil && new Date(next.cover.leaveUntil) >= new Date(next.currentTime)) throw new Error("当前已有生效中的请假记录");
-        next.cover.leaveUntil = endOfCoverShift(next.currentTime);
+        next.cover.leaveUntil = endOfCoverShift(next.currentTime, next.cover.profileId);
         next.cover.leaveReason = action.reason;
         next.cover.leaveCount += 1;
         next.cover.workStatus = "on_leave";
@@ -632,10 +632,28 @@ function summarizeMemory(memory: NonNullable<WorldState["dialogueMemories"][stri
 }
 
 function unlockNextLocation(campaign: CampaignDefinition, state: WorldState, append: (type: string, payload: unknown) => void) {
-  const nextLocation = campaign.locations.find((location) => !state.discoveredLocationIds.includes(location.id));
-  if (!nextLocation) return;
-  state.discoveredLocationIds.push(nextLocation.id);
-  append("location.discovered", { locationId: nextLocation.id });
+  const lastSpeaker = state.activeDialogue?.characterId;
+  const leads: Record<string, { locations: string[]; characters: string[] }> = {
+    "chen-jingwen": { locations: ["radio-office"], characters: ["zhou-qiming"] },
+    "zhou-qiming": { locations: ["wu-clock-shop"], characters: ["old-wu"] },
+    "lin-ruolan": { locations: ["jianghai-hotel"], characters: ["luo-boan"] },
+    "luo-boan": { locations: ["third-dock"], characters: ["zhao-fusheng"] },
+    "zhao-fusheng": { locations: ["third-dock"], characters: [] },
+    "shen-manqiu": { locations: ["jianghai-hotel"], characters: [] },
+    "old-wu": { locations: ["wu-clock-shop"], characters: [] },
+  };
+  const lead = lastSpeaker ? leads[lastSpeaker] : undefined;
+  if (!lead) return;
+  for (const locationId of lead.locations) {
+    if (!campaign.locations.some((location) => location.id === locationId) || state.discoveredLocationIds.includes(locationId)) continue;
+    state.discoveredLocationIds.push(locationId);
+    append("location.discovered", { locationId, sourceCharacterId: lastSpeaker });
+  }
+  for (const characterId of lead.characters) {
+    if (!state.characters[characterId] || state.knownCharacterIds.includes(characterId)) continue;
+    state.knownCharacterIds.push(characterId);
+    append("character.introduced", { characterId, sourceCharacterId: lastSpeaker });
+  }
 }
 
 function comradeTaskMinutes(
@@ -900,6 +918,7 @@ function advanceEnemyInvestigation(state: WorldState, append: (type: string, pay
 
 function advanceCoverIdentity(state: WorldState, append: (type: string, payload: unknown) => void): string[] {
   const cover = state.cover;
+  const profile = getCoverProfile(cover.profileId);
   const date = coverDate(state.currentTime);
   const minute = minuteOfDay(state.currentTime);
   const leaveActive = Boolean(cover.leaveUntil && new Date(cover.leaveUntil) >= new Date(state.currentTime));
@@ -908,7 +927,7 @@ function advanceCoverIdentity(state: WorldState, append: (type: string, payload:
     cover.leaveReason = null;
   }
 
-  if (minute >= 17 * 60 && cover.lastAttendanceEvaluatedDate !== date) {
+  if (profile.workHours && minute >= profile.workHours.endMinute && cover.lastAttendanceEvaluatedDate !== date) {
     cover.lastAttendanceEvaluatedDate = date;
     if (!cover.completedWorkDates.includes(date) && !leaveActive) {
       cover.workStatus = "unexcused_absence";
@@ -934,9 +953,9 @@ function advanceCoverIdentity(state: WorldState, append: (type: string, payload:
   }
 
   if (leaveActive) cover.workStatus = "on_leave";
-  else if (cover.completedWorkDates.includes(date) && isCoverWorkHours(state.currentTime)) cover.workStatus = "working";
-  else if (minute >= 10 * 60 && minute < 17 * 60 && !cover.completedWorkDates.includes(date)) cover.workStatus = "unexcused_absence";
-  else if (minute < 17 * 60) cover.workStatus = "awaiting_shift";
+  else if (cover.completedWorkDates.includes(date) && isCoverWorkHours(state.currentTime, cover.profileId)) cover.workStatus = "working";
+  else if (profile.workHours && minute >= profile.workHours.startMinute + 120 && minute < profile.workHours.endMinute && !cover.completedWorkDates.includes(date)) cover.workStatus = "unexcused_absence";
+  else if (!profile.workHours || minute < profile.workHours.endMinute) cover.workStatus = "awaiting_shift";
   else if (cover.workStatus === "on_leave") cover.workStatus = "awaiting_shift";
   return [];
 }
@@ -950,20 +969,34 @@ function coverDate(iso: string) {
   return iso.slice(0, 10);
 }
 
-function isCoverWorkHours(iso: string) {
+function isCoverWorkHours(iso: string, profileId: WorldState["cover"]["profileId"] = "archive_clerk") {
   const minute = minuteOfDay(iso);
-  return minute >= 8 * 60 && minute < 17 * 60;
+  const hours = getCoverProfile(profileId).workHours;
+  return Boolean(hours && minute >= hours.startMinute && minute < hours.endMinute);
 }
 
-function endOfCoverShift(iso: string) {
-  return `${coverDate(iso)}T17:00:00.000Z`;
+function endOfCoverShift(iso: string, profileId: WorldState["cover"]["profileId"]) {
+  const hour = Math.floor((getCoverProfile(profileId).workHours?.endMinute ?? 17 * 60) / 60);
+  return `${coverDate(iso)}T${String(hour).padStart(2, "0")}:00:00.000Z`;
 }
 
 function coverWorkMinutes(kind: Extract<GameAction, { type: "cover_work" }>["workKind"]) {
-  return kind === "file_sorting" ? 60 : kind === "duty_shift" ? 120 : 30;
+  if (kind === "duty_shift" || kind === "visit_clients") return 120;
+  if (kind === "file_sorting" || kind === "settle_accounts" || kind === "street_research") return 60;
+  return 30;
+}
+
+function coverWorkBenefit(kind: Extract<GameAction, { type: "cover_work" }>["workKind"]) {
+  return kind === "duty_shift" || kind === "visit_clients" ? 10 : kind === "file_sorting" || kind === "settle_accounts" || kind === "street_research" ? 8 : 6;
 }
 
 function coverWorkSummary(kind: Extract<GameAction, { type: "cover_work" }>["workKind"]) {
+  if (kind === "settle_accounts") return "You reconciled invoices and stock ledgers, leaving a credible trail of trade.";
+  if (kind === "visit_clients") return "You made a round of customer visits, making your business movements easy to account for.";
+  if (kind === "stock_check") return "You checked stock and delivery notes, giving today's route a plausible public purpose.";
+  if (kind === "submit_column") return "You submitted a signed column; the editorial desk now has a record of your work.";
+  if (kind === "street_research") return "You completed street research, with notes and witnesses to account for your movements.";
+  if (kind === "proofread_copy") return "You proofread a batch of copy under the editorial lamps, leaving a visible work record.";
   if (kind === "file_sorting") return "你按公开流程整理了档案，留下了一整段可被核对的工作记录。";
   if (kind === "duty_shift") return "你完成了值班，几位同事都看见你按时留在岗位上。";
   return "你提交了例行报告，上级对你的工作记录暂时没有新的追问。";

@@ -10,7 +10,8 @@ export type EndingType =
 
 export type AgentTier = "focus" | "active" | "background" | "dormant";
 export type CoverWorkStatus = "awaiting_shift" | "working" | "on_leave" | "unexcused_absence";
-export type CoverWorkKind = "file_sorting" | "duty_shift" | "submit_report";
+export type CoverProfileId = "archive_clerk" | "travelling_merchant" | "freelance_writer";
+export type CoverWorkKind = "file_sorting" | "duty_shift" | "submit_report" | "settle_accounts" | "visit_clients" | "stock_check" | "submit_column" | "street_research" | "proofread_copy";
 export type LeaveReason = "family" | "health" | "official";
 export type RecruitmentTestType = "background_check" | "controlled_leak" | "discipline_check" | "low_risk_task";
 export type RecruitmentEvidenceResult = "favorable" | "warning" | "inconclusive";
@@ -38,6 +39,7 @@ export interface CoverObservation {
 }
 
 export interface CoverState {
+  profileId: CoverProfileId;
   workStatus: CoverWorkStatus;
   credibility: number;
   supervisorSuspicion: number;
@@ -191,6 +193,18 @@ export interface IntelState {
   deliveredFields: string[];
   deliveredAt: string | null;
   deliveryMethod: string | null;
+}
+
+export interface CoverProfileDefinition {
+  id: CoverProfileId;
+  title: string;
+  summary: string;
+  routineLabel: string;
+  startingLocationId: string;
+  workLocationIds: string[];
+  workHours: { startMinute: number; endMinute: number } | null;
+  workKinds: CoverWorkKind[];
+  initialContactCharacterIds: string[];
 }
 
 export type IntelEvidenceAssessment = "unverified" | "corroborates" | "contradicts" | "dependent";

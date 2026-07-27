@@ -66,7 +66,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   me: () => request<{ id: string; username: string }>("/api/v1/auth/me"),
   listGames: () => request<{ games: PublicWorldState[] }>("/api/v1/games"),
-  createGame: (difficulty: DifficultyConfig["id"]) => request<PublicWorldState>("/api/v1/games", { method: "POST", body: JSON.stringify({ difficulty }) }),
+  createGame: (difficulty: DifficultyConfig["id"], coverProfileId: PublicWorldState["cover"]["profileId"]) => request<PublicWorldState>("/api/v1/games", { method: "POST", body: JSON.stringify({ difficulty, coverProfileId }) }),
   getGame: (id: string) => request<PublicWorldState>(`/api/v1/games/${id}`),
   deleteGame: (id: string) => request<{ deleted: true }>(`/api/v1/games/${id}`, { method: "DELETE" }),
   getContext: (id: string) => request<GameContext>(`/api/v1/games/${id}/context`),

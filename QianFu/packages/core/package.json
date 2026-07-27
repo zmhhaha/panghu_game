@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./dialogue": "./src/dialogue.ts"
+    "./dialogue": "./src/dialogue.ts",
+    "./cover-profiles": "./src/cover-profiles.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

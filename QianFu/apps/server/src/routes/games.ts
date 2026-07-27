@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
+import { COVER_PROFILES, toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
 import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
 import { LINJIANG_1942 } from "@qianfu/content";
@@ -20,7 +20,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("wait"), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("record_intel"), intelId: z.string().min(1), fields: z.array(z.string()).max(20), confidenceDelta: z.number().min(0).max(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("transmit_intel"), intelId: z.string().min(1), method: z.enum(["radio", "courier"]), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
-  z.object({ type: z.literal("cover_work"), workKind: z.enum(["file_sorting", "duty_shift", "submit_report"]), durationMinutes: z.union([z.literal(30), z.literal(60), z.literal(120)]), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("cover_work"), workKind: z.enum(["file_sorting", "duty_shift", "submit_report", "settle_accounts", "visit_clients", "stock_check", "submit_column", "street_research", "proofread_copy"]), durationMinutes: z.union([z.literal(30), z.literal(60), z.literal(120)]), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("request_leave"), reason: z.enum(["family", "health", "official"]), durationMinutes: z.literal(10), idempotencyKey: z.string().min(8).max(128) }),
   z.object({
     type: z.literal("send_radio_message"),
@@ -58,11 +58,11 @@ gamesRouter.get("/", async (req, res, next) => {
 
 gamesRouter.post("/", async (req, res, next) => {
   if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
-  const parsed = z.object({ difficulty: difficultySchema.default("undercover") }).safeParse(req.body ?? {});
+  const parsed = z.object({ difficulty: difficultySchema.default("undercover"), coverProfileId: z.enum(["archive_clerk", "travelling_merchant", "freelance_writer"]).default("archive_clerk") }).safeParse(req.body ?? {});
   if (!parsed.success) { res.status(400).json({ error: "参数无效", detail: parsed.error.flatten() }); return; }
   try {
     await gameRepository.ensureUser(req.user);
-    res.status(201).json(toPublicWorldState(await gameRepository.createGame(req.user.id, parsed.data.difficulty)));
+    res.status(201).json(toPublicWorldState(await gameRepository.createGame(req.user.id, parsed.data.difficulty, parsed.data.coverProfileId)));
   } catch (error) { next(error); }
 });
 

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { DifficultyConfig, PublicWorldState } from "@qianfu/core";
-import { Clock3, FileText, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { COVER_PROFILES } from "@qianfu/core/cover-profiles";
+import { BriefcaseBusiness, Clock3, FileText, PenLine, Plus, ShieldCheck, Store, Trash2, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
@@ -14,6 +15,7 @@ export function CampaignDashboard() {
   const [games, setGames] = useState<PublicWorldState[]>([]);
   const [username, setUsername] = useState("正在识别身份");
   const [difficulty, setDifficulty] = useState<DifficultyConfig["id"]>("undercover");
+  const [coverProfileId, setCoverProfileId] = useState<PublicWorldState["cover"]["profileId"]>("archive_clerk");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<PublicWorldState | null>(null);
@@ -30,7 +32,7 @@ export function CampaignDashboard() {
 
   const create = async () => {
     setBusy(true);
-    try { const game = await api.createGame(difficulty); window.location.href = `/games/${game.gameInstanceId}`; }
+    try { const game = await api.createGame(difficulty, coverProfileId); window.location.href = `/games/${game.gameInstanceId}`; }
     catch (reason) { setError(reason instanceof Error ? reason.message : "创建失败"); setBusy(false); }
   };
 
@@ -57,7 +59,7 @@ export function CampaignDashboard() {
             {games.length === 0 && !error ? <div className="p-10 text-center text-sm text-muted">尚无战役档案</div> : games.map((game) => <div key={game.gameInstanceId} className="grid grid-cols-[minmax(0,1fr)_40px] items-stretch transition-colors hover:bg-paper/[0.03]"><Link href={`/games/${game.gameInstanceId}`} className="grid min-w-0 gap-4 p-5 sm:grid-cols-[1fr_auto]"><div><div className="flex flex-wrap items-center gap-3"><FileText size={17} className="text-copper" /><h2 className="font-serif text-lg">{campaignTitle}</h2><span className="border border-line px-2 py-0.5 text-[10px] text-muted">{game.status === "active" ? "进行中" : "已结算"}</span></div><p className="mt-3 text-sm text-muted">当前位置：{game.currentLocationId} · 警戒 {Math.round(game.personalSuspicion)}%</p></div><div className="flex items-center gap-2 text-xs text-muted"><Clock3 size={14} />{dateTime(game.currentTime)}</div></Link><button title="删除战役" aria-label={`删除${campaignTitle}`} disabled={busy} onClick={() => { setDeleteTarget(game); setDeleteStep(1); setConfirmation(""); }} className="grid w-10 place-items-center border-l border-line text-muted hover:bg-alert/10 hover:text-alert disabled:opacity-40"><Trash2 size={16} /></button></div>)}
           </div>
         </section>
-        <aside className="h-fit border border-line bg-panel p-5"><div className="flex items-center gap-2"><Plus size={17} className="text-copper" /><h2 className="font-serif text-lg">新建战役</h2></div><label className="mt-6 block text-xs text-muted" htmlFor="difficulty">难度</label><select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as DifficultyConfig["id"])} className="mt-2 h-10 w-full rounded-md border border-line bg-ink px-3 text-sm text-paper outline-none focus:border-copper"><option value="story">引导模式</option><option value="undercover">潜伏模式</option><option value="iron_curtain">铁幕模式</option></select><div className="mt-5 border-l-2 border-copper/70 pl-3 text-xs leading-6 text-muted">临江，1942。三天内确认一批无线电设备的运输时间、地点与内容。</div><Button className="mt-6 w-full" disabled={busy} onClick={create}>{busy ? "正在建档" : "建立战役档案"}</Button></aside>
+        <aside className="h-fit border border-line bg-panel p-5"><div className="flex items-center gap-2"><Plus size={17} className="text-copper" /><h2 className="font-serif text-lg">新建战役</h2></div><p className="mt-5 text-xs leading-5 text-muted">选择一份公开履历。它决定你能合理出现在哪里，以及必须如何解释自己的行踪；不会揭示任何人物的真实立场。</p><div className="mt-3 space-y-2">{COVER_PROFILES.map((profile) => { const Icon = profile.id === "travelling_merchant" ? Store : profile.id === "freelance_writer" ? PenLine : BriefcaseBusiness; const selected = profile.id === coverProfileId; return <button key={profile.id} onClick={() => setCoverProfileId(profile.id)} className={`w-full border p-3 text-left transition-colors ${selected ? "border-copper bg-copper/10" : "border-line hover:border-paper/40"}`}><span className="flex items-center gap-2 text-sm"><Icon size={15} className="text-copper" />{profile.title}</span><span className="mt-1 block text-[11px] leading-5 text-muted">{profile.summary}</span><span className="mt-1 block text-[10px] text-paper/70">约束：{profile.routineLabel}</span></button>; })}</div><label className="mt-5 block text-xs text-muted" htmlFor="difficulty">难度</label><select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as DifficultyConfig["id"])} className="mt-2 h-10 w-full rounded-md border border-line bg-ink px-3 text-sm text-paper outline-none focus:border-copper"><option value="story">引导模式</option><option value="undercover">潜伏模式</option><option value="iron_curtain">铁幕模式</option></select><div className="mt-5 border-l-2 border-copper/70 pl-3 text-xs leading-6 text-muted">临江，1942。三天内确认一批无线电设备的运输时间、地点与内容。</div><Button className="mt-6 w-full" disabled={busy} onClick={create}>{busy ? "正在建档" : "建立战役档案"}</Button></aside>
       </div>
     </div>
     {deleteTarget && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-campaign-title">

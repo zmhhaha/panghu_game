@@ -30,9 +30,9 @@ export class InMemoryGameRepository implements GameRepository {
     return created;
   }
 
-  async createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"]): Promise<WorldState> {
+  async createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"], coverProfileId: WorldState["cover"]["profileId"] = "archive_clerk"): Promise<WorldState> {
     const gameInstanceId = randomUUID();
-    const state = createInitialWorld(LINJIANG_1942, gameInstanceId, ownerUserId, difficultyId);
+    const state = createInitialWorld(LINJIANG_1942, gameInstanceId, ownerUserId, difficultyId, coverProfileId);
     this.games.set(gameInstanceId, { engine: new CampaignEngine(LINJIANG_1942, state), events: [], createdAt: new Date().toISOString() });
     return state;
   }

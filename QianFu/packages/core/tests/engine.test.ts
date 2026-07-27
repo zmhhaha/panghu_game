@@ -14,6 +14,24 @@ const campaign: CampaignDefinition = {
 };
 
 describe("CampaignEngine", () => {
+  it("limits a profile start to its public contact and requires an introduction before dialogue", () => {
+    const undercoverCampaign: CampaignDefinition = {
+      ...campaign,
+      locations: [
+        { id: "archive-office", name: "Archive", district: "A", travelMinutes: { "radio-office": 10 } },
+        { id: "radio-office", name: "Radio", district: "A", travelMinutes: { "archive-office": 10 } },
+      ],
+      characters: [
+        { id: "chen-jingwen", name: "Chen", publicIdentity: "Chief", hiddenAlignment: "variable", initialLocationId: "archive-office", recruitable: false, schedule: [{ startMinute: 0, endMinute: 1440, locationId: "archive-office", activity: "work" }], reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 } },
+        { id: "stranger", name: "Stranger", publicIdentity: "Visitor", hiddenAlignment: "neutral", initialLocationId: "archive-office", recruitable: false, schedule: [{ startMinute: 0, endMinute: 1440, locationId: "archive-office", activity: "wait" }], reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 } },
+      ],
+    };
+    const engine = new CampaignEngine(undercoverCampaign, createInitialWorld(undercoverCampaign, "profile-start", "user-1"));
+    expect(engine.getState().discoveredLocationIds).toEqual(["archive-office"]);
+    expect(engine.getState().knownCharacterIds).toEqual(["chen-jingwen"]);
+    expect(() => engine.execute({ type: "dialogue_start", targetCharacterId: "stranger", goal: "small_talk", tone: "neutral", allocatedMinutes: 10, durationMinutes: 0, idempotencyKey: "unknown-contact" })).toThrow("尚未获得");
+  });
+
   it("advances time once for an idempotent action", () => {
     const engine = new CampaignEngine(campaign, createInitialWorld(campaign, "game-1", "user-1"));
     const action = { type: "move" as const, destinationId: "station", durationMinutes: 20, idempotencyKey: "move-1" };

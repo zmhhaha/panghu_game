@@ -34,9 +34,10 @@ export function toPublicWorldState(state: WorldState): PublicWorldState {
   );
   const clonedState = structuredClone(state);
   clonedState.cover ??= {
-    workStatus: "awaiting_shift", credibility: 65, supervisorSuspicion: 0, consecutiveAbsences: 0, leaveCount: 0,
+    profileId: "archive_clerk", workStatus: "awaiting_shift", credibility: 65, supervisorSuspicion: 0, consecutiveAbsences: 0, leaveCount: 0,
     completedWorkDates: [], lastAttendanceEvaluatedDate: null, leaveUntil: null, leaveReason: null, lastWorkAt: null, observations: [],
   };
+  clonedState.cover.profileId ??= "archive_clerk";
   clonedState.cover.completedWorkDates ??= [];
   clonedState.cover.observations ??= [];
   clonedState.cover.lastAttendanceEvaluatedDate ??= null;

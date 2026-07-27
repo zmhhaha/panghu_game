@@ -11,7 +11,7 @@ export interface UserRecord extends AuthUser {
 
 export interface GameRepository {
   ensureUser(user: AuthUser): Promise<UserRecord>;
-  createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"]): Promise<WorldState>;
+  createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"], coverProfileId?: WorldState["cover"]["profileId"]): Promise<WorldState>;
   listGames(ownerUserId: string): Promise<WorldState[]>;
   getGame(gameInstanceId: string, ownerUserId: string): Promise<WorldState | null>;
   deleteGame(gameInstanceId: string, ownerUserId: string): Promise<boolean>;

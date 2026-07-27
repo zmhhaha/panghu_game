@@ -65,9 +65,9 @@ export class PostgresGameRepository implements GameRepository {
     return mapUser(result.rows[0]);
   }
 
-  async createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"]): Promise<WorldState> {
+  async createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"], coverProfileId: WorldState["cover"]["profileId"] = "archive_clerk"): Promise<WorldState> {
     const gameInstanceId = randomUUID();
-    const state = createInitialWorld(LINJIANG_1942, gameInstanceId, ownerUserId, difficultyId);
+    const state = createInitialWorld(LINJIANG_1942, gameInstanceId, ownerUserId, difficultyId, coverProfileId);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");

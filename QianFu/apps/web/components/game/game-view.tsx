@@ -62,7 +62,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
       setContext(publicContext);
       setEvents(eventLog.events);
       setError("");
-      setSelectedNpc((current) => publicContext.characters.some((character) => character.id === current)
+      setSelectedNpc((current) => publicContext.characters.some((character) => character.id === current && character.known)
         ? current : publicContext.characters[0]?.id ?? "");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法读取战役");
@@ -80,7 +80,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
       setEvents((items) => [...items, ...result.events]);
       const publicContext = await api.getContext(gameInstanceId);
       setContext(publicContext);
-      setSelectedNpc((current) => publicContext.characters.some((character) => character.id === current)
+      setSelectedNpc((current) => publicContext.characters.some((character) => character.id === current && character.known)
         ? current : publicContext.characters[0]?.id ?? "");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "行动失败");
@@ -180,11 +180,11 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
             ? <div className="mt-3 border border-dashed border-line px-4 py-8 text-center text-sm text-muted">此刻没有适合接触的人。</div>
             : <div className="mt-3 divide-y divide-line border-y border-line">{context.characters.map((character) => {
                 const selected = selectedNpc === character.id;
-                return <button key={character.id} onClick={() => setSelectedNpc(character.id)} className={`flex w-full items-center gap-3 px-2 py-3 text-left transition-colors sm:px-3 ${selected ? "bg-copper/10" : "hover:bg-paper/[0.035]"}`}>
+                return <button key={character.id} disabled={!character.known} onClick={() => setSelectedNpc(character.id)} className={`flex w-full items-center gap-3 px-2 py-3 text-left transition-colors sm:px-3 ${selected ? "bg-copper/10" : "hover:bg-paper/[0.035]"} ${!character.known ? "cursor-not-allowed opacity-60" : ""}`}>
                   <span className={`grid h-9 w-9 shrink-0 place-items-center border ${selected ? "border-copper text-copper" : "border-line text-muted"}`}><UserRound size={17} /></span>
                   <span className="min-w-0 flex-1"><span className="block text-sm">{character.name}</span><span className="mt-1 block truncate text-xs text-muted">{character.publicIdentity}</span></span>
                   {state.characters[character.id]?.recruited && <span className="text-[10px] text-safe">已联络</span>}
-                  <ChevronRight size={15} className={selected ? "text-copper" : "text-muted"} />
+                  {character.known ? <ChevronRight size={15} className={selected ? "text-copper" : "text-muted"} /> : <span className="text-[10px] text-muted">等待引介</span>}
                 </button>;
               })}</div>}
         </div>
