@@ -217,7 +217,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
           </div> : <p className="mt-4 text-sm text-muted">先从现场人物中选择交谈对象。</p>}
         </div>
 
-        <RecruitmentDossier candidate={selectedCandidate} busy={busy} onAction={(action) => void act(action)} />
+        <RecruitmentDossier candidate={selectedCandidate} visibility={context.visibility} busy={busy} onAction={(action) => void act(action)} />
 
         <OrganizationNetwork state={state} context={context} busy={busy} onAction={(action) => void act(action)} />
 

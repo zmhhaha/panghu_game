@@ -1,11 +1,12 @@
 import type {
   ActionResult, CampaignReportBundle, CampaignShareSummary, DifficultyConfig,
-  GameAction, GameEvent, PublicWorldState, RecruitmentCase, SharedCampaignReport,
+  DifficultyVisibilityPolicy, GameAction, GameEvent, PublicWorldState, RecruitmentCase, SharedCampaignReport,
 } from "@qianfu/core";
 
 type PublicActionResult = Omit<ActionResult, "state"> & { state: PublicWorldState };
 
 export interface GameContext {
+  visibility: DifficultyVisibilityPolicy;
   campaign: { id: string; version: string; name: string };
   settlement: { ready: boolean; pendingReceipts: number };
   locations: { id: string; name: string; district: string; discovered: boolean }[];

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { COVER_PROFILES, toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
+import { COVER_PROFILES, getDifficultyVisibility, toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
 import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
 import { LINJIANG_1942 } from "@qianfu/content";
@@ -82,6 +82,7 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
       });
     res.json({
       campaign: { id: LINJIANG_1942.id, version: LINJIANG_1942.version, name: LINJIANG_1942.name },
+      visibility: getDifficultyVisibility(state.difficulty.id),
       settlement: {
         ready: state.status === "finished",
         pendingReceipts: state.radio.transmissions.filter((item) => item.receiptStatus === "pending").length,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { GameAction, RecruitmentEvidenceResult, RecruitmentPlan, RecruitmentTestType } from "@qianfu/core";
+import type { DifficultyVisibilityPolicy, GameAction, RecruitmentEvidenceResult, RecruitmentPlan, RecruitmentTestType } from "@qianfu/core";
 import { Check, CircleAlert, ClipboardCheck, FileSearch, ShieldCheck, UserPlus, X } from "lucide-react";
 import type { GameContext } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -29,10 +29,12 @@ const resultClasses: Record<RecruitmentEvidenceResult, string> = {
 
 export function RecruitmentDossier({
   candidate,
+  visibility,
   busy,
   onAction,
 }: {
   candidate: Candidate | undefined;
+  visibility: DifficultyVisibilityPolicy;
   busy: boolean;
   onAction: (action: GameAction) => void;
 }) {
