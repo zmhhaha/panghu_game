@@ -192,6 +192,36 @@ describe("public cover identity", () => {
     expect(endOfShift.events.some((event) => event.type === "cover.absence_recorded")).toBe(false);
   });
 
+  it("uses a public work lead to introduce a location and contact before secret dialogue", () => {
+    const leadCampaign: CampaignDefinition = {
+      ...coverCampaign,
+      locations: [
+        { id: "archive-office", name: "Archive", district: "A", travelMinutes: { "radio-office": 10 } },
+        { id: "radio-office", name: "Radio", district: "A", travelMinutes: { "archive-office": 10 } },
+      ],
+      characters: [{
+        id: "chen-jingwen", name: "Chen", publicIdentity: "Chief", hiddenAlignment: "neutral", initialLocationId: "archive-office", recruitable: false,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "archive-office", activity: "work" }],
+        reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 },
+      }, {
+        id: "zhou-qiming", name: "Zhou", publicIdentity: "Technician", hiddenAlignment: "neutral", initialLocationId: "radio-office", recruitable: false,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "radio-office", activity: "work" }],
+        reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 },
+      }],
+      publicLeads: [{
+        id: "public-repair-record", trigger: "cover_work", profileId: "archive_clerk", workKind: "file_sorting",
+        locationIds: ["radio-office"], characterIds: ["zhou-qiming"], hint: "A public repair record needs checking.",
+      }],
+    };
+    const engine = new CampaignEngine(leadCampaign, createInitialWorld(leadCampaign, "cover-lead", "user-1"));
+    const result = engine.execute({ type: "cover_work", workKind: "file_sorting", durationMinutes: 60, idempotencyKey: "public-lead-work" });
+    expect(result.state.discoveredLocationIds).toContain("radio-office");
+    expect(result.state.knownCharacterIds).toContain("zhou-qiming");
+    expect(result.state.resolvedLeadIds).toContain("public-repair-record");
+    expect(result.events.some((event) => event.type === "lead.resolved")).toBe(true);
+    expect(result.events.some((event) => event.type === "intel.dialogue_discovered")).toBe(false);
+  });
+
   it("accepts leave as a public record instead of treating it as an unexplained absence", () => {
     const engine = new CampaignEngine(coverCampaign, createInitialWorld(coverCampaign, "cover-leave", "user-1"));
     const leave = engine.execute({ type: "request_leave", reason: "family", durationMinutes: 10, idempotencyKey: "cover-leave-request" });

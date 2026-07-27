@@ -77,6 +77,7 @@ export function createInitialWorld(
     currentLocationId: profileApplies ? coverProfile.startingLocationId : campaign.locations[0]?.id ?? "",
     discoveredLocationIds: profileApplies ? [coverProfile.startingLocationId] : campaign.locations.slice(0, 3).map((location) => location.id),
     knownCharacterIds: profileApplies ? coverProfile.initialContactCharacterIds.filter((id) => characters[id]) : Object.keys(characters),
+    resolvedLeadIds: [],
     status: "active",
     stateVersion: 0,
     lastEventSeq: 0,
@@ -128,6 +129,7 @@ export class CampaignEngine {
     if (this.state.activeDialogue) this.state.activeDialogue.targetIntelId ??= null;
     this.state.discoveredLocationIds ??= [this.state.currentLocationId];
     this.state.knownCharacterIds ??= [];
+    this.state.resolvedLeadIds ??= [];
     this.state.investigation ??= {
       pressure: 0,
       locationHeat: Object.fromEntries(campaign.locations.map((location) => [location.id, 0])),
@@ -250,7 +252,7 @@ export class CampaignEngine {
         recordInvestigationEvidence(next, "extended_contact", next.currentLocationId, contactWeight, append);
         if (discovery) {
           append("intel.dialogue_discovered", { characterId: definition.id, ...discovery });
-          unlockNextLocation(this.campaign, next, append);
+          resolveCampaignLeads(this.campaign, next, append, "dialogue_discovery", definition.id);
         }
         narration = npcReply;
         break;
@@ -399,7 +401,7 @@ export class CampaignEngine {
         });
         if (discovery) {
           append("intel.dialogue_discovered", { characterId: definition.id, ...discovery });
-          unlockNextLocation(this.campaign, next, append);
+          resolveCampaignLeads(this.campaign, next, append, "dialogue_discovery", definition.id);
         }
         if (action.goal === "recruit_probe") append("character.recruitment_progress", { characterId: definition.id, progress: next.characters[definition.id].recruitmentProgress, recruited: next.characters[definition.id].recruited });
         narration = dialogueNarration(next, definition, action, discovery !== null);
@@ -517,7 +519,8 @@ export class CampaignEngine {
         const summary = coverWorkSummary(action.workKind);
         addCoverObservation(next, "work_completed", summary);
         append("cover.work_completed", { workKind: action.workKind, summary });
-        narration = summary;
+        const leadHints = resolveCampaignLeads(this.campaign, next, append, "cover_work", undefined, next.cover.profileId, action.workKind);
+        narration = leadHints.length > 0 ? `${summary}\n${leadHints.join("\n")}` : summary;
         break;
       }
       case "request_leave": {
@@ -642,29 +645,39 @@ function summarizeMemory(memory: NonNullable<WorldState["dialogueMemories"][stri
   return `${definition.name}已与玩家交谈${memory.interactionCount}次；最近话题是“${latest.slice(0, 40)}”，保持${personality.speechStyle}的说话方式。`;
 }
 
-function unlockNextLocation(campaign: CampaignDefinition, state: WorldState, append: (type: string, payload: unknown) => void) {
-  const lastSpeaker = state.activeDialogue?.characterId;
-  const leads: Record<string, { locations: string[]; characters: string[] }> = {
-    "chen-jingwen": { locations: ["radio-office"], characters: ["zhou-qiming"] },
-    "zhou-qiming": { locations: ["wu-clock-shop"], characters: ["old-wu"] },
-    "lin-ruolan": { locations: ["jianghai-hotel"], characters: ["luo-boan"] },
-    "luo-boan": { locations: ["third-dock"], characters: ["zhao-fusheng"] },
-    "zhao-fusheng": { locations: ["third-dock"], characters: [] },
-    "shen-manqiu": { locations: ["jianghai-hotel"], characters: [] },
-    "old-wu": { locations: ["wu-clock-shop"], characters: [] },
-  };
-  const lead = lastSpeaker ? leads[lastSpeaker] : undefined;
-  if (!lead) return;
-  for (const locationId of lead.locations) {
-    if (!campaign.locations.some((location) => location.id === locationId) || state.discoveredLocationIds.includes(locationId)) continue;
-    state.discoveredLocationIds.push(locationId);
-    append("location.discovered", { locationId, sourceCharacterId: lastSpeaker });
+function resolveCampaignLeads(
+  campaign: CampaignDefinition,
+  state: WorldState,
+  append: (type: string, payload: unknown) => void,
+  trigger: "cover_work" | "dialogue_discovery",
+  characterId?: string,
+  profileId?: WorldState["cover"]["profileId"],
+  workKind?: Extract<GameAction, { type: "cover_work" }>["workKind"],
+): string[] {
+  const resolved = state.resolvedLeadIds ?? (state.resolvedLeadIds = []);
+  const leads = campaign.publicLeads ?? [];
+  const hints: string[] = [];
+
+  for (const lead of leads) {
+    if (lead.trigger !== trigger || resolved.includes(lead.id)) continue;
+    if (trigger === "cover_work" && (lead.profileId !== profileId || lead.workKind !== workKind)) continue;
+    if (trigger === "dialogue_discovery" && lead.characterId !== characterId) continue;
+
+    for (const locationId of lead.locationIds) {
+      if (!campaign.locations.some((location) => location.id === locationId) || state.discoveredLocationIds.includes(locationId)) continue;
+      state.discoveredLocationIds.push(locationId);
+      append("location.discovered", { locationId, leadId: lead.id, hint: lead.hint, sourceCharacterId: characterId });
+    }
+    for (const introducedCharacterId of lead.characterIds) {
+      if (!state.characters[introducedCharacterId] || state.knownCharacterIds.includes(introducedCharacterId)) continue;
+      state.knownCharacterIds.push(introducedCharacterId);
+      append("character.introduced", { characterId: introducedCharacterId, leadId: lead.id, hint: lead.hint, sourceCharacterId: characterId });
+    }
+    resolved.push(lead.id);
+    append("lead.resolved", { leadId: lead.id, trigger, hint: lead.hint, sourceCharacterId: characterId, profileId, workKind });
+    hints.push(`线索：${lead.hint}`);
   }
-  for (const characterId of lead.characters) {
-    if (!state.characters[characterId] || state.knownCharacterIds.includes(characterId)) continue;
-    state.knownCharacterIds.push(characterId);
-    append("character.introduced", { characterId, sourceCharacterId: lastSpeaker });
-  }
+  return hints;
 }
 
 function comradeTaskMinutes(

@@ -56,6 +56,24 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
       if (!intel.has(intelId)) errors.push(`objective ${objective.id} references unknown intel ${intelId}`);
     }
   }
+  for (const leadId of duplicateIds((campaign.publicLeads ?? []).map((lead) => lead.id))) {
+    errors.push(`duplicate public lead id: ${leadId}`);
+  }
+  for (const lead of campaign.publicLeads ?? []) {
+    if (lead.trigger === "cover_work" && (!lead.profileId || !lead.workKind)) {
+      errors.push(`public lead ${lead.id} requires profileId and workKind for cover_work`);
+    }
+    if (lead.trigger === "dialogue_discovery" && !lead.characterId) {
+      errors.push(`public lead ${lead.id} requires characterId for dialogue_discovery`);
+    }
+    if (lead.characterId && !characters.has(lead.characterId)) errors.push(`public lead ${lead.id} references unknown source character ${lead.characterId}`);
+    for (const locationId of lead.locationIds) {
+      if (!locations.has(locationId)) errors.push(`public lead ${lead.id} references unknown location ${locationId}`);
+    }
+    for (const characterId of lead.characterIds) {
+      if (!characters.has(characterId)) errors.push(`public lead ${lead.id} references unknown character ${characterId}`);
+    }
+  }
   return { valid: errors.length === 0, errors };
 }
 

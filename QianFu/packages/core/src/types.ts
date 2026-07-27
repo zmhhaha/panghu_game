@@ -163,6 +163,17 @@ export interface MissionObjective {
   recipientId: string;
 }
 
+export interface CampaignLead {
+  id: string;
+  trigger: "cover_work" | "dialogue_discovery";
+  profileId?: CoverProfileId;
+  workKind?: CoverWorkKind;
+  characterId?: string;
+  locationIds: string[];
+  characterIds: string[];
+  hint: string;
+}
+
 export interface CampaignDefinition {
   id: string;
   version: string;
@@ -173,6 +184,7 @@ export interface CampaignDefinition {
   characters: CharacterDefinition[];
   intel: IntelDefinition[];
   objectives: MissionObjective[];
+  publicLeads?: CampaignLead[];
 }
 
 export interface CharacterState {
@@ -428,6 +440,7 @@ export interface WorldState {
   currentLocationId: string;
   discoveredLocationIds: string[];
   knownCharacterIds: string[];
+  resolvedLeadIds?: string[];
   status: GameStatus;
   stateVersion: number;
   lastEventSeq: number;
