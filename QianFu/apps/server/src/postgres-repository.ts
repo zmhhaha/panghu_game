@@ -31,13 +31,13 @@ interface ShareRow {
 }
 
 interface PlayerSnapshotRow {
-  slot: 1 | 2; label: string; saved_at: Date; current_time: Date;
+  slot: 1 | 2; label: string; saved_at: Date; game_time: Date;
   state_version: number; last_event_seq: string | number;
 }
 
 const mapPlayerSnapshot = (row: PlayerSnapshotRow): PlayerSnapshotSummary => ({
   slot: Number(row.slot) as 1 | 2, label: row.label, savedAt: new Date(row.saved_at).toISOString(),
-  currentTime: new Date(row.current_time).toISOString(), stateVersion: row.state_version,
+  currentTime: new Date(row.game_time).toISOString(), stateVersion: row.state_version,
   lastEventSeq: Number(row.last_event_seq),
 });
 
@@ -262,7 +262,7 @@ export class PostgresGameRepository implements GameRepository {
     const owner = await this.pool.query("SELECT 1 FROM game_instances WHERE id = $1 AND owner_user_id = $2", [gameInstanceId, ownerUserId]);
     if (!owner.rowCount) return null;
     const result = await this.pool.query<PlayerSnapshotRow>(
-      `SELECT slot, label, saved_at, current_time, state_version, last_event_seq
+      `SELECT slot, label, saved_at, game_time, state_version, last_event_seq
        FROM player_save_snapshots WHERE game_instance_id = $1 ORDER BY slot`, [gameInstanceId]);
     const bySlot = new Map(result.rows.map((row) => [Number(row.slot), mapPlayerSnapshot(row)]));
     return ([1, 2] as const).map((slot) => bySlot.get(slot) ?? { slot, label: "", savedAt: "", currentTime: "", stateVersion: 0, lastEventSeq: 0 });
@@ -276,12 +276,12 @@ export class PostgresGameRepository implements GameRepository {
       const state = game.rows[0]?.state;
       if (!state || (state.status !== "active" && state.status !== "paused")) { await client.query("ROLLBACK"); return null; }
       const result = await client.query<PlayerSnapshotRow>(
-        `INSERT INTO player_save_snapshots (game_instance_id, slot, label, current_time, state_version, last_event_seq, campaign_version, engine_version, state)
+        `INSERT INTO player_save_snapshots (game_instance_id, slot, label, game_time, state_version, last_event_seq, campaign_version, engine_version, state)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (game_instance_id, slot) DO UPDATE SET label = EXCLUDED.label, saved_at = now(), current_time = EXCLUDED.current_time,
+         ON CONFLICT (game_instance_id, slot) DO UPDATE SET label = EXCLUDED.label, saved_at = now(), game_time = EXCLUDED.game_time,
            state_version = EXCLUDED.state_version, last_event_seq = EXCLUDED.last_event_seq, campaign_version = EXCLUDED.campaign_version,
            engine_version = EXCLUDED.engine_version, state = EXCLUDED.state
-         RETURNING slot, label, saved_at, current_time, state_version, last_event_seq`,
+         RETURNING slot, label, saved_at, game_time, state_version, last_event_seq`,
         [gameInstanceId, slot, label, state.currentTime, state.stateVersion, state.lastEventSeq, state.campaignVersion, state.engineVersion, state]);
       await client.query("COMMIT");
       return mapPlayerSnapshot(result.rows[0]);

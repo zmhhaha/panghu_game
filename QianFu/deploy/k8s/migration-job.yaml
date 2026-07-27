@@ -4,12 +4,12 @@ metadata:
   name: qianfu-db-migration
   namespace: qianfu
 spec:
-  backoffLimit: 0
+  backoffLimit: 3
   template:
     metadata:
       labels: { app: qianfu-db-migration }
     spec:
-      restartPolicy: Never
+      restartPolicy: OnFailure
       containers:
         - name: migrate
           image: arm-cluster-master:5000/qianfu-server:latest

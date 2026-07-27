@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS player_save_snapshots (
   slot smallint NOT NULL CHECK (slot IN (1, 2)),
   label text NOT NULL DEFAULT '',
   saved_at timestamptz NOT NULL DEFAULT now(),
-  current_time timestamptz NOT NULL,
+  game_time timestamptz NOT NULL,
   state_version integer NOT NULL,
   last_event_seq bigint NOT NULL,
   campaign_version text NOT NULL,
