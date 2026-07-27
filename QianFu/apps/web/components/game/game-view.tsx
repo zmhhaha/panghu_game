@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import type { DialogueGoal, DialogueTone, GameEvent, PublicWorldState } from "@qianfu/core";
 import {
   ArrowLeft, ChevronRight, Clock3, Download, MapPin,
-  MessageSquare, ShieldAlert, Timer, UserRound, UsersRound,
+  BedDouble, MessageSquare, ShieldAlert, Timer, UserRound, UsersRound,
 } from "lucide-react";
 import { api, type GameContext } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -55,6 +55,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const [goal, setGoal] = useState<DialogueGoal>("small_talk");
   const [tone, setTone] = useState<DialogueTone>("neutral");
   const [targetIntelId, setTargetIntelId] = useState("");
+  const [wakeHour, setWakeHour] = useState<6 | 7 | 8>(7);
 
   const load = async () => {
     try {
@@ -111,6 +112,12 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const formattedTime = new Intl.DateTimeFormat("zh-CN", {
     month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(new Date(state.currentTime));
+  const now = new Date(state.currentTime);
+  const currentMinute = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const restMinutes = currentMinute >= 20 * 60
+    ? 24 * 60 - currentMinute + wakeHour * 60
+    : wakeHour * 60 - currentMinute;
+  const canRest = (currentMinute >= 20 * 60 || currentMinute < 5 * 60) && restMinutes >= 6 * 60;
 
   if (state.status === "finished") return <SettlementReport gameInstanceId={gameInstanceId} />;
 
@@ -163,6 +170,15 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
             onClick={() => void act({ type: "wait", durationMinutes: 10, idempotencyKey: crypto.randomUUID() })}>
             <Timer size={15} />等待 10 分钟
           </Button>
+          <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+            <select aria-label="起床时间" value={wakeHour} onChange={(event) => setWakeHour(Number(event.target.value) as 6 | 7 | 8)} className="h-10 min-w-0 border border-line bg-panel px-2 text-xs text-paper outline-none focus:border-copper">
+              <option value={6}>06:00 起床</option><option value={7}>07:00 起床</option><option value={8}>08:00 起床</option>
+            </select>
+            <Button variant="outline" disabled={busy || state.status !== "active" || !canRest} title={canRest ? "结束当日行动并休息" : "仅可在夜间开始至少六小时的休息"}
+              onClick={() => void act({ type: "rest", wakeHour, durationMinutes: 0, idempotencyKey: crypto.randomUUID() })}>
+              <BedDouble size={15} />休息至
+            </Button>
+          </div>
         </div>
         <CoverIdentityPanel state={state} busy={busy} onAction={(action) => void act(action)} />
         <SaveSlotsPanel gameInstanceId={gameInstanceId} state={state} disabled={busy} onLoaded={(loadedState, loadedEvents) => { setState(loadedState); setEvents(loadedEvents); void api.getContext(gameInstanceId).then(setContext); setError(""); }} />

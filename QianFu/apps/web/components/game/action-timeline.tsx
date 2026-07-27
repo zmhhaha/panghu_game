@@ -33,7 +33,7 @@ function eventCategory(type: string): EventFilter {
   if (type.startsWith("dialogue") || type === "character.introduced" || type === "character.identified") return "dialogue";
   if (type.startsWith("intel") || type.startsWith("radio")) return "intel";
   if (type.startsWith("cover")) return type === "cover.supervisor_check" || type === "cover.absence_recorded" ? "threat" : "movement";
-  if (type === "player.moved" || type === "player.waited" || type.startsWith("character.schedule")) return "movement";
+  if (type === "player.moved" || type === "player.waited" || type === "player.rested" || type.startsWith("character.schedule")) return "movement";
   if (type.startsWith("comrade") || type.startsWith("character.recruitment")) return "network";
   if (type.startsWith("investigation")) return "threat";
   return "movement";
@@ -47,7 +47,7 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
   const labels: Record<string, string> = {
     "dialogue.started": "开始对话", "dialogue.turn_completed": "对话推进", "dialogue.ended": "结束对话",
     "character.introduced": "认识人物", "character.identified": "确认身份", "player.moved": "移动",
-    "player.waited": "等待", "intel.recorded": "记录情报", "intel.dialogue_discovered": "对话获得情报",
+    "player.waited": "等待", "player.rested": "夜间休息", "intel.recorded": "记录情报", "intel.dialogue_discovered": "对话获得情报",
     "intel.transmitted": "传递情报", "radio.message_sent": "发出电报", "radio.receipt_received": "收到回执",
     "comrade.task_completed": "同志任务完成", "comrade.task_failed": "同志任务失败", "character.recruited": "正式招募",
     "investigation.action_taken": "敌方调查行动", "character.schedule_advanced": "人物行程变化",
@@ -55,6 +55,7 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
   };
   const title = labels[event.type] ?? "行动记录";
   const text = event.type === "player.moved" ? `你前往了${location ?? "未知地点"}。`
+    : event.type === "player.rested" ? `你休息至 ${String(payload.wakeHour ?? "").padStart(2, "0")}:00，恢复了 ${Number(payload.recovery ?? 0)} 点精力。`
     : event.type === "intel.recorded" ? `你记录了${intel ?? "一项情报"}。`
       : event.type === "intel.transmitted" ? `你通过${payload.method === "radio" ? "电台" : "交通员"}传递了${intel ?? "情报"}。`
         : event.type === "dialogue.started" || event.type === "dialogue.ended" ? `${character ?? "目标人物"}${event.type === "dialogue.started" ? "开始与你交谈" : "的对话结束"}。`

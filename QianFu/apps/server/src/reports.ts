@@ -129,6 +129,7 @@ function buildTimeline(campaign: CampaignDefinition, events: GameEvent[]): Campa
     "lead.resolved", "cover.work_completed",
     "character.recruitment_progress", "comrade.task_completed", "comrade.task_failed",
     "radio.message_sent", "radio.receipt_received", "investigation.surveillance_started", "player.moved",
+    "player.rested",
   ].includes(event.type));
   return important.slice(-40).map((event) => describeEvent(campaign, event));
 }
@@ -157,6 +158,7 @@ function describeEvent(campaign: CampaignDefinition, event: GameEvent): Campaign
     "comrade.task_failed": ["委派受挫", String(payload.report ?? "一项委派任务未能完成")],
     "investigation.surveillance_started": ["敌情变化", `${location?.name ?? "一处地点"}附近出现疑似监视`],
     "player.moved": ["转移地点", `抵达${location?.name ?? "新的地点"}`],
+    "player.rested": ["夜间休息", `休息至 ${String(payload.wakeHour ?? "").padStart(2, "0")}:00，恢复了 ${Number(payload.recovery ?? 0)} 点精力`],
   };
   const [title, detail] = details[event.type] ?? ["行动记录", "时间线产生了新的变化"];
   return { eventSeq: event.eventSeq, occurredAt: event.occurredAt, type: event.type, title, detail };

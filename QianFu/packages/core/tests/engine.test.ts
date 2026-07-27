@@ -212,6 +212,18 @@ describe("public cover identity", () => {
     expect(endOfShift.events.some((event) => event.type === "cover.absence_recorded")).toBe(false);
   });
 
+  it("allows a night rest to advance the world and recover energy without charging action fatigue", () => {
+    const state = createInitialWorld(coverCampaign, "night-rest", "user-1");
+    state.currentTime = "1942-05-12T20:00:00.000Z";
+    state.playerEnergy = 24;
+    const engine = new CampaignEngine(coverCampaign, state);
+    const result = engine.execute({ type: "rest", wakeHour: 7, durationMinutes: 0, idempotencyKey: "night-rest-action" });
+    expect(result.state.currentTime).toBe("1942-05-13T07:00:00.000Z");
+    expect(result.state.playerEnergy).toBeGreaterThan(90);
+    expect(result.events.some((event) => event.type === "player.rested")).toBe(true);
+    expect(() => engine.execute({ type: "rest", wakeHour: 7, durationMinutes: 0, idempotencyKey: "day-rest-action" })).toThrow("只能在夜间");
+  });
+
   it("uses a public work lead to introduce a location and contact before secret dialogue", () => {
     const leadCampaign: CampaignDefinition = {
       ...coverCampaign,

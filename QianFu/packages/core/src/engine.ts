@@ -207,6 +207,7 @@ export class CampaignEngine {
     let narration = "";
     let npcReply: string | undefined;
     let elapsedDuration = action.durationMinutes;
+    let energyRecovery = 0;
     switch (action.type) {
       case "dialogue_start": {
         const target = next.characters[action.targetCharacterId];
@@ -549,6 +550,16 @@ export class CampaignEngine {
         append("player.waited", { durationMinutes: action.durationMinutes });
         narration = "时间继续向前，城市中的其他人也在行动。";
         break;
+      case "rest": {
+        if (action.durationMinutes !== 0) throw new Error("Rest duration is calculated by the server");
+        const rest = calculateRest(next.currentTime, action.wakeHour);
+        if (!rest) throw new Error("只能在夜间开始休息，并且至少需要六小时睡眠");
+        elapsedDuration = rest.minutes;
+        energyRecovery = rest.recovery;
+        append("player.rested", { wakeHour: action.wakeHour, durationMinutes: rest.minutes, recovery: rest.recovery });
+        narration = `你收起了当天的行动安排，休息至次日 ${String(action.wakeHour).padStart(2, "0")}:00。`;
+        break;
+      }
     }
 
     const previousTime = next.currentTime;
@@ -572,7 +583,9 @@ export class CampaignEngine {
       }
     }
     next.currentTime = finalTime;
-    next.playerEnergy = clamp(next.playerEnergy - Math.ceil(elapsedDuration / 30));
+    next.playerEnergy = action.type === "rest"
+      ? clamp(next.playerEnergy + energyRecovery)
+      : clamp(next.playerEnergy - actionEnergyCost(action, elapsedDuration, previousTime));
     next.stateVersion += 1;
     this.state = next;
     this.usedIdempotencyKeys.add(action.idempotencyKey);
@@ -1037,6 +1050,26 @@ function leaveReasonLabel(reason: Extract<GameAction, { type: "request_leave" }>
 function minuteOfDay(iso: string): number {
   const date = new Date(iso);
   return date.getUTCHours() * 60 + date.getUTCMinutes();
+}
+
+function calculateRest(currentTime: string, wakeHour: 6 | 7 | 8): { minutes: number; recovery: number } | null {
+  const now = new Date(currentTime);
+  const currentMinute = minuteOfDay(currentTime);
+  if (currentMinute < 0 || (currentMinute >= 5 * 60 && currentMinute < 20 * 60)) return null;
+  const wake = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), wakeHour, 0, 0, 0));
+  if (currentMinute >= 20 * 60) wake.setUTCDate(wake.getUTCDate() + 1);
+  const minutes = Math.round((wake.getTime() - now.getTime()) / 60_000);
+  if (minutes < 6 * 60) return null;
+  return { minutes, recovery: Math.min(80, 24 + Math.floor(minutes / 60) * 8) };
+}
+
+function actionEnergyCost(action: GameAction, elapsedDuration: number, startedAt: string): number {
+  if (elapsedDuration === 0) return 0;
+  if (action.type === "wait" || action.type === "dialogue_start" || action.type === "dialogue_turn" || action.type === "dialogue_end") return 0;
+  const base = Math.ceil(elapsedDuration / 60);
+  const nightMultiplier = minuteOfDay(startedAt) < 6 * 60 ? 2 : 1;
+  const exertion = action.type === "observe" || action.type === "recruitment_test" || action.type === "recruit_candidate" ? 1 : 0;
+  return (base + exertion) * nightMultiplier;
 }
 
 function advanceSchedules(

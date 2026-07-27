@@ -19,6 +19,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("move"), destinationId: z.string().min(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("observe"), targetCharacterId: z.string().min(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("wait"), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("rest"), wakeHour: z.union([z.literal(6), z.literal(7), z.literal(8)]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("record_intel"), intelId: z.string().min(1), fields: z.array(z.string()).max(20), confidenceDelta: z.number().min(0).max(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("transmit_intel"), intelId: z.string().min(1), method: z.enum(["radio", "courier"]), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("cover_work"), workKind: z.enum(["file_sorting", "duty_shift", "submit_report", "settle_accounts", "visit_clients", "stock_check", "submit_column", "street_research", "proofread_copy"]), durationMinutes: z.union([z.literal(30), z.literal(60), z.literal(120)]), idempotencyKey: z.string().min(8).max(128) }),

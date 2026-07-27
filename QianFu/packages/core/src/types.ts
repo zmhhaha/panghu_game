@@ -491,6 +491,11 @@ export interface WaitAction extends ActionBase {
   type: "wait";
 }
 
+export interface RestAction extends ActionBase {
+  type: "rest";
+  wakeHour: 6 | 7 | 8;
+}
+
 export interface RecordIntelAction extends ActionBase {
   type: "record_intel";
   intelId: string;
@@ -597,7 +602,7 @@ export interface RecruitCandidateAction extends ActionBase {
   targetCharacterId: string;
 }
 
-export type GameAction = MoveAction | ObserveAction | WaitAction | RecordIntelAction | TransmitIntelAction | CoverWorkAction | RequestLeaveAction | SendRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
+export type GameAction = MoveAction | ObserveAction | WaitAction | RestAction | RecordIntelAction | TransmitIntelAction | CoverWorkAction | RequestLeaveAction | SendRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
 
 export interface ActionResult {
   state: WorldState;
