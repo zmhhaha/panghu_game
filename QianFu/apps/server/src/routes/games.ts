@@ -10,6 +10,7 @@ import { renderReportHtml } from "../reports.js";
 export const gamesRouter = Router();
 
 const difficultySchema = z.enum(["story", "undercover", "iron_curtain"]);
+const saveSlotSchema = z.union([z.literal("1"), z.literal("2")]);
 const duration = z.number().int().nonnegative().multipleOf(10);
 const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("dialogue_start"), targetCharacterId: z.string().min(1), goal: z.enum(["small_talk", "build_trust", "probe_attitude", "request_information", "verify_intel", "apply_pressure", "recruit_probe", "long_talk"]), tone: z.enum(["neutral", "friendly", "formal", "urgent", "threatening"]), targetIntelId: z.string().min(1).optional(), allocatedMinutes: z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(60)]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
@@ -169,6 +170,38 @@ gamesRouter.delete("/:id", async (req, res, next) => {
     const deleted = await gameRepository.deleteGame(req.params.id, req.user.id);
     if (!deleted) { res.status(404).json({ error: "战役不存在" }); return; }
     res.json({ deleted: true });
+  } catch (error) { next(error); }
+});
+
+gamesRouter.get("/:id/snapshots", async (req, res, next) => {
+  if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
+  try {
+    const snapshots = await gameRepository.listPlayerSnapshots(req.params.id, req.user.id);
+    if (!snapshots) { res.status(404).json({ error: "战役不存在" }); return; }
+    res.json({ snapshots });
+  } catch (error) { next(error); }
+});
+
+gamesRouter.put("/:id/snapshots/:slot", async (req, res, next) => {
+  if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
+  const parsed = z.object({ label: z.string().trim().max(60).default("") }).safeParse(req.body ?? {});
+  const slot = saveSlotSchema.safeParse(req.params.slot);
+  if (!parsed.success || !slot.success) { res.status(400).json({ error: "存档参数无效" }); return; }
+  try {
+    const snapshot = await gameRepository.savePlayerSnapshot(req.params.id, req.user.id, Number(slot.data) as 1 | 2, parsed.data.label);
+    if (!snapshot) { res.status(409).json({ error: "战役不存在或已经结算" }); return; }
+    res.json(snapshot);
+  } catch (error) { next(error); }
+});
+
+gamesRouter.post("/:id/snapshots/:slot/load", async (req, res, next) => {
+  if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
+  const slot = saveSlotSchema.safeParse(req.params.slot);
+  if (!slot.success) { res.status(400).json({ error: "存档槽位无效" }); return; }
+  try {
+    const loaded = await gameRepository.loadPlayerSnapshot(req.params.id, req.user.id, Number(slot.data) as 1 | 2);
+    if (!loaded) { res.status(409).json({ error: "存档不存在、版本不兼容或战役已经结算" }); return; }
+    res.json({ state: toPublicWorldState(loaded.state), events: toPublicGameEvents(loaded.events) });
   } catch (error) { next(error); }
 });
 

@@ -5,10 +5,10 @@ import {
 } from "@qianfu/core";
 import { LINJIANG_1942 } from "@qianfu/content";
 import type { AuthUser } from "./middleware/auth.js";
-import type { GameRepository, UserRecord } from "./repository.js";
+import type { GameRepository, PlayerSnapshotSummary, UserRecord } from "./repository.js";
 import { buildCampaignReportBundle } from "./reports.js";
 
-interface StoredGame { engine: CampaignEngine; events: GameEvent[]; createdAt: string }
+interface StoredGame { engine: CampaignEngine; events: GameEvent[]; createdAt: string; snapshots: Map<1 | 2, { summary: PlayerSnapshotSummary; state: WorldState; eventCount: number }> }
 interface StoredShare { summary: CampaignShareSummary; ownerUserId: string; report: SharedCampaignReport["report"] }
 
 export class InMemoryGameRepository implements GameRepository {
@@ -33,7 +33,7 @@ export class InMemoryGameRepository implements GameRepository {
   async createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"], coverProfileId: WorldState["cover"]["profileId"] = "archive_clerk"): Promise<WorldState> {
     const gameInstanceId = randomUUID();
     const state = createInitialWorld(LINJIANG_1942, gameInstanceId, ownerUserId, difficultyId, coverProfileId);
-    this.games.set(gameInstanceId, { engine: new CampaignEngine(LINJIANG_1942, state), events: [], createdAt: new Date().toISOString() });
+    this.games.set(gameInstanceId, { engine: new CampaignEngine(LINJIANG_1942, state), events: [], createdAt: new Date().toISOString(), snapshots: new Map() });
     return state;
   }
 
@@ -119,6 +119,28 @@ export class InMemoryGameRepository implements GameRepository {
     if (!share || share.summary.revokedAt || (share.summary.expiresAt && Date.parse(share.summary.expiresAt) <= Date.now())) return null;
     share.summary.accessCount += 1;
     return { share: structuredClone(share.summary), report: structuredClone(share.report) };
+  }
+
+  async listPlayerSnapshots(gameInstanceId: string, ownerUserId: string): Promise<PlayerSnapshotSummary[] | null> {
+    const game = this.findGame(gameInstanceId, ownerUserId); if (!game) return null;
+    return ([1, 2] as const).map((slot) => game.snapshots.get(slot)?.summary ?? { slot, label: "", savedAt: "", currentTime: "", stateVersion: 0, lastEventSeq: 0 });
+  }
+
+  async savePlayerSnapshot(gameInstanceId: string, ownerUserId: string, slot: 1 | 2, label: string): Promise<PlayerSnapshotSummary | null> {
+    const game = this.findGame(gameInstanceId, ownerUserId); if (!game) return null;
+    const state = game.engine.getState(); if (state.status !== "active" && state.status !== "paused") return null;
+    const summary: PlayerSnapshotSummary = { slot, label, savedAt: new Date().toISOString(), currentTime: state.currentTime, stateVersion: state.stateVersion, lastEventSeq: state.lastEventSeq };
+    game.snapshots.set(slot, { summary, state: structuredClone(state), eventCount: game.events.length });
+    return summary;
+  }
+
+  async loadPlayerSnapshot(gameInstanceId: string, ownerUserId: string, slot: 1 | 2): Promise<{ state: WorldState; events: GameEvent[] } | null> {
+    const game = this.findGame(gameInstanceId, ownerUserId); if (!game) return null;
+    const saved = game.snapshots.get(slot); const current = game.engine.getState();
+    if (!saved || current.status === "finished" || saved.state.campaignVersion !== current.campaignVersion || saved.state.engineVersion !== current.engineVersion) return null;
+    game.engine = new CampaignEngine(LINJIANG_1942, structuredClone(saved.state));
+    game.events = game.events.slice(0, saved.eventCount);
+    return { state: game.engine.getState(), events: structuredClone(game.events) };
   }
 }
 

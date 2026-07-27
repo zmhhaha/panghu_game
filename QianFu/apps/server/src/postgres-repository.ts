@@ -7,7 +7,7 @@ import {
 import { LINJIANG_1942 } from "@qianfu/content";
 import { Pool, type PoolClient } from "pg";
 import type { AuthUser } from "./middleware/auth.js";
-import type { GameRepository, UserRecord } from "./repository.js";
+import type { GameRepository, PlayerSnapshotSummary, UserRecord } from "./repository.js";
 import { buildCampaignReportBundle } from "./reports.js";
 
 interface GameRow {
@@ -29,6 +29,17 @@ interface ShareRow {
   access_count: string | number;
   public_report?: CampaignReport;
 }
+
+interface PlayerSnapshotRow {
+  slot: 1 | 2; label: string; saved_at: Date; current_time: Date;
+  state_version: number; last_event_seq: string | number;
+}
+
+const mapPlayerSnapshot = (row: PlayerSnapshotRow): PlayerSnapshotSummary => ({
+  slot: Number(row.slot) as 1 | 2, label: row.label, savedAt: new Date(row.saved_at).toISOString(),
+  currentTime: new Date(row.current_time).toISOString(), stateVersion: row.state_version,
+  lastEventSeq: Number(row.last_event_seq),
+});
 
 const mapShare = (row: ShareRow): CampaignShareSummary => ({
   shareId: row.id,
@@ -137,9 +148,9 @@ export class PostgresGameRepository implements GameRepository {
 
       const result = new CampaignEngine(LINJIANG_1942, state).execute(action);
       await client.query(
-        `INSERT INTO game_actions (game_instance_id, idempotency_key, action_type, action)
-         VALUES ($1, $2, $3, $4)`,
-        [gameInstanceId, action.idempotencyKey, action.type, action],
+        `INSERT INTO game_actions (game_instance_id, idempotency_key, action_type, action, event_seq)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [gameInstanceId, action.idempotencyKey, action.type, action, result.state.lastEventSeq],
       );
       for (const event of result.events) {
         await client.query(
@@ -245,6 +256,57 @@ export class PostgresGameRepository implements GameRepository {
     );
     const row = result.rows[0];
     return row?.public_report ? { share: mapShare(row), report: row.public_report } : null;
+  }
+
+  async listPlayerSnapshots(gameInstanceId: string, ownerUserId: string): Promise<PlayerSnapshotSummary[] | null> {
+    const owner = await this.pool.query("SELECT 1 FROM game_instances WHERE id = $1 AND owner_user_id = $2", [gameInstanceId, ownerUserId]);
+    if (!owner.rowCount) return null;
+    const result = await this.pool.query<PlayerSnapshotRow>(
+      `SELECT slot, label, saved_at, current_time, state_version, last_event_seq
+       FROM player_save_snapshots WHERE game_instance_id = $1 ORDER BY slot`, [gameInstanceId]);
+    const bySlot = new Map(result.rows.map((row) => [Number(row.slot), mapPlayerSnapshot(row)]));
+    return ([1, 2] as const).map((slot) => bySlot.get(slot) ?? { slot, label: "", savedAt: "", currentTime: "", stateVersion: 0, lastEventSeq: 0 });
+  }
+
+  async savePlayerSnapshot(gameInstanceId: string, ownerUserId: string, slot: 1 | 2, label: string): Promise<PlayerSnapshotSummary | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const game = await client.query<GameRow>("SELECT state FROM game_instances WHERE id = $1 AND owner_user_id = $2 FOR UPDATE", [gameInstanceId, ownerUserId]);
+      const state = game.rows[0]?.state;
+      if (!state || (state.status !== "active" && state.status !== "paused")) { await client.query("ROLLBACK"); return null; }
+      const result = await client.query<PlayerSnapshotRow>(
+        `INSERT INTO player_save_snapshots (game_instance_id, slot, label, current_time, state_version, last_event_seq, campaign_version, engine_version, state)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT (game_instance_id, slot) DO UPDATE SET label = EXCLUDED.label, saved_at = now(), current_time = EXCLUDED.current_time,
+           state_version = EXCLUDED.state_version, last_event_seq = EXCLUDED.last_event_seq, campaign_version = EXCLUDED.campaign_version,
+           engine_version = EXCLUDED.engine_version, state = EXCLUDED.state
+         RETURNING slot, label, saved_at, current_time, state_version, last_event_seq`,
+        [gameInstanceId, slot, label, state.currentTime, state.stateVersion, state.lastEventSeq, state.campaignVersion, state.engineVersion, state]);
+      await client.query("COMMIT");
+      return mapPlayerSnapshot(result.rows[0]);
+    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+  }
+
+  async loadPlayerSnapshot(gameInstanceId: string, ownerUserId: string, slot: 1 | 2): Promise<{ state: WorldState; events: GameEvent[] } | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const game = await client.query<GameRow>("SELECT state FROM game_instances WHERE id = $1 AND owner_user_id = $2 FOR UPDATE", [gameInstanceId, ownerUserId]);
+      const current = game.rows[0]?.state;
+      if (!current || current.status === "finished") { await client.query("ROLLBACK"); return null; }
+      const snap = await client.query<{ state: WorldState; campaign_version: string; engine_version: string; last_event_seq: string }>(
+        "SELECT state, campaign_version, engine_version, last_event_seq FROM player_save_snapshots WHERE game_instance_id = $1 AND slot = $2", [gameInstanceId, slot]);
+      const saved = snap.rows[0];
+      if (!saved || saved.campaign_version !== current.campaignVersion || saved.engine_version !== current.engineVersion) { await client.query("ROLLBACK"); return null; }
+      const state = saved.state;
+      await client.query("DELETE FROM game_events WHERE game_instance_id = $1 AND event_seq > $2", [gameInstanceId, saved.last_event_seq]);
+      await client.query("DELETE FROM game_actions WHERE game_instance_id = $1 AND event_seq > $2", [gameInstanceId, saved.last_event_seq]);
+      await client.query("UPDATE game_instances SET status = $3, state_version = $4, last_event_seq = $5, state = $6, closed_at = NULL, updated_at = now() WHERE id = $1", [gameInstanceId, state.status, state.stateVersion, state.lastEventSeq, state]);
+      const events = await client.query<GameEvent>(`SELECT id, game_instance_id AS "gameInstanceId", event_seq AS "eventSeq", idempotency_key AS "idempotencyKey", type, occurred_at AS "occurredAt", payload FROM game_events WHERE game_instance_id = $1 ORDER BY event_seq`, [gameInstanceId]);
+      await client.query("COMMIT");
+      return { state, events: events.rows.map((event) => ({ ...event, occurredAt: new Date(event.occurredAt).toISOString() })) };
+    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 
   private async insertSnapshot(client: PoolClient, state: WorldState) {

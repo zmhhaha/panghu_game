@@ -51,6 +51,10 @@ export interface GameContext {
   }>;
 }
 
+export interface PlayerSnapshotSummary {
+  slot: 1 | 2; label: string; savedAt: string; currentTime: string; stateVersion: number; lastEventSeq: number;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -72,6 +76,9 @@ export const api = {
   deleteGame: (id: string) => request<{ deleted: true }>(`/api/v1/games/${id}`, { method: "DELETE" }),
   getContext: (id: string) => request<GameContext>(`/api/v1/games/${id}/context`),
   getEvents: (id: string) => request<{ events: GameEvent[] }>(`/api/v1/games/${id}/events`),
+  listSnapshots: (id: string) => request<{ snapshots: PlayerSnapshotSummary[] }>(`/api/v1/games/${id}/snapshots`),
+  saveSnapshot: (id: string, slot: 1 | 2, label: string) => request<PlayerSnapshotSummary>(`/api/v1/games/${id}/snapshots/${slot}`, { method: "PUT", body: JSON.stringify({ label }) }),
+  loadSnapshot: (id: string, slot: 1 | 2) => request<{ state: PublicWorldState; events: GameEvent[] }>(`/api/v1/games/${id}/snapshots/${slot}/load`, { method: "POST", body: "{}" }),
   getReport: (id: string) => request<CampaignReportBundle>(`/api/v1/games/${id}/report`),
   listShares: (id: string) => request<{ shares: CampaignShareSummary[] }>(`/api/v1/games/${id}/shares`),
   createShare: (id: string, expiresInDays: 7 | 30 | 90 | null) => request<CampaignShareSummary>(`/api/v1/games/${id}/shares`, { method: "POST", body: JSON.stringify({ expiresInDays }) }),

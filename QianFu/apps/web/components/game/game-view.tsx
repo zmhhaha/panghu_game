@@ -18,6 +18,7 @@ import { SettlementReport } from "@/components/game/settlement-report";
 import { MissionObjectives } from "@/components/game/mission-objectives";
 import { ActionTimeline } from "@/components/game/action-timeline";
 import { CoverIdentityPanel } from "@/components/game/cover-identity-panel";
+import { SaveSlotsPanel } from "@/components/game/save-slots-panel";
 
 const travelMinutes: Record<string, Record<string, number>> = {
   "archive-office": { "radio-office": 10, "linjiang-news": 20, "jianghai-hotel": 20, "third-dock": 40, "wu-clock-shop": 30 },
@@ -164,6 +165,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
           </Button>
         </div>
         <CoverIdentityPanel state={state} busy={busy} onAction={(action) => void act(action)} />
+        <SaveSlotsPanel gameInstanceId={gameInstanceId} state={state} disabled={busy} onLoaded={(loadedState, loadedEvents) => { setState(loadedState); setEvents(loadedEvents); void api.getContext(gameInstanceId).then(setContext); setError(""); }} />
       </aside>
 
       <section className="min-w-0 p-4 sm:p-6 lg:p-8">

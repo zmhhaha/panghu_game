@@ -16,7 +16,7 @@ spec:
           imagePullPolicy: Always
           command: ["/bin/sh", "-ec"]
           args:
-            - psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /app/apps/server/migrations/001_initial.sql
+            - for file in /app/apps/server/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"; done
           env:
             - name: DATABASE_URL
               valueFrom:

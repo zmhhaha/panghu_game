@@ -9,6 +9,15 @@ export interface UserRecord extends AuthUser {
   lastLoginAt: string;
 }
 
+export interface PlayerSnapshotSummary {
+  slot: 1 | 2;
+  label: string;
+  savedAt: string;
+  currentTime: string;
+  stateVersion: number;
+  lastEventSeq: number;
+}
+
 export interface GameRepository {
   ensureUser(user: AuthUser): Promise<UserRecord>;
   createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"], coverProfileId?: WorldState["cover"]["profileId"]): Promise<WorldState>;
@@ -22,4 +31,7 @@ export interface GameRepository {
   createShare(gameInstanceId: string, ownerUserId: string, expiresAt: string | null): Promise<CampaignShareSummary | null>;
   revokeShare(shareId: string, ownerUserId: string): Promise<boolean>;
   getPublicShare(shareId: string): Promise<SharedCampaignReport | null>;
+  listPlayerSnapshots(gameInstanceId: string, ownerUserId: string): Promise<PlayerSnapshotSummary[] | null>;
+  savePlayerSnapshot(gameInstanceId: string, ownerUserId: string, slot: 1 | 2, label: string): Promise<PlayerSnapshotSummary | null>;
+  loadPlayerSnapshot(gameInstanceId: string, ownerUserId: string, slot: 1 | 2): Promise<{ state: WorldState; events: GameEvent[] } | null>;
 }
