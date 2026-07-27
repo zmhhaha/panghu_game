@@ -34,7 +34,7 @@ const actionSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("delegate_comrade_task"), memberId: z.string().min(1), kind: z.enum(["gather_intel", "verify_intel", "scout_location"]), targetId: z.string().min(1), approach: z.enum(["cautious", "balanced", "urgent"]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("cancel_comrade_task"), taskId: z.string().min(8).max(128), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
-  z.object({ type: z.literal("recruitment_test"), targetCharacterId: z.string().min(1), testType: z.enum(["background_check", "controlled_leak", "discipline_check", "low_risk_task"]), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("recruitment_test"), targetCharacterId: z.string().min(1), testType: z.enum(["background_check", "controlled_leak", "discipline_check", "low_risk_task"]), plan: z.object({ objective: z.string().trim().min(4).max(240), steps: z.string().trim().min(8).max(1200), safeguards: z.string().trim().min(4).max(600), abortCondition: z.string().trim().min(4).max(400) }), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("recruit_candidate"), targetCharacterId: z.string().min(1), durationMinutes: z.literal(30), idempotencyKey: z.string().min(8).max(128) }),
   z.object({
     type: z.literal("dialogue"),
@@ -185,6 +185,10 @@ gamesRouter.post("/:id/actions", async (req, res) => {
       const current = await gameRepository.getGame(req.params.id, req.user.id);
       if (!current) { res.status(404).json({ error: "战役不存在" }); return; }
       action = await campaignOrchestrator.prepareTurn(current, action);
+    } else if (action.type === "recruitment_test") {
+      const current = await gameRepository.getGame(req.params.id, req.user.id);
+      if (!current) { res.status(404).json({ error: "战役不存在" }); return; }
+      action = await campaignOrchestrator.prepareRecruitmentTest(current, action);
     }
     const result = await gameRepository.execute(req.params.id, req.user.id, action);
     if (!result) { res.status(404).json({ error: "战役不存在" }); return; }

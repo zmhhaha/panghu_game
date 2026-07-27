@@ -1,7 +1,8 @@
-import type { DialogueAction, DialogueMemory, DialogueTurnAction, WorldState } from "@qianfu/core";
+import type { DialogueAction, DialogueMemory, DialogueTurnAction, RecruitmentTestAction, WorldState } from "@qianfu/core";
 import { DIALOGUE_TEXT_LIMITS } from "@qianfu/core/dialogue";
 import { LINJIANG_1942 } from "@qianfu/content";
-import { createAgentProvider, parseNpcResponse, type AgentProvider, type NpcAgentResponse } from "./provider.js";
+import { createAgentProvider, parseModelJson, parseNpcResponse, type AgentProvider, type NpcAgentResponse } from "./provider.js";
+import { z } from "zod";
 
 export interface AgentPreparation {
   action: DialogueAction;
@@ -46,6 +47,21 @@ export class CampaignOrchestrator {
       playerText: action.playerText, durationMinutes: 2, idempotencyKey: action.idempotencyKey,
     });
     return { ...action, agentOutcome: prepared.action.agentOutcome };
+  }
+
+  async prepareRecruitmentTest(state: WorldState, action: RecruitmentTestAction): Promise<RecruitmentTestAction> {
+    const character = LINJIANG_1942.characters.find((item) => item.id === action.targetCharacterId);
+    if (!character || !this.provider) return action;
+    try {
+      const system = 'You are the screening-action agent for a spy game. Describe only observable external behavior during the candidate screening plan. Never reveal hidden alignment, true reliability, backend values, or the final verdict. Output JSON only: {"observation":"an observation under 240 Chinese characters"}.';
+      const user = JSON.stringify({ testType: action.testType, candidate: { name: character.name, publicIdentity: character.publicIdentity, personality: character.personality }, plan: action.plan, time: state.currentTime });
+      const raw = await this.provider.complete(system, user);
+      const value = z.object({ observation: z.string().min(1).max(240) }).parse(typeof raw === "string" ? parseModelJson(raw) : raw);
+      return { ...action, agentObservation: value.observation };
+    } catch (error) {
+      console.warn(`[QianFu Agent] recruitment target=${action.targetCharacterId} provider=${this.provider.name} status=fallback`, error instanceof Error ? error.message : error);
+      return action;
+    }
   }
 
   private async runNpcAgent(

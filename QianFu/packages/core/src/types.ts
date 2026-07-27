@@ -23,6 +23,14 @@ export interface RecruitmentEvidence {
   result: RecruitmentEvidenceResult;
   summary: string;
   observedAt: string;
+  plan: RecruitmentPlan;
+}
+
+export interface RecruitmentPlan {
+  objective: string;
+  steps: string;
+  safeguards: string;
+  abortCondition: string;
 }
 
 export interface RecruitmentCase {
@@ -564,6 +572,8 @@ export interface RecruitmentTestAction extends ActionBase {
   type: "recruitment_test";
   targetCharacterId: string;
   testType: RecruitmentTestType;
+  plan: RecruitmentPlan;
+  agentObservation?: string;
 }
 
 export interface RecruitCandidateAction extends ActionBase {

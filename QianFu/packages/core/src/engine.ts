@@ -455,13 +455,15 @@ export class CampaignEngine {
         if (action.testType !== "background_check" && character.locationId !== next.currentLocationId) throw new Error("需要与候选人在同一地点安排这项测试");
         if (action.testType === "low_risk_task" && character.recruitmentProgress < 20) throw new Error("尚未形成初步合作意向，不能安排低风险任务");
 
-        const result = evaluateRecruitmentTest(definition, action.testType);
+        validateRecruitmentPlan(action.plan);
+        const result = evaluateRecruitmentTest(definition, action.testType, action.plan);
         const evidence = {
           id: action.idempotencyKey,
           testType: action.testType,
           result,
-          summary: recruitmentEvidenceSummary(action.testType, result),
+          summary: `${recruitmentEvidenceSummary(action.testType, result)}${action.agentObservation ? ` ${action.agentObservation.slice(0, 400)}` : ""}`,
           observedAt: next.currentTime,
+          plan: action.plan,
         };
         character.recruitmentCase.completedTestTypes.push(action.testType);
         character.recruitmentCase.evidence.push(evidence);
@@ -1128,9 +1130,16 @@ function recruitmentTestMinutes(testType: RecruitmentTestType): number {
   return 30;
 }
 
+function validateRecruitmentPlan(plan: Extract<GameAction, { type: "recruitment_test" }>["plan"]) {
+  if (plan.steps.split(/\r?\n|[。；;]/).filter(Boolean).length < 2) throw new Error("甄别计划至少需要写出两个执行步骤");
+  if (plan.safeguards.length < 8) throw new Error("请补充具体的风险控制措施");
+  if (plan.abortCondition.length < 8) throw new Error("请写明何种情况触发撤退");
+}
+
 function evaluateRecruitmentTest(
   definition: CampaignDefinition["characters"][number],
   testType: RecruitmentTestType,
+  plan: Extract<GameAction, { type: "recruitment_test" }>["plan"],
 ): RecruitmentEvidenceResult {
   const reliability = definition.reliability;
   const score = testType === "background_check"
@@ -1140,8 +1149,11 @@ function evaluateRecruitmentTest(
       : testType === "discipline_check"
         ? reliability.discipline * 0.55 + reliability.pressureResistance * 0.3 + reliability.loyalty * 0.15
         : reliability.competence * 0.45 + reliability.discipline * 0.3 + reliability.courage * 0.25;
-  if (score >= 70) return "favorable";
-  if (score < 50) return "warning";
+  const planText = `${plan.objective}${plan.steps}${plan.safeguards}${plan.abortCondition}`;
+  const planQuality = Math.min(10, (planText.length >= 80 ? 3 : 0) + (plan.steps.split(/\r?\n|[。；;]/).length >= 3 ? 2 : 0) + (/(备用|撤退|停止|核对|独立|不接触|分段)/.test(planText) ? 5 : 0));
+  const adjustedScore = score + planQuality;
+  if (adjustedScore >= 70) return "favorable";
+  if (adjustedScore < 50) return "warning";
   return "inconclusive";
 }
 

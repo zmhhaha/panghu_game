@@ -14,6 +14,7 @@ const campaign: CampaignDefinition = {
 };
 
 describe("CampaignEngine", () => {
+  const recruitmentPlan = { objective: "确认对方是否能守住最小秘密", steps: "先建立独立来源。\n再安排低风险核对。", safeguards: "分段传递，不接触核心名单。", abortCondition: "发现异常扩散就停止并撤退。" };
   it("limits a profile start to its public contact and requires an introduction before dialogue", () => {
     const undercoverCampaign: CampaignDefinition = {
       ...campaign,
@@ -142,11 +143,11 @@ describe("CampaignEngine", () => {
     expect(engine.getState().characters.recruit.recruited).toBe(false);
     expect(() => engine.execute({ type: "recruit_candidate", targetCharacterId: "recruit", durationMinutes: 30, idempotencyKey: "recruit-too-early" })).toThrow("三类不同甄别");
 
-    const background = engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "background_check", durationMinutes: 60, idempotencyKey: "screen-background" });
-    engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "controlled_leak", durationMinutes: 40, idempotencyKey: "screen-leak" });
-    engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "discipline_check", durationMinutes: 30, idempotencyKey: "screen-discipline" });
+    const background = engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "background_check", plan: recruitmentPlan, durationMinutes: 60, idempotencyKey: "screen-background" });
+    engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "controlled_leak", plan: recruitmentPlan, durationMinutes: 40, idempotencyKey: "screen-leak" });
+    engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "discipline_check", plan: recruitmentPlan, durationMinutes: 30, idempotencyKey: "screen-discipline" });
     expect(background.state.characters.recruit.recruitmentCase.evidence[0]?.result).toBe("favorable");
-    expect(() => engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "discipline_check", durationMinutes: 30, idempotencyKey: "screen-duplicate" })).toThrow("同类甄别已经完成");
+    expect(() => engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "discipline_check", plan: recruitmentPlan, durationMinutes: 30, idempotencyKey: "screen-duplicate" })).toThrow("同类甄别已经完成");
     expect(engine.getState().characters.recruit.recruited).toBe(false);
 
     const recruited = engine.execute({ type: "recruit_candidate", targetCharacterId: "recruit", durationMinutes: 30, idempotencyKey: "recruit-formal" });
