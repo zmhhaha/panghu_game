@@ -57,7 +57,7 @@ export function SaveSlotsPanel({ gameInstanceId, state, onLoaded, disabled }: {
             const saved = slots.find((item) => item.slot === slot && item.savedAt);
             return <div key={slot} className="border border-line bg-panel/30 p-4">
               <div className="flex items-center justify-between gap-3"><p className="text-sm text-paper">槽位 {slot}</p><span className="text-[10px] text-muted">{saved ? new Date(saved.savedAt).toLocaleString("zh-CN") : "空槽位"}</span></div>
-              <p className="mt-2 text-xs text-muted">{saved ? `${saved.label || "未命名存档"} · 游戏时间 ${new Date(saved.currentTime).toLocaleString("zh-CN")}` : "尚未保存时间线位置"}</p>
+              <p className="mt-2 text-xs text-muted">{saved ? `${saved.label || "未命名存档"} · 游戏时间 ${new Date(saved.currentTime).toLocaleString("zh-CN", { timeZone: "UTC" })}` : "尚未保存时间线位置"}</p>
               <div className="mt-4 flex gap-2"><Button variant="outline" disabled={disabled || busy || state.status !== "active"} onClick={() => void save(slot)}><Save size={14} />保存至此</Button><Button variant="ghost" disabled={disabled || busy || !saved || state.status !== "active"} onClick={() => void load(slot)}><RotateCcw size={14} />读取此档</Button></div>
             </div>;
           })}</div>

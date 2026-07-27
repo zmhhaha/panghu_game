@@ -111,6 +111,9 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const selectedCandidate = context.recruitmentCandidates.find((candidate) => candidate.id === selectedNpc);
   const formattedTime = new Intl.DateTimeFormat("zh-CN", {
     month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+    // Campaign timestamps intentionally encode the scenario's local clock as UTC.
+    // Keep display aligned with engine schedule, work hours, and night-rest rules.
+    timeZone: "UTC",
   }).format(new Date(state.currentTime));
   const now = new Date(state.currentTime);
   const currentMinute = now.getUTCHours() * 60 + now.getUTCMinutes();
