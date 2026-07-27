@@ -107,7 +107,11 @@ export class CampaignOrchestrator {
       recentDialogue,
       interactionCount: memory.interactionCount,
     });
-    return parseNpcResponse(await provider.complete(system, user));
+    const response = parseNpcResponse(await provider.complete(system, user));
+    const previousNpc = memory.turns.filter((turn) => turn.speaker === "npc").at(-1)?.text?.trim();
+    if (previousNpc && response.visibleSpeech.trim() === previousNpc) throw new Error("NPC response repeated the previous turn");
+    if (response.visibleSpeech.trim() === action.playerText.trim()) throw new Error("NPC response echoed the player");
+    return response;
   }
 
   private buildDirectorSummary(state: WorldState, action: DialogueAction): string {

@@ -620,6 +620,15 @@ function generateNpcReply(
   }
   if (action.goal === "apply_pressure") return `${habit}。你问得太直接了，我们最好换个话题。`;
   if (discovered) return `${habit}，这件事我可以透露一点，细节等确认后再说。`;
+  if (action.goal === "request_information") {
+    const prompts = [
+      "\u7a3f\u4ef6\u53ef\u4ee5\u8c08\uff0c\u4f46\u6211\u8981\u5148\u77e5\u9053\u4f60\u7684\u4fe1\u6e90\u662f\u4eb2\u89c1\u3001\u6587\u4ef6\uff0c\u8fd8\u662f\u542c\u6765\u7684\u3002",
+      "\u5982\u679c\u771f\u6709\u4fe1\u6e90\uff0c\u7ed9\u6211\u4e00\u4e2a\u53ef\u4ee5\u72ec\u7acb\u6838\u5bf9\u7684\u7ec6\u8282\uff0c\u4e0d\u8981\u53ea\u8bf4\u6709\u4eba\u8bf4\u3002",
+      "\u6211\u4e0d\u53ea\u770b\u6d88\u606f\u7684\u5927\u5c0f\uff0c\u8fd8\u8981\u770b\u5b83\u4f1a\u4e0d\u4f1a\u8fde\u7d2f\u5230\u5199\u7a3f\u7684\u4eba\u3002",
+      "\u4ef7\u94b1\u53ef\u4ee5\u7b49\uff0c\u5148\u8ba9\u6211\u5224\u65ad\u5185\u5bb9\u503c\u4e0d\u503c\u5f97\u5199\u8fdb\u665a\u62a5\u3002",
+    ];
+    return prompts[memory.interactionCount % prompts.length];
+  }
   if (action.goal === "recruit_probe") return `${habit}，信任不是一句话能换来的，先从一件小事开始吧。`;
   if (action.goal === "build_trust") return `${habit}，你的态度比上次稳重。只要守口如瓶，合作并非没有可能。`;
   if (action.goal === "probe_attitude") return `${habit}，立场很危险。我只关心身边人的安全和事情能否做好。`;
