@@ -1002,7 +1002,7 @@ function coverWorkBenefit(kind: Extract<GameAction, { type: "cover_work" }>["wor
 }
 
 function coverWorkSummary(kind: Extract<GameAction, { type: "cover_work" }>["workKind"]) {
-  if (kind === "settle_accounts") return "You reconciled invoices and stock ledgers, leaving a credible trail of trade.";
+  if (kind === "settle_accounts") return "你核对了发票与存货账册，留下了一条可信的经营记录。";
   if (kind === "visit_clients") return "You made a round of customer visits, making your business movements easy to account for.";
   if (kind === "stock_check") return "You checked stock and delivery notes, giving today's route a plausible public purpose.";
   if (kind === "submit_column") return "You submitted a signed column; the editorial desk now has a record of your work.";
