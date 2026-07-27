@@ -126,7 +126,10 @@ export class CampaignEngine {
     this.state.activeDialogue ??= null;
     this.state.cover ??= createInitialCoverState();
     this.state.cover.profileId ??= "archive_clerk";
-    if (this.state.activeDialogue) this.state.activeDialogue.targetIntelId ??= null;
+    if (this.state.activeDialogue) {
+      this.state.activeDialogue.targetIntelId ??= null;
+      this.state.activeDialogue.discoveredFields ??= [];
+    }
     this.state.discoveredLocationIds ??= [this.state.currentLocationId];
     this.state.knownCharacterIds ??= [];
     this.state.resolvedLeadIds ??= [];
@@ -216,7 +219,7 @@ export class CampaignEngine {
           if (!intelDefinition?.sourceCharacterIds.includes(action.targetCharacterId) || !next.intel[action.targetIntelId]?.knownFields.length) throw new Error("该人物无法核验所选情报");
         }
         const minTurns = action.allocatedMinutes / 2;
-        next.activeDialogue = { id: action.idempotencyKey, characterId: action.targetCharacterId, goal: action.goal, tone: action.tone, targetIntelId: action.targetIntelId ?? null, allocatedMinutes: action.allocatedMinutes, elapsedMinutes: 0, maxTurns: minTurns, turnCount: 0, status: "active", transcript: [] };
+        next.activeDialogue = { id: action.idempotencyKey, characterId: action.targetCharacterId, goal: action.goal, tone: action.tone, targetIntelId: action.targetIntelId ?? null, allocatedMinutes: action.allocatedMinutes, elapsedMinutes: 0, maxTurns: minTurns, turnCount: 0, status: "active", discoveredFields: [], transcript: [] };
         append("dialogue.started", { characterId: action.targetCharacterId, goal: action.goal, targetIntelId: action.targetIntelId, allocatedMinutes: action.allocatedMinutes, maxTurns: minTurns });
         narration = "你坐下来，开始观察对方的反应。";
         break;
@@ -231,7 +234,7 @@ export class CampaignEngine {
         const definition = this.campaign.characters.find((item) => item.id === session.characterId);
         if (!definition) throw new Error("Unknown character");
         const legacyAction = { type: "dialogue" as const, targetCharacterId: session.characterId, goal: session.goal, tone: session.tone, targetIntelId: session.targetIntelId ?? undefined, playerText: action.playerText, durationMinutes: 10, idempotencyKey: action.idempotencyKey };
-        const discovery = resolveDialogue(this.campaign, next, definition, legacyAction);
+        const discovery = resolveDialogue(this.campaign, next, definition, legacyAction, (session.discoveredFields?.length ?? 0) === 0, 0.25);
         const memory = next.dialogueMemories[definition.id];
         if (!memory) throw new Error("Dialogue memory is unavailable");
         memory.turns.push({ speaker: "player", text: action.playerText.trim(), at: next.currentTime });
@@ -240,6 +243,7 @@ export class CampaignEngine {
         if (action.agentOutcome?.privateIntent) memory.lastPrivateIntent = action.agentOutcome.privateIntent;
         memory.turns = memory.turns.slice(-8); memory.interactionCount += 1; memory.lastGoal = session.goal; memory.summary = summarizeMemory(memory, definition);
         session.transcript.push({ speaker: "player", text: action.playerText.trim(), at: next.currentTime }, { speaker: "npc", text: npcReply, at: next.currentTime });
+        if (discovery) session.discoveredFields = [...(session.discoveredFields ?? []), `${discovery.intelId}:${discovery.field}`];
         session.elapsedMinutes += 2; session.turnCount += 1;
         if (session.turnCount >= session.maxTurns) session.status = "completed";
         append("dialogue.turn_completed", {
@@ -1056,12 +1060,14 @@ function resolveDialogue(
   state: WorldState,
   definition: CampaignDefinition["characters"][number],
   action: Extract<GameAction, { type: "dialogue" }>,
+  allowDiscovery = true,
+  relationshipScale = 1,
 ): { intelId: string; field: string; verified: boolean; assessment: string } | null {
   const character = state.characters[definition.id];
-  const toneTrust = action.tone === "friendly" ? 3 : action.tone === "threatening" ? -4 : action.tone === "formal" ? 1 : 0;
+  const toneTrust = (action.tone === "friendly" ? 3 : action.tone === "threatening" ? -4 : action.tone === "formal" ? 1 : 0) * relationshipScale;
   const pressure = action.goal === "apply_pressure" ? 7 : action.tone === "threatening" ? 5 : 0;
-  character.familiarity = clamp(character.familiarity + (action.goal === "small_talk" ? 3 : action.goal === "build_trust" ? 4 : 2));
-  character.privateTrust = clamp(character.privateTrust + toneTrust + (action.goal === "build_trust" ? 5 : 0), -100, 100);
+  character.familiarity = clamp(character.familiarity + (action.goal === "small_talk" ? 3 : action.goal === "build_trust" ? 4 : 2) * relationshipScale);
+  character.privateTrust = clamp(character.privateTrust + toneTrust + (action.goal === "build_trust" ? 5 * relationshipScale : 0), -100, 100);
   character.suspicionOfPlayer = clamp(character.suspicionOfPlayer + pressure * state.difficulty.enemyResponseSpeed);
   if (action.goal === "probe_attitude") {
     character.politicalAffinity = clamp(character.politicalAffinity + (definition.reliability.loyalty - 50) / 12, -100, 100);
@@ -1074,7 +1080,7 @@ function resolveDialogue(
     }
   }
 
-  const canShare = character.familiarity >= 5 && character.privateTrust >= 2 && action.goal === "request_information";
+  const canShare = character.familiarity >= 8 && character.privateTrust >= 5 && action.goal === "request_information";
   if (!canShare && action.goal !== "verify_intel") return null;
   const candidate = action.goal === "verify_intel"
     ? campaign.intel.find((item) => (!action.targetIntelId || item.id === action.targetIntelId)
@@ -1082,6 +1088,8 @@ function resolveDialogue(
       && state.intel[item.id].knownFields.some((field) => !state.intel[item.id].evidence.some((evidence) => evidence.field === field && evidence.sourceId === definition.id)))
     : campaign.intel.find((item) => item.sourceCharacterIds.includes(definition.id) && state.intel[item.id].knownFields.length < item.requiredFields.length);
   if (!candidate) return null;
+  const requirement = candidate.sourceRequirements?.[definition.id];
+  if (!allowDiscovery || (requirement && (character.familiarity < requirement.familiarity || character.privateTrust < requirement.privateTrust))) return null;
   const intel = state.intel[candidate.id];
   const verified = action.goal === "verify_intel";
   const field = verified

@@ -139,6 +139,7 @@ export interface DialogueSession {
   maxTurns: number;
   turnCount: number;
   status: "active" | "completed";
+  discoveredFields?: string[];
   transcript: Array<{ speaker: "player" | "npc" | "system"; text: string; at: string }>;
 }
 
@@ -150,6 +151,7 @@ export interface IntelDefinition {
   fieldLabels?: Record<string, string>;
   sourceCharacterIds: string[];
   sourceOrigins?: Record<string, string>;
+  sourceRequirements?: Record<string, { familiarity: number; privateTrust: number }>;
   expiresAt: string;
 }
 

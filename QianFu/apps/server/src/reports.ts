@@ -126,6 +126,7 @@ function reportSummary(state: WorldState): string {
 function buildTimeline(campaign: CampaignDefinition, events: GameEvent[]): CampaignReportTimelineEntry[] {
   const important = events.filter((event) => [
     "character.introduced", "character.identified", "intel.dialogue_discovered", "intel.transmitted",
+    "lead.resolved", "cover.work_completed",
     "character.recruitment_progress", "comrade.task_completed", "comrade.task_failed",
     "radio.message_sent", "radio.receipt_received", "investigation.surveillance_started", "player.moved",
   ].includes(event.type));
@@ -138,12 +139,16 @@ function describeEvent(campaign: CampaignDefinition, event: GameEvent): Campaign
   const character = campaign.characters.find((item) => item.id === characterId);
   const intelId = String(payload.intelId ?? "");
   const intel = campaign.intel.find((item) => item.id === intelId);
+  const field = String(payload.field ?? "");
+  const fieldLabel = intel?.fieldLabels?.[field] ?? field;
   const locationId = String(payload.to ?? payload.locationId ?? "");
   const location = campaign.locations.find((item) => item.id === locationId);
   const details: Record<string, [string, string]> = {
     "character.introduced": ["建立接触", `初次认识${character?.name ?? "一名人物"}`],
     "character.identified": ["确认身份", `确认了${character?.name ?? "目标人物"}的公开身份`],
-    "intel.dialogue_discovered": ["获得线索", `从${character?.name ?? "谈话对象"}处获得一项可核对线索`],
+    "lead.resolved": ["公开引介", String(payload.hint ?? "一次公开工作带来了新的接触线索")],
+    "cover.work_completed": ["维持公开身份", String(payload.summary ?? "完成了一项可被核验的公开工作")],
+    "intel.dialogue_discovered": ["获得线索", `从${character?.name ?? "谈话对象"}处获得“${intel?.title ?? "情报"}”的${fieldLabel ? `“${fieldLabel}”` : "一项"}线索`],
     "intel.transmitted": ["传递情报", `${intel?.title ?? "一项情报"}通过${deliveryLabels[String(payload.method)] ?? "约定渠道"}送出`],
     "radio.message_sent": ["发出电文", `从${location?.name ?? "一处地点"}发出包含 ${Number(payload.fieldCount ?? 0)} 个字段的电文`],
     "radio.receipt_received": ["组织回执", String(payload.summary ?? "组织返回了电文接收结果")],

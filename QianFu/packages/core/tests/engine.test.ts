@@ -126,6 +126,26 @@ describe("CampaignEngine", () => {
     expect(result.state.intel.fact.collectedSourceIds).toEqual(["source"]);
   });
 
+  it("limits a dialogue session to one intelligence field while rapport accumulates by turn", () => {
+    const conversational: CampaignDefinition = {
+      ...campaign,
+      characters: [{
+        id: "source", name: "Source", publicIdentity: "Clerk", hiddenAlignment: "organization",
+        initialLocationId: "office", recruitable: false,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
+        reliability: { loyalty: 90, discipline: 70, pressureResistance: 70, courage: 60, competence: 80 },
+      }],
+      intel: [{ id: "fact", title: "Fact", truth: "true", requiredFields: ["when", "where"], sourceCharacterIds: ["source"], expiresAt: "1942-05-13T20:00:00.000Z" }],
+    };
+    const engine = new CampaignEngine(conversational, createInitialWorld(conversational, "session-fragment", "user-1"));
+    engine.execute({ type: "dialogue_start", targetCharacterId: "source", goal: "build_trust", tone: "friendly", allocatedMinutes: 20, durationMinutes: 0, idempotencyKey: "session-trust" });
+    for (let turn = 0; turn < 10; turn += 1) engine.execute({ type: "dialogue_turn", sessionId: "session-trust", playerText: `Trust ${turn}`, durationMinutes: 2, idempotencyKey: `session-trust-${turn}` });
+    engine.execute({ type: "dialogue_end", sessionId: "session-trust", durationMinutes: 0, idempotencyKey: "session-trust-end" });
+    engine.execute({ type: "dialogue_start", targetCharacterId: "source", goal: "request_information", tone: "friendly", allocatedMinutes: 30, durationMinutes: 0, idempotencyKey: "session-request" });
+    for (let turn = 0; turn < 15; turn += 1) engine.execute({ type: "dialogue_turn", sessionId: "session-request", playerText: `Question ${turn}`, durationMinutes: 2, idempotencyKey: `session-request-${turn}` });
+    expect(engine.getState().intel.fact.knownFields).toHaveLength(1);
+  });
+
   it("requires rapport, three distinct screening tests, and an explicit recruitment decision", () => {
     const recruitCampaign: CampaignDefinition = {
       ...campaign,

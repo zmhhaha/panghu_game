@@ -49,6 +49,10 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
     for (const sourceId of Object.keys(item.sourceOrigins ?? {})) {
       if (!item.sourceCharacterIds.includes(sourceId)) errors.push(`intel ${item.id} maps origin for non-source ${sourceId}`);
     }
+    for (const [sourceId, requirement] of Object.entries(item.sourceRequirements ?? {})) {
+      if (!item.sourceCharacterIds.includes(sourceId)) errors.push(`intel ${item.id} configures requirements for non-source ${sourceId}`);
+      if (requirement.familiarity < 0 || requirement.privateTrust < -100) errors.push(`intel ${item.id} has invalid source requirement for ${sourceId}`);
+    }
   }
   for (const objective of campaign.objectives) {
     if (Number.isNaN(Date.parse(objective.deadline))) errors.push(`objective ${objective.id} has invalid deadline`);
