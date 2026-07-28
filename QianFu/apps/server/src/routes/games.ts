@@ -100,6 +100,7 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
     const state = await gameRepository.getGame(req.params.id, req.user.id);
     if (!state) { res.status(404).json({ error: "战役不存在" }); return; }
     const campaign = getCampaignDefinition(state.campaignId, state.campaignVersion);
+    const visibility = getDifficultyVisibility(state.difficulty.id);
     const visibleCharacters = campaign.characters
       .filter((character) => state.characters[character.id]?.locationId === state.currentLocationId && isCharacterAvailableAt(character, state.currentTime))
       .map((character) => {
@@ -111,7 +112,7 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
       });
     res.json({
       campaign: { id: campaign.id, version: campaign.version, name: campaign.name },
-      visibility: getDifficultyVisibility(state.difficulty.id),
+      visibility,
       radioMinigame: getRadioMinigameConfig(state.difficulty.id),
       settlement: {
         ready: state.status === "finished",
@@ -157,7 +158,10 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
             publicIdentity: character.publicIdentity,
             stage: candidate.recruited ? "recruited" : testsReady && rapportReady ? "ready" : recruitmentCase.stage,
             completedTestTypes: recruitmentCase.completedTestTypes,
-            evidence: recruitmentCase.evidence,
+            evidence: recruitmentCase.evidence.map((evidence) => ({
+              ...evidence,
+              result: visibility.showEvidenceRelations ? evidence.result : null,
+            })),
             requirements: {
               contactReady: candidate.familiarity >= 3,
               cooperationReady: candidate.recruitmentProgress >= 20,
@@ -250,7 +254,7 @@ gamesRouter.post("/:id/snapshots/:slot/load", async (req, res, next) => {
   try {
     const loaded = await gameRepository.loadPlayerSnapshot(req.params.id, req.user.id, Number(slot.data) as 1 | 2);
     if (!loaded) { res.status(409).json({ error: "存档不存在、版本不兼容或战役已经结算" }); return; }
-    res.json({ state: toPublicWorldState(loaded.state), events: toPublicGameEvents(loaded.events) });
+    res.json({ state: toPublicWorldState(loaded.state), events: toPublicGameEvents(loaded.events, loaded.state.difficulty.id) });
   } catch (error) { next(error); }
 });
 
@@ -338,7 +342,7 @@ gamesRouter.post("/:id/actions", async (req, res) => {
     }
     const result = await gameRepository.execute(req.params.id, req.user.id, action);
     if (!result) { res.status(404).json({ error: "战役不存在" }); return; }
-    res.json({ ...result, state: toPublicWorldState(result.state), events: toPublicGameEvents(result.events) });
+    res.json({ ...result, state: toPublicWorldState(result.state), events: toPublicGameEvents(result.events, result.state.difficulty.id) });
   } catch (error) {
     res.status(409).json({ error: error instanceof Error ? error.message : "行动执行失败" });
   }
@@ -347,9 +351,12 @@ gamesRouter.post("/:id/actions", async (req, res) => {
 gamesRouter.get("/:id/events", async (req, res, next) => {
   if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
   try {
-    const events = await gameRepository.getEvents(req.params.id, req.user.id);
-    if (!events) { res.status(404).json({ error: "战役不存在" }); return; }
-    res.json({ events: toPublicGameEvents(events) });
+    const [events, state] = await Promise.all([
+      gameRepository.getEvents(req.params.id, req.user.id),
+      gameRepository.getGame(req.params.id, req.user.id),
+    ]);
+    if (!events || !state) { res.status(404).json({ error: "战役不存在" }); return; }
+    res.json({ events: toPublicGameEvents(events, state.difficulty.id) });
   } catch (error) { next(error); }
 });
 
@@ -406,7 +413,7 @@ gamesRouter.get("/:id/export", async (req, res, next) => {
       res.json({
         schemaVersion: "1.0.0", kind: "player_progress", exportedAt: new Date().toISOString(),
         campaign: { id: campaign.id, version: campaign.version, name: campaign.name },
-        state: toPublicWorldState(state), events: toPublicGameEvents(events),
+        state: toPublicWorldState(state), events: toPublicGameEvents(events, state.difficulty.id),
       });
       return;
     }

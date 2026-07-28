@@ -89,8 +89,8 @@ export function RecruitmentDossier({
     <div className="mt-5">
       <p className="text-xs text-muted">已记录证据</p>
       {candidate.evidence.length === 0 ? <p className="mt-3 text-sm text-muted">尚无可供判断的独立证据。一次测试不能证明一个人绝对可靠。</p> : <div className="mt-3 divide-y divide-line border-y border-line">
-        {candidate.evidence.map((evidence) => <div key={evidence.id} className="grid gap-1 py-3 sm:grid-cols-[100px_1fr] sm:gap-4">
-          <span className={`text-xs ${resultClasses[evidence.result]}`}>{resultLabels[evidence.result]}</span>
+        {candidate.evidence.map((evidence) => <div key={evidence.id} className={`grid gap-1 py-3 ${evidence.result ? "sm:grid-cols-[100px_1fr] sm:gap-4" : ""}`}>
+          {evidence.result && <span className={`text-xs ${resultClasses[evidence.result]}`}>{resultLabels[evidence.result]}</span>}
           <p className="text-sm leading-6 text-paper/80">{evidence.summary}</p>
         </div>)}
       </div>}

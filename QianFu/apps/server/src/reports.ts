@@ -24,7 +24,7 @@ export function buildCampaignReportBundle(
     throw new Error("Campaign must be finished before generating a report");
   }
 
-  const publicEvents = toPublicGameEvents(events);
+  const publicEvents = toPublicGameEvents(events, state.difficulty.id);
   const base = {
     schemaVersion: "1.0.0" as const,
     reportId,

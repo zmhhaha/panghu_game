@@ -247,6 +247,8 @@ describe("CampaignEngine", () => {
     expect(recruited.state.characters.recruit.recruitmentCase.stage).toBe("recruited");
     expect(recruited.state.network.activeMemberIds).toContain("recruit");
     expect(JSON.stringify(toPublicGameEvents(background.events))).not.toContain("loyalty");
+    expect(JSON.stringify(toPublicGameEvents(background.events, "undercover"))).toContain('"result":"favorable"');
+    expect(JSON.stringify(toPublicGameEvents(background.events, "iron_curtain"))).not.toContain('"result"');
     expect(toPublicWorldState(recruited.state).characters.recruit).not.toHaveProperty("recruitmentCase");
   });
 

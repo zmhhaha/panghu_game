@@ -1,4 +1,4 @@
-import { createInitialWorld, type CampaignDefinition } from "@qianfu/core";
+import { createInitialWorld, evaluateRecruitmentTest, type CampaignDefinition, type RecruitmentTestAction } from "@qianfu/core";
 import { LINJIANG_1942 } from "@qianfu/content";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CampaignOrchestrator } from "./orchestrator.js";
@@ -10,6 +10,20 @@ afterEach(() => {
 });
 
 describe("CampaignOrchestrator", () => {
+  const screeningPlan = {
+    objective: "核对候选人的履历和纪律表现。",
+    steps: "先核对公开档案。\n再从独立来源确认关键经历。\n最后观察是否遵守约定。",
+    safeguards: "分段进行，不接触核心名单；每一步保留独立核对来源。",
+    abortCondition: "消息异常扩散或出现无法解释的矛盾时立即停止并撤退。",
+  };
+
+  function screeningAction(): RecruitmentTestAction {
+    return {
+      type: "recruitment_test", targetCharacterId: "old-wu", testType: "background_check",
+      plan: screeningPlan, durationMinutes: 60, idempotencyKey: "screening-agent-test",
+    };
+  }
+
   it("keeps valid speech when optional model effects have the wrong shape", () => {
     expect(parseNpcResponse({
       visibleSpeech: "家里都好，劳你挂念。",
@@ -189,5 +203,58 @@ describe("CampaignOrchestrator", () => {
     expect(systemPrompt).toContain("药铺掌柜");
     expect(systemPrompt).not.toContain("老吴");
     expect(prepared.agentOutcome?.provider).toBe("model");
+  });
+
+  it("gives the screening agent only the controller's authoritative result projection", async () => {
+    const state = createInitialWorld(LINJIANG_1942, "screening-game", "screening-user", "undercover");
+    const action = screeningAction();
+    const character = LINJIANG_1942.characters.find((item) => item.id === action.targetCharacterId)!;
+    const authoritativeResult = evaluateRecruitmentTest(character, action.testType, action.plan);
+    let capturedUser = "";
+    const provider: AgentProvider = {
+      name: "test",
+      async complete(_system, user) {
+        capturedUser = user;
+        return { result: authoritativeResult, observation: "约定时间过去五分钟后，他仍在原处等待，没有另找旁人传话。" };
+      },
+    };
+
+    const prepared = await new CampaignOrchestrator(provider).prepareRecruitmentTest(state, action);
+    const payload = JSON.parse(capturedUser);
+
+    expect(payload.controllerProjection.result).toBe(authoritativeResult);
+    expect(payload.controllerProjection.baselineObservation).toBeTruthy();
+    expect(prepared.agentObservation).toContain("没有另找旁人传话");
+  });
+
+  it("discards a screening observation that contradicts the controller", async () => {
+    const state = createInitialWorld(LINJIANG_1942, "screening-conflict", "screening-user", "undercover");
+    const action = screeningAction();
+    const character = LINJIANG_1942.characters.find((item) => item.id === action.targetCharacterId)!;
+    const authoritativeResult = evaluateRecruitmentTest(character, action.testType, action.plan);
+    const conflictingResult = authoritativeResult === "warning" ? "favorable" : "warning";
+    const provider: AgentProvider = {
+      name: "test",
+      async complete() { return { result: conflictingResult, observation: "记录与约定不一致。" }; },
+    };
+
+    const prepared = await new CampaignOrchestrator(provider).prepareRecruitmentTest(state, action);
+
+    expect(prepared.agentObservation).toBeUndefined();
+  });
+
+  it("discards a screening observation that exposes a hidden verdict", async () => {
+    const state = createInitialWorld(LINJIANG_1942, "screening-verdict", "screening-user", "story");
+    const action = screeningAction();
+    const character = LINJIANG_1942.characters.find((item) => item.id === action.targetCharacterId)!;
+    const authoritativeResult = evaluateRecruitmentTest(character, action.testType, action.plan);
+    const provider: AgentProvider = {
+      name: "test",
+      async complete() { return { result: authoritativeResult, observation: "这些表现足以证明他是可靠的自己人。" }; },
+    };
+
+    const prepared = await new CampaignOrchestrator(provider).prepareRecruitmentTest(state, action);
+
+    expect(prepared.agentObservation).toBeUndefined();
   });
 });

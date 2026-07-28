@@ -1,4 +1,4 @@
-import type { CharacterState, GameEvent, IntelEvidence, IntelState, InterrogationState, WorldState } from "./types.js";
+import type { CharacterState, DifficultyConfig, GameEvent, IntelEvidence, IntelState, InterrogationState, WorldState } from "./types.js";
 
 export type PublicCharacterState = Pick<CharacterState, "id" | "templateId" | "locationId" | "recruited" | "exposed" | "agentTier">;
 export type PublicIntelEvidence = Omit<IntelEvidence, "sourceId" | "upstreamSourceId">;
@@ -76,17 +76,23 @@ export function toPublicWorldState(state: WorldState): PublicWorldState {
   return { ...publicState, characters: visibleCharacters, intel: visibleIntel, investigation: publicInvestigation, interrogation: publicInterrogation };
 }
 
-export function toPublicGameEvents(events: GameEvent[]): GameEvent[] {
+export function toPublicGameEvents(events: GameEvent[], difficulty?: DifficultyConfig["id"]): GameEvent[] {
   return events
     .filter((event) => !event.type.startsWith("investigation.evidence_") && event.type !== "interrogation.answer_recorded")
-    .map((event) => event.type === "dialogue.completed" || event.type === "dialogue.turn_completed"
-      ? {
+    .map((event) => {
+      if (event.type === "dialogue.completed" || event.type === "dialogue.turn_completed") return {
           ...event,
           payload: (() => {
             const payload = event.payload as Record<string, unknown>;
             const { privateIntent: _privateIntent, memorySummary: _memorySummary, requestedEffects: _requestedEffects, ...publicPayload } = payload;
             return publicPayload;
           })(),
-        }
-      : event);
+        };
+      if (event.type === "recruitment.test_completed" && difficulty === "iron_curtain") {
+        const payload = structuredClone(event.payload) as { evidence?: Record<string, unknown> };
+        if (payload.evidence) delete payload.evidence.result;
+        return { ...event, payload };
+      }
+      return event;
+    });
 }

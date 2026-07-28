@@ -1,4 +1,4 @@
-import { getCoverProfile, isIntelUnlocked, type CampaignDefinition, type DialogueAction, type DialogueMemory, type DialogueTurnAction, type RecruitmentTestAction, type WorldState } from "@qianfu/core";
+import { evaluateRecruitmentTest, getCoverProfile, isIntelUnlocked, recruitmentEvidenceSummary, type CampaignDefinition, type DialogueAction, type DialogueMemory, type DialogueTurnAction, type RecruitmentTestAction, type WorldState } from "@qianfu/core";
 import { DIALOGUE_TEXT_LIMITS } from "@qianfu/core/dialogue";
 import { getCampaignDefinition } from "@qianfu/content";
 import { createAgentProvider, parseModelJson, parseNpcResponse, type AgentProvider, type NpcAgentResponse } from "./provider.js";
@@ -57,11 +57,26 @@ export class CampaignOrchestrator {
     const campaign = this.resolveCampaign(state.campaignId, state.campaignVersion);
     const character = campaign.characters.find((item) => item.id === action.targetCharacterId);
     if (!character || !this.provider) return action;
+    const authoritativeResult = evaluateRecruitmentTest(character, action.testType, action.plan);
+    const authoritativeSummary = recruitmentEvidenceSummary(action.testType, authoritativeResult);
     try {
-      const system = 'You are the screening-action agent for a spy game. Describe only observable external behavior during the candidate screening plan. Never reveal hidden alignment, true reliability, backend values, or the final verdict. Output JSON only: {"observation":"an observation under 240 Chinese characters"}.';
-      const user = JSON.stringify({ testType: action.testType, candidate: { name: character.name, publicIdentity: character.publicIdentity, personality: character.personality }, plan: action.plan, time: state.currentTime });
+      const system = 'You are the screening-action narrator for a spy game. The controller projection is authoritative. Add one concrete, externally observable detail that supports it without changing its result. Never reveal hidden alignment, true reliability, backend values, or call anyone reliable, unreliable, loyal, a traitor, a spy, an agent, or a comrade. Output JSON only: {"result":"favorable|warning|inconclusive","observation":"an observation under 240 Chinese characters"}.';
+      const user = JSON.stringify({
+        testType: action.testType,
+        candidate: { name: character.name, publicIdentity: character.publicIdentity, personality: character.personality },
+        plan: action.plan,
+        time: state.currentTime,
+        controllerProjection: { result: authoritativeResult, baselineObservation: authoritativeSummary },
+      });
       const raw = await this.provider.complete(system, user);
-      const value = z.object({ observation: z.string().min(1).max(240) }).parse(typeof raw === "string" ? parseModelJson(raw) : raw);
+      const value = z.object({
+        result: z.enum(["favorable", "warning", "inconclusive"]),
+        observation: z.string().min(1).max(240),
+      }).parse(typeof raw === "string" ? parseModelJson(raw) : raw);
+      if (value.result !== authoritativeResult) throw new Error("screening observation contradicted controller result");
+      if (/(?:不可靠|可靠|忠诚|背叛者|叛徒|内奸|特务|间谍|自己人|同志)/.test(value.observation)) {
+        throw new Error("screening observation exposed a hidden verdict");
+      }
       return { ...action, agentObservation: value.observation };
     } catch (error) {
       console.warn(`[QianFu Agent] recruitment target=${action.targetCharacterId} provider=${this.provider.name} status=fallback`, error instanceof Error ? error.message : error);

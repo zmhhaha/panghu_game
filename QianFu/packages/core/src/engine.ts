@@ -1989,7 +1989,7 @@ function validateRecruitmentPlan(plan: Extract<GameAction, { type: "recruitment_
   if (plan.abortCondition.length < 8) throw new Error("请写明何种情况触发撤退");
 }
 
-function evaluateRecruitmentTest(
+export function evaluateRecruitmentTest(
   definition: CampaignDefinition["characters"][number],
   testType: RecruitmentTestType,
   plan: Extract<GameAction, { type: "recruitment_test" }>["plan"],
@@ -2010,7 +2010,7 @@ function evaluateRecruitmentTest(
   return "inconclusive";
 }
 
-function recruitmentEvidenceSummary(testType: RecruitmentTestType, result: RecruitmentEvidenceResult): string {
+export function recruitmentEvidenceSummary(testType: RecruitmentTestType, result: RecruitmentEvidenceResult): string {
   const summaries: Record<RecruitmentTestType, Record<RecruitmentEvidenceResult, string>> = {
     background_check: {
       favorable: "背景中的任职、来往和关键时间点基本能够相互印证。",

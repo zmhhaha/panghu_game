@@ -32,7 +32,7 @@ export interface GameContext {
     publicIdentity: string;
     stage: RecruitmentCase["stage"];
     completedTestTypes: RecruitmentCase["completedTestTypes"];
-    evidence: RecruitmentCase["evidence"];
+    evidence: Array<Omit<RecruitmentCase["evidence"][number], "result"> & { result: RecruitmentCase["evidence"][number]["result"] | null }>;
     requirements: {
       contactReady: boolean;
       cooperationReady: boolean;
