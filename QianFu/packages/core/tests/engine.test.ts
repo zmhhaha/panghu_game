@@ -277,7 +277,7 @@ describe("public cover identity", () => {
     expect(credited).toBe(true);
   });
 
-  it("allows a night rest to advance the world and recover energy without charging action fatigue", () => {
+  it("allows safehouse rest at any time and recovers energy without charging action fatigue", () => {
     const state = createInitialWorld(coverCampaign, "night-rest", "user-1");
     state.currentTime = "1942-05-12T20:00:00.000Z";
     state.currentLocationId = "safe-flat";
@@ -296,7 +296,8 @@ describe("public cover identity", () => {
     const dayState = createInitialWorld(coverCampaign, "day-rest", "user-1");
     dayState.currentTime = "1942-05-12T10:00:00.000Z";
     dayState.currentLocationId = "safe-flat";
-    expect(() => new CampaignEngine(coverCampaign, dayState).execute({ type: "rest", sleepMinutes: 8 * 60, durationMinutes: 0, idempotencyKey: "day-rest-action" })).toThrow("只能在夜间");
+    const dayRest = new CampaignEngine(coverCampaign, dayState).execute({ type: "rest", sleepMinutes: 8 * 60, durationMinutes: 0, idempotencyKey: "day-rest-action" });
+    expect(dayRest.state.currentTime).toBe("1942-05-12T18:00:00.000Z");
   });
 
   it("lets rest reduce investigation pressure according to difficulty", () => {

@@ -637,8 +637,8 @@ export class CampaignEngine {
         if (action.durationMinutes !== 0) throw new Error("Rest duration is calculated by the server");
         const availability = getRestAvailability(this.campaign, next);
         if (!availability.available) throw new Error(availability.reason);
-        const rest = calculateRest(next.currentTime, action.sleepMinutes);
-        if (!rest) throw new Error("只能在夜间开始休息，时长为一至十二小时且以三十分钟为单位");
+        const rest = calculateRest(action.sleepMinutes);
+        if (!rest) throw new Error("休息时长必须为一至十二小时，且以三十分钟为单位");
         elapsedDuration = rest.minutes;
         energyRecovery = rest.recovery;
         append("player.rested", { durationMinutes: rest.minutes, recovery: rest.recovery });
@@ -1521,10 +1521,8 @@ export function isCharacterAvailableAt(definition: CampaignDefinition["character
   return definition.schedule.some((entry) => minute >= entry.startMinute && minute < entry.endMinute);
 }
 
-function calculateRest(currentTime: string, sleepMinutes: number): { minutes: number; recovery: number } | null {
-  const currentMinute = minuteOfDay(currentTime);
+function calculateRest(sleepMinutes: number): { minutes: number; recovery: number } | null {
   if (!Number.isInteger(sleepMinutes) || sleepMinutes < 60 || sleepMinutes > 12 * 60 || sleepMinutes % 30 !== 0) return null;
-  if (currentMinute >= 6 * 60 && currentMinute < 20 * 60) return null;
   const recovery = sleepMinutes < 6 * 60
     ? Math.floor(sleepMinutes / 60) * 5
     : sleepMinutes <= 8 * 60

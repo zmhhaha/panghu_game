@@ -104,18 +104,8 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const formattedTime = new Intl.DateTimeFormat("zh-CN", {
     month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(new Date(state.currentTime));
-  const clockParts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-  }).formatToParts(new Date(state.currentTime));
-  const currentMinute = Number(clockParts.find((part) => part.type === "hour")?.value ?? 0) * 60
-    + Number(clockParts.find((part) => part.type === "minute")?.value ?? 0);
-  const isRestTime = currentMinute >= 20 * 60 || currentMinute < 6 * 60;
-  const canRest = context.rest.available && isRestTime;
-  const restDisabledReason = !context.rest.available
-    ? context.rest.reason
-    : !isRestTime
-      ? "当前并非休息时段，仅可在 20:00 至次日 06:00 开始休息。"
-      : context.rest.reason;
+  const canRest = context.rest.available;
+  const restDisabledReason = context.rest.reason;
 
   if (state.status === "finished") return <SettlementReport gameInstanceId={gameInstanceId} />;
 
