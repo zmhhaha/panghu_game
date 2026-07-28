@@ -7,6 +7,13 @@ import type { PublicWorldState } from "@qianfu/core";
 export function MissionObjectives({ state, context }: { state: PublicWorldState; context: GameContext }) {
   return <section className="mt-7 border-t border-line pt-5">
     <div className="flex items-center gap-2 text-xs font-medium text-muted"><FileCheck2 size={15} />核心任务</div>
+    {context.narrativeThreads.filter((thread) => thread.status === "active").length > 0 && <div className="mt-4 border-l-2 border-copper pl-3">
+      <p className="text-[10px] text-copper">当前剧情线程</p>
+      <div className="mt-2 space-y-3">{context.narrativeThreads.filter((thread) => thread.status === "active").map((thread) => <div key={thread.id}>
+        <p className="text-xs text-paper/90">{thread.title}</p>
+        <p className="mt-1 text-[11px] leading-5 text-muted">{thread.summary}</p>
+      </div>)}</div>
+    </div>}
     {context.settlement.pendingReceipts > 0 && <p className="mt-3 border-l-2 border-copper bg-copper/[0.06] px-3 py-2 text-xs leading-5 text-muted">有 {context.settlement.pendingReceipts} 封电文正在等待组织回执；在回执落定前不能判断其是否满足结算条件。</p>}
     <div className="mt-4 space-y-4">{context.objectives.map((objective) => <article key={objective.id} className="border border-line bg-panel/40 p-4">
       <div className="flex items-start justify-between gap-3"><div><h3 className="text-sm text-paper">{objective.title}</h3><p className="mt-1 text-xs text-muted">截止 {formatDate(objective.deadline)}</p></div><Status status={objective.status} /></div>

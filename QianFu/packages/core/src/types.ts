@@ -54,6 +54,7 @@ export interface CoverState {
   consecutiveAbsences: number;
   leaveCount: number;
   completedWorkDates: string[];
+  workCreditMinutesByDate?: Record<string, number>;
   lastAttendanceEvaluatedDate: string | null;
   leaveUntil: string | null;
   leaveReason: LeaveReason | null;
@@ -176,6 +177,44 @@ export interface CampaignLead {
   hint: string;
 }
 
+export type LocationKnowledgeStage = "unknown" | "rumored" | "located" | "accessible" | "compromised";
+
+export interface LocationKnowledgeRecord {
+  stage: LocationKnowledgeStage;
+  sourceEventId: string | null;
+  hint: string | null;
+  updatedAt: string;
+}
+
+export interface NarrativeThreadState {
+  id: string;
+  title: string;
+  summary: string;
+  status: "active" | "resolved";
+  sourceEventId: string;
+  updatedAt: string;
+}
+
+export interface CampaignNarrativeEvent {
+  id: string;
+  title: string;
+  visibleSummary: string;
+  trigger: {
+    type: "relationship" | "time";
+    characterId?: string;
+    minFamiliarity?: number;
+    minPrivateTrust?: number;
+    minInteractionCount?: number;
+    notBefore?: string;
+    requiredEventIds?: string[];
+  };
+  effects: {
+    locations?: Array<{ locationId: string; stage: Exclude<LocationKnowledgeStage, "unknown">; hint: string }>;
+    introduceCharacterIds?: string[];
+    thread?: { id: string; title: string; summary: string; status?: NarrativeThreadState["status"] };
+  };
+}
+
 export interface CampaignDefinition {
   id: string;
   version: string;
@@ -187,6 +226,7 @@ export interface CampaignDefinition {
   intel: IntelDefinition[];
   objectives: MissionObjective[];
   publicLeads?: CampaignLead[];
+  narrativeEvents?: CampaignNarrativeEvent[];
 }
 
 export interface CharacterState {
@@ -442,8 +482,11 @@ export interface WorldState {
   currentTime: string;
   currentLocationId: string;
   discoveredLocationIds: string[];
+  locationKnowledge?: Record<string, LocationKnowledgeRecord>;
   knownCharacterIds: string[];
   resolvedLeadIds?: string[];
+  resolvedNarrativeEventIds?: string[];
+  narrativeThreads?: NarrativeThreadState[];
   status: GameStatus;
   stateVersion: number;
   lastEventSeq: number;

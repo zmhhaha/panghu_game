@@ -168,6 +168,49 @@ const draft: CampaignDefinition = {
       hint: "林若岚建议你去三号码头核实一则公开货运消息，调度员赵福生是合适的采访对象。",
     },
   ],
+  narrativeEvents: [
+    {
+      id: "equipment-receipt-rumor",
+      title: "缺失的运输回执",
+      visibleSummary: "近期设备记录与运输回执无法对上。主控时间线将这件事标记为一条可继续追查的公开工作线。",
+      trigger: {
+        type: "relationship",
+        characterId: "zhou-qiming",
+        minFamiliarity: 4,
+        minInteractionCount: 5,
+      },
+      effects: {
+        locations: [{ locationId: "third-dock", stage: "rumored", hint: "设备交接记录提到沿江货运区，但具体办事地点和进入理由尚未确认。" }],
+        thread: {
+          id: "missing-transport-receipt",
+          title: "设备档案缺少运输回执",
+          summary: "电讯科的设备记录与公开运输回执无法相互印证，需要先取得合理的补签或调阅理由。",
+        },
+      },
+    },
+    {
+      id: "equipment-receipt-referral",
+      title: "运输回执补签",
+      visibleSummary: "档案科收到一项公开补签安排：你可以前往三号码头核对运输回执，并向调度员赵福生说明设备登记存在缺页。",
+      trigger: {
+        type: "relationship",
+        characterId: "zhou-qiming",
+        minFamiliarity: 8,
+        minPrivateTrust: 3,
+        minInteractionCount: 10,
+        requiredEventIds: ["equipment-receipt-rumor"],
+      },
+      effects: {
+        locations: [{ locationId: "third-dock", stage: "accessible", hint: "公开补签安排提供了前往三号码头核对运输回执的合理理由。" }],
+        introduceCharacterIds: ["zhao-fusheng"],
+        thread: {
+          id: "missing-transport-receipt",
+          title: "核对运输回执",
+          summary: "补签理由已经成立。三号码头调度员赵福生负责公开的货物与车辆记录。",
+        },
+      },
+    },
+  ],
   intel: [
     { id: "shipment-time", title: "运输时间", truth: "true", requiredFields: ["date", "hour"], sourceCharacterIds: ["chen-jingwen", "zhao-fusheng"], sourceRequirements: { "chen-jingwen": { familiarity: 12, privateTrust: 10 }, "zhao-fusheng": { familiarity: 10, privateTrust: 7 } }, expiresAt: "1942-05-15T22:00:00.000Z" },
     { id: "shipment-place", title: "运输地点", truth: "true", requiredFields: ["dock", "warehouse"], sourceCharacterIds: ["zhao-fusheng", "lin-ruolan"], sourceRequirements: { "zhao-fusheng": { familiarity: 11, privateTrust: 8 }, "lin-ruolan": { familiarity: 10, privateTrust: 8 } }, expiresAt: "1942-05-15T22:00:00.000Z" },

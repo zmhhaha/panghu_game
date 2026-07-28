@@ -78,6 +78,24 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
       if (!characters.has(characterId)) errors.push(`public lead ${lead.id} references unknown character ${characterId}`);
     }
   }
+  const narrativeEventIds = (campaign.narrativeEvents ?? []).map((event) => event.id);
+  for (const eventId of duplicateIds(narrativeEventIds)) errors.push(`duplicate narrative event id: ${eventId}`);
+  const narrativeEvents = new Set(narrativeEventIds);
+  for (const event of campaign.narrativeEvents ?? []) {
+    const trigger = event.trigger;
+    if (trigger.notBefore && Number.isNaN(Date.parse(trigger.notBefore))) errors.push(`narrative event ${event.id} has invalid notBefore`);
+    if (trigger.type === "relationship" && !trigger.characterId) errors.push(`narrative event ${event.id} requires characterId for relationship trigger`);
+    if (trigger.characterId && !characters.has(trigger.characterId)) errors.push(`narrative event ${event.id} references unknown trigger character ${trigger.characterId}`);
+    for (const requiredEventId of trigger.requiredEventIds ?? []) {
+      if (!narrativeEvents.has(requiredEventId)) errors.push(`narrative event ${event.id} requires unknown event ${requiredEventId}`);
+    }
+    for (const effect of event.effects.locations ?? []) {
+      if (!locations.has(effect.locationId)) errors.push(`narrative event ${event.id} references unknown location ${effect.locationId}`);
+    }
+    for (const characterId of event.effects.introduceCharacterIds ?? []) {
+      if (!characters.has(characterId)) errors.push(`narrative event ${event.id} introduces unknown character ${characterId}`);
+    }
+  }
   return { valid: errors.length === 0, errors };
 }
 

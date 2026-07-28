@@ -90,9 +90,20 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
         pendingReceipts: state.radio.transmissions.filter((item) => item.receiptStatus === "pending").length,
       },
       locations: LINJIANG_1942.locations.map(({ id, name, district }) => {
-        const discovered = state.discoveredLocationIds?.includes(id) ?? id === state.currentLocationId;
-        return { id, name: discovered ? name : "？？？", district: discovered ? district : "区域未确认", discovered };
+        const legacyDiscovered = state.discoveredLocationIds?.includes(id) ?? id === state.currentLocationId;
+        const knowledge = state.locationKnowledge?.[id];
+        const stage = knowledge?.stage ?? (legacyDiscovered ? "accessible" : "unknown");
+        const identified = stage === "located" || stage === "accessible" || stage === "compromised";
+        return {
+          id,
+          name: identified ? name : "？？？",
+          district: identified ? district : stage === "rumored" ? "区域传闻" : "区域未确认",
+          discovered: stage === "accessible",
+          stage,
+          hint: knowledge?.hint ?? null,
+        };
       }),
+      narrativeThreads: state.narrativeThreads ?? [],
       characters: visibleCharacters,
       networkMembers: LINJIANG_1942.characters
         .filter((character) => state.network.activeMemberIds.includes(character.id))

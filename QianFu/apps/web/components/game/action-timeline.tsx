@@ -31,6 +31,7 @@ function TimelineItem({ event, context, detailed = false }: { event: GameEvent; 
 
 function eventCategory(type: string): EventFilter {
   if (type.startsWith("dialogue") || type === "character.introduced" || type === "character.identified") return "dialogue";
+  if (type.startsWith("narrative") || type === "location.stage_changed") return "movement";
   if (type.startsWith("intel") || type.startsWith("radio")) return "intel";
   if (type.startsWith("cover")) return type === "cover.supervisor_check" || type === "cover.absence_recorded" ? "threat" : "movement";
   if (type === "player.moved" || type === "player.waited" || type === "player.rested" || type.startsWith("character.schedule")) return "movement";
@@ -51,7 +52,8 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
     "intel.transmitted": "传递情报", "radio.message_sent": "发出电报", "radio.receipt_received": "收到回执",
     "comrade.task_completed": "同志任务完成", "comrade.task_failed": "同志任务失败", "character.recruited": "正式招募",
     "investigation.action_taken": "敌方调查行动", "character.schedule_advanced": "人物行程变化",
-    "cover.work_completed": "完成公开工作", "cover.leave_approved": "请假登记", "cover.absence_recorded": "异常缺勤", "cover.supervisor_check": "上级核查",
+    "narrative.event_resolved": "剧情事件", "narrative.thread_updated": "调查线程更新", "location.stage_changed": "地点认知变化",
+    "cover.work_completed": "完成公开工作", "cover.activity_credited": "形成在岗记录", "cover.leave_approved": "请假登记", "cover.absence_recorded": "异常缺勤", "cover.supervisor_check": "上级核查",
   };
   const title = labels[event.type] ?? "行动记录";
   const text = event.type === "player.moved" ? `你前往了${location ?? "未知地点"}。`

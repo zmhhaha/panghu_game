@@ -212,6 +212,29 @@ describe("public cover identity", () => {
     expect(endOfShift.events.some((event) => event.type === "cover.absence_recorded")).toBe(false);
   });
 
+  it("counts sustained workplace dialogue as a verifiable public attendance record", () => {
+    const workplaceCampaign: CampaignDefinition = {
+      ...coverCampaign,
+      characters: [{
+        id: "chen-jingwen", name: "Chen", publicIdentity: "Chief", hiddenAlignment: "neutral", initialLocationId: "archive-office", recruitable: false,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "archive-office", activity: "work" }],
+        reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 70 },
+      }],
+    };
+    const state = createInitialWorld(workplaceCampaign, "cover-dialogue-credit", "user-1");
+    state.currentTime = "1942-05-12T00:00:00.000Z";
+    const engine = new CampaignEngine(workplaceCampaign, state);
+    engine.execute({ type: "dialogue_start", targetCharacterId: "chen-jingwen", goal: "long_talk", tone: "formal", allocatedMinutes: 60, durationMinutes: 0, idempotencyKey: "cover-dialogue-start" });
+    let credited = false;
+    for (let turn = 1; turn <= 30; turn += 1) {
+      const result = engine.execute({ type: "dialogue_turn", sessionId: "cover-dialogue-start", playerText: `Review record ${turn}`, durationMinutes: 2, idempotencyKey: `cover-dialogue-turn-${turn}` });
+      credited ||= result.events.some((event) => event.type === "cover.activity_credited");
+    }
+    expect(engine.getState().cover.workCreditMinutesByDate?.["1942-05-12"]).toBe(60);
+    expect(engine.getState().cover.completedWorkDates).toContain("1942-05-12");
+    expect(credited).toBe(true);
+  });
+
   it("allows a night rest to advance the world and recover energy without charging action fatigue", () => {
     const state = createInitialWorld(coverCampaign, "night-rest", "user-1");
     state.currentTime = "1942-05-12T20:00:00.000Z";
@@ -274,6 +297,52 @@ describe("public cover identity", () => {
     expect(result.state.resolvedLeadIds).toContain("public-repair-record");
     expect(result.events.some((event) => event.type === "lead.resolved")).toBe(true);
     expect(result.events.some((event) => event.type === "intel.dialogue_discovered")).toBe(false);
+  });
+
+  it("uses relationship-driven controller events to stage and then unlock a location", () => {
+    const eventCampaign: CampaignDefinition = {
+      ...coverCampaign,
+      locations: [
+        { id: "archive-office", name: "Archive", district: "A", travelMinutes: { "radio-office": 10, dock: 20 } },
+        { id: "radio-office", name: "Radio", district: "A", travelMinutes: { "archive-office": 10, dock: 20 } },
+        { id: "dock", name: "Dock", district: "B", travelMinutes: { "archive-office": 20, "radio-office": 20 } },
+      ],
+      characters: [{
+        id: "technician", name: "Technician", publicIdentity: "Technician", hiddenAlignment: "neutral", initialLocationId: "archive-office", recruitable: false,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "archive-office", activity: "work" }],
+        reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 70 },
+      }, {
+        id: "dispatcher", name: "Dispatcher", publicIdentity: "Dispatcher", hiddenAlignment: "neutral", initialLocationId: "dock", recruitable: false,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "dock", activity: "work" }],
+        reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 70 },
+      }],
+      narrativeEvents: [{
+        id: "receipt-rumor", title: "Missing receipt", visibleSummary: "A receipt is missing.",
+        trigger: { type: "relationship", characterId: "technician", minFamiliarity: 4, minInteractionCount: 5 },
+        effects: { locations: [{ locationId: "dock", stage: "rumored", hint: "The route reaches the river." }], thread: { id: "receipt", title: "Missing receipt", summary: "Find a public reason to inspect it." } },
+      }, {
+        id: "receipt-referral", title: "Public referral", visibleSummary: "A public referral is ready.",
+        trigger: { type: "relationship", characterId: "technician", minFamiliarity: 8, minPrivateTrust: 3, minInteractionCount: 10, requiredEventIds: ["receipt-rumor"] },
+        effects: { locations: [{ locationId: "dock", stage: "accessible", hint: "The referral permits a visit." }], introduceCharacterIds: ["dispatcher"], thread: { id: "receipt", title: "Inspect receipt", summary: "Visit the dispatcher." } },
+      }],
+    };
+    const state = createInitialWorld(eventCampaign, "controller-events", "user-1");
+    state.knownCharacterIds = ["technician"];
+    const engine = new CampaignEngine(eventCampaign, state);
+    engine.execute({ type: "dialogue_start", targetCharacterId: "technician", goal: "build_trust", tone: "friendly", allocatedMinutes: 20, durationMinutes: 0, idempotencyKey: "event-dialogue" });
+    for (let turn = 1; turn <= 5; turn += 1) {
+      engine.execute({ type: "dialogue_turn", sessionId: "event-dialogue", playerText: `Public work ${turn}`, durationMinutes: 2, idempotencyKey: `event-turn-${turn}` });
+    }
+    expect(engine.getState().locationKnowledge?.dock?.stage).toBe("rumored");
+    expect(engine.getState().discoveredLocationIds).not.toContain("dock");
+    expect(engine.getState().narrativeThreads?.find((thread) => thread.id === "receipt")?.title).toBe("Missing receipt");
+    for (let turn = 6; turn <= 10; turn += 1) {
+      engine.execute({ type: "dialogue_turn", sessionId: "event-dialogue", playerText: `Public work ${turn}`, durationMinutes: 2, idempotencyKey: `event-turn-${turn}` });
+    }
+    expect(engine.getState().locationKnowledge?.dock?.stage).toBe("accessible");
+    expect(engine.getState().discoveredLocationIds).toContain("dock");
+    expect(engine.getState().knownCharacterIds).toContain("dispatcher");
+    expect(engine.getState().resolvedNarrativeEventIds).toEqual(["receipt-rumor", "receipt-referral"]);
   });
 
   it("accepts leave as a public record instead of treating it as an unexplained absence", () => {

@@ -26,13 +26,16 @@ export function CoverIdentityPanel({ state, busy, onAction }: { state: PublicWor
   const profile = COVER_PROFILES.find((item) => item.id === cover.profileId) ?? COVER_PROFILES[0];
   const atOffice = profile.workLocationIds.includes(state.currentLocationId);
   const now = minuteOfDay(state.currentTime);
+  const today = campaignDate(state.currentTime);
+  const attendanceCredit = Math.min(60, cover.workCreditMinutesByDate?.[today] ?? 0);
   const workingHours = Boolean(profile.workHours && now >= profile.workHours.startMinute && now < profile.workHours.endMinute);
-  const actionDisabled = busy || !atOffice || !workingHours || cover.workStatus === "on_leave" || cover.completedWorkDates.includes(state.currentTime.slice(0, 10));
+  const actionDisabled = busy || !atOffice || !workingHours || cover.workStatus === "on_leave" || cover.completedWorkDates.includes(today);
   const leaveDisabled = busy || !atOffice || !workingHours || cover.workStatus === "on_leave";
   return <section className="mt-5 border-t border-line pt-4">
     <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs font-medium text-muted"><BriefcaseBusiness size={15} />公开身份：{profile.title}</p><span className={cover.workStatus === "unexcused_absence" ? "text-[10px] text-alert" : cover.workStatus === "working" ? "text-[10px] text-safe" : "text-[10px] text-muted"}>{statusLabels[cover.workStatus]}</span></div>
     <div className="mt-3 grid grid-cols-2 gap-3"><Metric label="公开信誉" value={cover.credibility} color="bg-safe" /><Metric label="上级怀疑" value={cover.supervisorSuspicion} color="bg-alert" /></div>
     <p className="mt-3 text-xs leading-5 text-muted">连续缺勤 {cover.consecutiveAbsences} 天 · 请假 {cover.leaveCount} 次{cover.leaveUntil ? ` · 已登记至 ${formatTime(cover.leaveUntil)}` : ""}</p>
+    {workingHours && atOffice && !cover.completedWorkDates.includes(today) && <p className="mt-2 text-[10px] text-muted">今日可核验在岗记录 {attendanceCredit}/60 分钟</p>}
     <div className="mt-4 space-y-2">{workOptions.filter((option) => profile.workKinds.includes(option.kind)).map((option) => { const Icon = option.icon; return <button key={option.kind} disabled={actionDisabled} onClick={() => onAction({ type: "cover_work", workKind: option.kind, durationMinutes: option.minutes, idempotencyKey: crypto.randomUUID() })} className="flex w-full items-center gap-3 border border-line px-3 py-2.5 text-left text-xs text-paper/85 hover:border-copper disabled:cursor-not-allowed disabled:opacity-40"><Icon size={15} className="shrink-0 text-copper" /><span className="min-w-0 flex-1"><span className="block">{option.label} · {option.minutes} 分钟</span><span className="mt-0.5 block text-[10px] text-muted">{option.detail}</span></span></button>; })}</div>
     <div className="mt-3 flex gap-2"><select value={reason} disabled={leaveDisabled} onChange={(event) => setReason(event.target.value as LeaveReason)} className="h-9 min-w-0 flex-1 border border-line bg-ink px-2 text-xs text-paper disabled:opacity-40"><option value="family">家庭事务</option><option value="health">身体不适</option><option value="official">公务外出</option></select><Button variant="outline" disabled={leaveDisabled} onClick={() => onAction({ type: "request_leave", reason, durationMinutes: 10, idempotencyKey: crypto.randomUUID() })}><HeartPulse size={14} />请假</Button></div>
     {!atOffice ? <p className="mt-3 text-[10px] text-muted">需要在公开身份合理的活动地点处理{profile.routineLabel}。</p> : !workingHours ? <p className="mt-3 text-[10px] text-muted">当前不在{profile.routineLabel}的合理活动时段。</p> : null}
@@ -47,7 +50,12 @@ function Metric({ label, value, color }: { label: string; value: number; color: 
 
 function minuteOfDay(value: string) {
   const date = new Date(value);
-  return date.getUTCHours() * 60 + date.getUTCMinutes();
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(date);
+  return Number(parts.find((part) => part.type === "hour")?.value ?? 0) * 60 + Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+}
+
+function campaignDate(value: string) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
 }
 
 function formatTime(value: string) {

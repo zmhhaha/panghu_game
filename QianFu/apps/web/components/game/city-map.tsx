@@ -2,7 +2,22 @@
 
 import { MapPin } from "lucide-react";
 
-type Location = { id: string; name: string; district: string; discovered: boolean };
+type Location = {
+  id: string;
+  name: string;
+  district: string;
+  discovered: boolean;
+  stage: "unknown" | "rumored" | "located" | "accessible" | "compromised";
+  hint: string | null;
+};
+
+const stageLabel: Record<Location["stage"], string> = {
+  unknown: "等待事件",
+  rumored: "已有传闻",
+  located: "尚无进入理由",
+  accessible: "可以前往",
+  compromised: "已封锁",
+};
 
 const positions: Record<string, { x: number; y: number }> = {
   "archive-office": { x: 28, y: 18 },
@@ -43,14 +58,17 @@ export function CityMap({ locations, currentLocationId, travelMinutes, disabled,
       const position = positions[location.id] ?? { x: 50, y: 50 };
       const current = location.id === currentLocationId;
       const minutes = travelMinutes[location.id];
-      return <button key={location.id} title={current ? "当前位置" : minutes ? `前往 ${location.name}，约 ${minutes} 分钟` : location.name}
+      const accessible = location.stage === "accessible";
+      const status = current ? "当前位置" : accessible && minutes ? `${minutes} 分钟` : stageLabel[location.stage];
+      const title = current ? "当前位置" : location.hint ?? (accessible && minutes ? `前往 ${location.name}，约 ${minutes} 分钟` : status);
+      return <button key={location.id} title={title}
         disabled={disabled || current || !minutes || !location.discovered}
         onClick={() => minutes && onTravel(location.id, minutes)}
         className="group absolute z-10 w-[92px] -translate-x-1/2 -translate-y-1/2 text-center disabled:cursor-default"
         style={{ left: `${position.x}%`, top: `${position.y}%` }}>
-        <span className={`mx-auto grid h-8 w-8 place-items-center border transition-colors ${current ? "border-copper bg-copper text-ink" : location.discovered ? "border-line bg-ink text-muted group-hover:border-copper group-hover:text-copper" : "border-dashed border-line bg-ink text-muted"}`}><MapPin size={15} /></span>
+        <span className={`mx-auto grid h-8 w-8 place-items-center border transition-colors ${current ? "border-copper bg-copper text-ink" : accessible ? "border-line bg-ink text-muted group-hover:border-copper group-hover:text-copper" : location.stage === "rumored" || location.stage === "located" ? "border-dashed border-copper/60 bg-ink text-copper" : "border-dashed border-line bg-ink text-muted"}`}><MapPin size={15} /></span>
         <span className={`mt-1 block text-[11px] leading-4 ${current ? "font-medium text-paper" : "text-muted group-hover:text-paper"}`}>{location.name}</span>
-        <span className="block min-h-3 text-[9px] text-muted">{current ? "当前位置" : !location.discovered ? "等待线索" : minutes ? `${minutes} 分钟` : "不可达"}</span>
+        <span className="block min-h-3 text-[9px] text-muted">{status}</span>
       </button>;
     })}
   </div>;

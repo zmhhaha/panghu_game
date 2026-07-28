@@ -126,7 +126,7 @@ function reportSummary(state: WorldState): string {
 function buildTimeline(campaign: CampaignDefinition, events: GameEvent[]): CampaignReportTimelineEntry[] {
   const important = events.filter((event) => [
     "character.introduced", "character.identified", "intel.dialogue_discovered", "intel.transmitted",
-    "lead.resolved", "cover.work_completed",
+    "lead.resolved", "narrative.event_resolved", "location.stage_changed", "cover.work_completed", "cover.activity_credited",
     "character.recruitment_progress", "comrade.task_completed", "comrade.task_failed",
     "radio.message_sent", "radio.receipt_received", "investigation.surveillance_started", "player.moved",
     "player.rested",
@@ -148,7 +148,10 @@ function describeEvent(campaign: CampaignDefinition, event: GameEvent): Campaign
     "character.introduced": ["建立接触", `初次认识${character?.name ?? "一名人物"}`],
     "character.identified": ["确认身份", `确认了${character?.name ?? "目标人物"}的公开身份`],
     "lead.resolved": ["公开引介", String(payload.hint ?? "一次公开工作带来了新的接触线索")],
+    "narrative.event_resolved": ["剧情推进", String(payload.summary ?? "主控时间线推进了一项事件")],
+    "location.stage_changed": ["地点线索", String(payload.hint ?? `${location?.name ?? "一处地点"}的状态发生变化`)],
     "cover.work_completed": ["维持公开身份", String(payload.summary ?? "完成了一项可被核验的公开工作")],
+    "cover.activity_credited": ["维持公开身份", String(payload.summary ?? "公开活动形成了可核验的在岗记录")],
     "intel.dialogue_discovered": ["获得线索", `从${character?.name ?? "谈话对象"}处获得“${intel?.title ?? "情报"}”的${fieldLabel ? `“${fieldLabel}”` : "一项"}线索`],
     "intel.transmitted": ["传递情报", `${intel?.title ?? "一项情报"}通过${deliveryLabels[String(payload.method)] ?? "约定渠道"}送出`],
     "radio.message_sent": ["发出电文", `从${location?.name ?? "一处地点"}发出包含 ${Number(payload.fieldCount ?? 0)} 个字段的电文`],

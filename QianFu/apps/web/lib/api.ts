@@ -9,7 +9,8 @@ export interface GameContext {
   visibility: DifficultyVisibilityPolicy;
   campaign: { id: string; version: string; name: string };
   settlement: { ready: boolean; pendingReceipts: number };
-  locations: { id: string; name: string; district: string; discovered: boolean }[];
+  locations: { id: string; name: string; district: string; discovered: boolean; stage: "unknown" | "rumored" | "located" | "accessible" | "compromised"; hint: string | null }[];
+  narrativeThreads: Array<{ id: string; title: string; summary: string; status: "active" | "resolved"; sourceEventId: string; updatedAt: string }>;
   characters: { id: string; name: string; publicIdentity: string; recruitable: boolean; known: boolean; verifiableIntelIds: string[] }[];
   networkMembers: { id: string; name: string; publicIdentity: string }[];
   recruitmentCandidates: Array<{

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { DIALOGUE_TEXT_LIMITS } from "./dialogue.js";
 import type {
   ActionResult, CampaignDefinition, CampaignEnding, CharacterState, GameAction,
-  GameEvent, IntelEvidenceSourceType, IntelState, RadioMessageFormat, RecruitmentEvidenceResult, RecruitmentTestType, ScoreBreakdown, WorldState,
+  GameEvent, IntelEvidenceSourceType, IntelState, LocationKnowledgeStage, NarrativeThreadState, RadioMessageFormat, RecruitmentEvidenceResult, RecruitmentTestType, ScoreBreakdown, WorldState,
 } from "./types.js";
 import { DIFFICULTIES } from "./difficulties.js";
 import { getCoverProfile } from "./cover-profiles.js";
@@ -21,6 +21,7 @@ function createInitialCoverState(profileId: WorldState["cover"]["profileId"] = "
     consecutiveAbsences: 0,
     leaveCount: 0,
     completedWorkDates: [],
+    workCreditMinutesByDate: {},
     lastAttendanceEvaluatedDate: null,
     leaveUntil: null,
     leaveReason: null,
@@ -65,6 +66,8 @@ export function createInitialWorld(
     item.id,
     { id: item.id, knownFields: [], confidence: 0, collectedSourceIds: [], evidence: [], deliveredFields: [], deliveredAt: null, deliveryMethod: null },
   ]));
+  const startingLocationId = profileApplies ? coverProfile.startingLocationId : campaign.locations[0]?.id ?? "";
+  const initiallyDiscovered = profileApplies ? [coverProfile.startingLocationId] : campaign.locations.slice(0, 3).map((location) => location.id);
 
   return {
     gameInstanceId,
@@ -74,10 +77,18 @@ export function createInitialWorld(
     engineVersion: campaign.engineVersion,
     difficulty: DIFFICULTIES[difficultyId],
     currentTime: campaign.startTime,
-    currentLocationId: profileApplies ? coverProfile.startingLocationId : campaign.locations[0]?.id ?? "",
-    discoveredLocationIds: profileApplies ? [coverProfile.startingLocationId] : campaign.locations.slice(0, 3).map((location) => location.id),
+    currentLocationId: startingLocationId,
+    discoveredLocationIds: initiallyDiscovered,
+    locationKnowledge: Object.fromEntries(campaign.locations.map((location) => [location.id, {
+      stage: initiallyDiscovered.includes(location.id) ? "accessible" : "unknown",
+      sourceEventId: null,
+      hint: location.id === startingLocationId ? "公开身份的日常活动地点。" : null,
+      updatedAt: campaign.startTime,
+    }])),
     knownCharacterIds: profileApplies ? coverProfile.initialContactCharacterIds.filter((id) => characters[id]) : Object.keys(characters),
     resolvedLeadIds: [],
+    resolvedNarrativeEventIds: [],
+    narrativeThreads: [],
     status: "active",
     stateVersion: 0,
     lastEventSeq: 0,
@@ -131,8 +142,19 @@ export class CampaignEngine {
       this.state.activeDialogue.discoveredFields ??= [];
     }
     this.state.discoveredLocationIds ??= [this.state.currentLocationId];
+    this.state.locationKnowledge ??= {};
+    for (const location of campaign.locations) {
+      this.state.locationKnowledge[location.id] ??= {
+        stage: this.state.discoveredLocationIds.includes(location.id) ? "accessible" : "unknown",
+        sourceEventId: null,
+        hint: null,
+        updatedAt: this.state.currentTime,
+      };
+    }
     this.state.knownCharacterIds ??= [];
     this.state.resolvedLeadIds ??= [];
+    this.state.resolvedNarrativeEventIds ??= [];
+    this.state.narrativeThreads ??= [];
     this.state.investigation ??= {
       pressure: 0,
       locationHeat: Object.fromEntries(campaign.locations.map((location) => [location.id, 0])),
@@ -147,6 +169,7 @@ export class CampaignEngine {
     this.state.network.tasks ??= [];
     this.state.cover ??= createInitialCoverState();
     this.state.cover.completedWorkDates ??= [];
+    this.state.cover.workCreditMinutesByDate ??= {};
     this.state.cover.observations ??= [];
     this.state.cover.lastAttendanceEvaluatedDate ??= null;
     this.state.cover.leaveUntil ??= null;
@@ -255,6 +278,7 @@ export class CampaignEngine {
           privateIntent: action.agentOutcome?.privateIntent,
           requestedEffects: action.agentOutcome?.requestedEffects ?? [],
         });
+        recordCoverConversationCredit(next, action.durationMinutes, append);
         const contactWeight = session.goal === "apply_pressure" ? 3 : session.goal === "recruit_probe" || session.goal === "request_information" ? 2 : 1;
         recordInvestigationEvidence(next, "extended_contact", next.currentLocationId, contactWeight, append);
         if (discovery) {
@@ -276,7 +300,10 @@ export class CampaignEngine {
       }
       case "move": {
         const origin = this.campaign.locations.find((item) => item.id === next.currentLocationId);
-        if (!next.discoveredLocationIds.includes(action.destinationId)) throw new Error("Destination has not been discovered");
+        const destinationKnowledge = next.locationKnowledge?.[action.destinationId]?.stage;
+        if (!next.discoveredLocationIds.includes(action.destinationId) || (destinationKnowledge && destinationKnowledge !== "accessible")) {
+          throw new Error("Destination is not yet accessible");
+        }
         if (!origin?.travelMinutes[action.destinationId]) throw new Error("Destination is not reachable from current location");
         if (action.durationMinutes !== origin.travelMinutes[action.destinationId]) throw new Error("Move duration does not match campaign travel time");
         append("player.moved", { from: next.currentLocationId, to: action.destinationId });
@@ -600,6 +627,7 @@ export class CampaignEngine {
       }
     }
     next.currentTime = finalTime;
+    notices.push(...advanceNarrativeEvents(this.campaign, next, append));
     next.playerEnergy = action.type === "rest"
       ? clamp(next.playerEnergy + energyRecovery)
       : clamp(next.playerEnergy - actionEnergyCost(action, elapsedDuration, previousTime));
@@ -700,6 +728,13 @@ function resolveCampaignLeads(
     for (const locationId of lead.locationIds) {
       if (!campaign.locations.some((location) => location.id === locationId) || state.discoveredLocationIds.includes(locationId)) continue;
       state.discoveredLocationIds.push(locationId);
+      state.locationKnowledge ??= {};
+      state.locationKnowledge[locationId] = {
+        stage: "accessible",
+        sourceEventId: lead.id,
+        hint: lead.hint,
+        updatedAt: state.currentTime,
+      };
       append("location.discovered", { locationId, leadId: lead.id, hint: lead.hint, sourceCharacterId: characterId });
     }
     for (const introducedCharacterId of lead.characterIds) {
@@ -712,6 +747,79 @@ function resolveCampaignLeads(
     hints.push(`线索：${lead.hint}`);
   }
   return hints;
+}
+
+function advanceNarrativeEvents(
+  campaign: CampaignDefinition,
+  state: WorldState,
+  append: (type: string, payload: unknown) => void,
+): string[] {
+  const resolved = state.resolvedNarrativeEventIds ?? (state.resolvedNarrativeEventIds = []);
+  const notices: string[] = [];
+
+  for (const event of campaign.narrativeEvents ?? []) {
+    if (resolved.includes(event.id)) continue;
+    const trigger = event.trigger;
+    if (trigger.notBefore && new Date(state.currentTime) < new Date(trigger.notBefore)) continue;
+    if (!(trigger.requiredEventIds ?? []).every((id) => resolved.includes(id))) continue;
+    if (trigger.type === "relationship") {
+      if (!trigger.characterId) continue;
+      const character = state.characters[trigger.characterId];
+      const memory = state.dialogueMemories[trigger.characterId];
+      if (!character || !memory) continue;
+      if (character.familiarity < (trigger.minFamiliarity ?? 0)) continue;
+      if (character.privateTrust < (trigger.minPrivateTrust ?? -100)) continue;
+      if (memory.interactionCount < (trigger.minInteractionCount ?? 0)) continue;
+    }
+
+    state.locationKnowledge ??= {};
+    for (const effect of event.effects.locations ?? []) {
+      const current = state.locationKnowledge[effect.locationId];
+      const nextStage = chooseLocationKnowledgeStage(current?.stage ?? "unknown", effect.stage);
+      if (current?.stage === nextStage) continue;
+      state.locationKnowledge[effect.locationId] = {
+        stage: nextStage,
+        sourceEventId: event.id,
+        hint: effect.hint,
+        updatedAt: state.currentTime,
+      };
+      if (nextStage === "accessible" && !state.discoveredLocationIds.includes(effect.locationId)) {
+        state.discoveredLocationIds.push(effect.locationId);
+      }
+      append("location.stage_changed", { locationId: effect.locationId, stage: nextStage, eventId: event.id, hint: effect.hint });
+    }
+    for (const characterId of event.effects.introduceCharacterIds ?? []) {
+      if (!state.characters[characterId] || state.knownCharacterIds.includes(characterId)) continue;
+      state.knownCharacterIds.push(characterId);
+      append("character.introduced", { characterId, eventId: event.id, hint: event.visibleSummary });
+    }
+    if (event.effects.thread) {
+      state.narrativeThreads ??= [];
+      const existing = state.narrativeThreads.find((thread) => thread.id === event.effects.thread?.id);
+      const thread: NarrativeThreadState = {
+        ...event.effects.thread,
+        status: event.effects.thread.status ?? "active",
+        sourceEventId: event.id,
+        updatedAt: state.currentTime,
+      };
+      if (existing) Object.assign(existing, thread);
+      else state.narrativeThreads.push(thread);
+      append("narrative.thread_updated", thread);
+    }
+    resolved.push(event.id);
+    append("narrative.event_resolved", { eventId: event.id, title: event.title, summary: event.visibleSummary });
+    notices.push(event.visibleSummary);
+  }
+  return notices;
+}
+
+function chooseLocationKnowledgeStage(
+  current: LocationKnowledgeStage,
+  proposed: Exclude<LocationKnowledgeStage, "unknown">,
+): LocationKnowledgeStage {
+  if (current === "compromised" || proposed === "compromised") return "compromised" as const;
+  const order = { unknown: 0, rumored: 1, located: 2, accessible: 3 } as const;
+  return order[proposed] > order[current] ? proposed : current;
 }
 
 function comradeTaskMinutes(
@@ -1023,8 +1131,36 @@ function addCoverObservation(state: WorldState, type: WorldState["cover"]["obser
   state.cover.observations = state.cover.observations.slice(-12);
 }
 
+function recordCoverConversationCredit(
+  state: WorldState,
+  minutes: number,
+  append: (type: string, payload: unknown) => void,
+) {
+  const profile = getCoverProfile(state.cover.profileId);
+  if (!profile.workLocationIds.includes(state.currentLocationId) || !isCoverWorkHours(state.currentTime, state.cover.profileId)) return;
+  if (state.cover.workStatus === "on_leave") return;
+  const date = coverDate(state.currentTime);
+  if (state.cover.completedWorkDates.includes(date)) return;
+  state.cover.workCreditMinutesByDate ??= {};
+  const total = (state.cover.workCreditMinutesByDate[date] ?? 0) + minutes;
+  state.cover.workCreditMinutesByDate[date] = total;
+  if (total < 60) return;
+  state.cover.completedWorkDates.push(date);
+  state.cover.workStatus = "working";
+  state.cover.lastWorkAt = state.currentTime;
+  state.cover.credibility = clamp(state.cover.credibility + 2);
+  const summary = "你在公开岗位与同事持续处理事务，形成了可被核对的在岗记录。";
+  addCoverObservation(state, "work_completed", summary);
+  append("cover.activity_credited", { date, minutes: total, source: "workplace_dialogue", summary });
+}
+
 function coverDate(iso: string) {
-  return iso.slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
 }
 
 function isCoverWorkHours(iso: string, profileId: WorldState["cover"]["profileId"] = "archive_clerk") {
