@@ -4,7 +4,7 @@ import type {
   RadioMessageFormat, RadioMessageItem, RadioMinigameConfig, RadioTiming,
 } from "@qianfu/core";
 
-type PublicActionResult = Omit<ActionResult, "state"> & { state: PublicWorldState };
+export type PublicActionResult = Omit<ActionResult, "state"> & { state: PublicWorldState };
 
 export interface GameContext {
   visibility: DifficultyVisibilityPolicy;
@@ -64,6 +64,8 @@ export interface RadioChallenge {
   token: string;
   sequence: string;
   groups: string[];
+  interruptions: Array<{ id: string; atSymbol: number; gameMinute: number; kind: "static" | "patrol" | "power_flicker"; title: string; description: string }>;
+  checksPerformed: number;
   config: RadioMinigameConfig;
   expiresAt: string;
   content: Array<{ intelId: string; title: string; fields: string[] }>;

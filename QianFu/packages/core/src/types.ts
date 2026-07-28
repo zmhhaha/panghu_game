@@ -307,6 +307,22 @@ export type RadioTiming = "scheduled" | "immediate";
 export type RadioReceiptStatus = "pending" | "confirmed" | "partial" | "no_receipt";
 export type RadioTransmissionMode = "automatic" | "manual";
 export type RadioPerformanceGrade = "excellent" | "steady" | "rough";
+export type RadioInterruptionKind = "static" | "patrol" | "power_flicker";
+export type RadioInterruptionDecisionType = "pause" | "force";
+
+export interface RadioInterruption {
+  id: string;
+  atSymbol: number;
+  gameMinute: number;
+  kind: RadioInterruptionKind;
+  title: string;
+  description: string;
+}
+
+export interface RadioInterruptionDecision {
+  interruptionId: string;
+  decision: RadioInterruptionDecisionType;
+}
 
 export interface RadioManualPerformance {
   accuracy: number;
@@ -316,6 +332,9 @@ export interface RadioManualPerformance {
   errorCount: number;
   correctionCount: number;
   sequence: string;
+  interruptionDecisions?: RadioInterruptionDecision[];
+  interruptionTimeMinutes?: number;
+  interruptionRiskDelta?: number;
 }
 
 export interface RadioMinigameConfig {
@@ -325,6 +344,7 @@ export interface RadioMinigameConfig {
   focusWindow: number;
   correctionAllowance: number;
   interference: "none" | "light" | "heavy";
+  maxManualFields: number;
 }
 
 export interface RadioCodebookState {
@@ -355,6 +375,10 @@ export interface RadioTransmission {
   receiptSummary: string;
   mode?: RadioTransmissionMode;
   morse?: RadioManualPerformance;
+  signalWeight?: number;
+  exposureDelta?: number;
+  warningSigns?: string[];
+  retransmissionOfId?: string | null;
 }
 
 export interface RadioState {
@@ -690,7 +714,20 @@ export interface SendRadioMessageAction extends ActionBase {
   attempt?: {
     inputs: Array<{ symbol: "." | "-"; offsetMs: number }>;
     correctionCount: number;
+    interruptionDecisions: RadioInterruptionDecision[];
   };
+}
+
+export interface AbortRadioMessageAction extends ActionBase {
+  type: "abort_radio_message";
+  locationId: string;
+  riskDelta?: number;
+  interruptionId: string;
+  challengeToken?: string;
+  items?: RadioMessageItem[];
+  format?: RadioMessageFormat;
+  codebookId?: RadioCodebookState["id"];
+  timing?: RadioTiming;
 }
 
 export interface DelegateComradeTaskAction extends ActionBase {
@@ -719,7 +756,7 @@ export interface RecruitCandidateAction extends ActionBase {
   targetCharacterId: string;
 }
 
-export type GameAction = MoveAction | ObserveAction | WaitAction | RestAction | RecordIntelAction | TransmitIntelAction | CoverWorkAction | RequestLeaveAction | SendRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | InterrogationAnswerAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
+export type GameAction = MoveAction | ObserveAction | WaitAction | RestAction | RecordIntelAction | TransmitIntelAction | CoverWorkAction | RequestLeaveAction | SendRadioMessageAction | AbortRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | InterrogationAnswerAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
 
 export interface ActionResult {
   state: WorldState;

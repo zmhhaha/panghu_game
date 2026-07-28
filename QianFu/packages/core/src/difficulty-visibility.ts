@@ -36,9 +36,9 @@ export function getDifficultyVisibility(difficulty: DifficultyConfig["id"]): Dif
 }
 
 const RADIO_MINIGAME: Record<DifficultyConfig["id"], RadioMinigameConfig> = {
-  story: { required: false, unitMs: 720, timingToleranceMs: 360, focusWindow: 9, correctionAllowance: 5, interference: "none" },
-  undercover: { required: false, unitMs: 560, timingToleranceMs: 230, focusWindow: 6, correctionAllowance: 3, interference: "light" },
-  iron_curtain: { required: true, unitMs: 430, timingToleranceMs: 140, focusWindow: 4, correctionAllowance: 1, interference: "heavy" },
+  story: { required: false, unitMs: 800, timingToleranceMs: 400, focusWindow: 9, correctionAllowance: 5, interference: "none", maxManualFields: 12 },
+  undercover: { required: false, unitMs: 650, timingToleranceMs: 260, focusWindow: 6, correctionAllowance: 3, interference: "light", maxManualFields: 12 },
+  iron_curtain: { required: true, unitMs: 520, timingToleranceMs: 160, focusWindow: 4, correctionAllowance: 1, interference: "heavy", maxManualFields: 12 },
 };
 
 export function getRadioMinigameConfig(difficulty: DifficultyConfig["id"]): RadioMinigameConfig {

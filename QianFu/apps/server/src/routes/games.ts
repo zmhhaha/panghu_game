@@ -41,7 +41,16 @@ const actionSchema = z.discriminatedUnion("type", [
     attempt: z.object({
       inputs: z.array(z.object({ symbol: z.enum([".", "-"]), offsetMs: z.number().int().nonnegative() })).max(2000),
       correctionCount: z.number().int().nonnegative().max(2000),
+      interruptionDecisions: z.array(z.object({ interruptionId: z.string().min(1).max(80), decision: z.enum(["pause", "force"]) })).max(10).default([]),
     }).optional(),
+    durationMinutes: z.literal(0),
+    idempotencyKey: z.string().min(8).max(128),
+  }),
+  z.object({
+    type: z.literal("abort_radio_message"),
+    ...radioSelectionSchema.shape,
+    challengeToken: z.string().min(32).max(16000),
+    interruptionId: z.string().min(1).max(80),
     durationMinutes: z.literal(0),
     idempotencyKey: z.string().min(8).max(128),
   }),
@@ -303,12 +312,25 @@ gamesRouter.post("/:id/actions", async (req, res) => {
         action = {
           type: "send_radio_message", items, format: parsed.data.format, codebookId: parsed.data.codebookId,
           timing: parsed.data.timing, locationId: parsed.data.locationId, mode: "manual",
-          manualPerformance: scoreRadioAttempt(payload, parsed.data.attempt.inputs, parsed.data.attempt.correctionCount),
+          manualPerformance: scoreRadioAttempt(payload, parsed.data.attempt.inputs, parsed.data.attempt.correctionCount, parsed.data.attempt.interruptionDecisions),
           durationMinutes: 0, idempotencyKey: parsed.data.idempotencyKey,
         };
       } else {
         action = { type: "send_radio_message", items, format: parsed.data.format, codebookId: parsed.data.codebookId, timing: parsed.data.timing, locationId: parsed.data.locationId, mode: "automatic", durationMinutes: 0, idempotencyKey: parsed.data.idempotencyKey };
       }
+    } else if (action.type === "abort_radio_message" && parsed.data.type === "abort_radio_message") {
+      const current = await gameRepository.getGame(req.params.id, req.user.id);
+      if (!current) { res.status(404).json({ error: "战役不存在" }); return; }
+      const items = canonicalRadioItems(parsed.data.items);
+      const payload = verifyRadioChallenge(parsed.data.challengeToken, {
+        userId: req.user.id, gameInstanceId: current.gameInstanceId, stateVersion: current.stateVersion,
+        items, format: parsed.data.format, codebookId: parsed.data.codebookId, timing: parsed.data.timing,
+        locationId: parsed.data.locationId, difficultyId: current.difficulty.id,
+      });
+      const interruption = payload.interruptions.find((item) => item.id === parsed.data.interruptionId);
+      if (!interruption) { res.status(400).json({ error: "发报途中事件无效" }); return; }
+      const riskDelta = interruption.kind === "patrol" ? 4 : interruption.kind === "power_flicker" ? 3 : 2;
+      action = { type: "abort_radio_message", locationId: parsed.data.locationId, riskDelta, interruptionId: interruption.id, durationMinutes: 10, idempotencyKey: parsed.data.idempotencyKey };
     }
     const result = await gameRepository.execute(req.params.id, req.user.id, action);
     if (!result) { res.status(404).json({ error: "战役不存在" }); return; }

@@ -417,19 +417,25 @@ export class CampaignEngine {
         if (action.timing === "scheduled" && !scheduledWindowKnown) throw new Error("尚未掌握组织收报窗口");
 
         const waitMinutes = action.timing === "scheduled" ? minutesUntilRadioWindow(next.currentTime) : 0;
-        const baselineOperationMinutes = radioOperationMinutes(fieldCount, action.format, action.codebookId);
+        const retransmission = [...next.radio.transmissions].reverse().find((transmission) =>
+          (transmission.receiptStatus === "partial" || transmission.receiptStatus === "no_receipt")
+          && items.some((item) => transmission.items.some((previous) => previous.intelId === item.intelId && item.fields.some((field) => previous.fields.includes(field)))),
+        );
+        const baselineOperationMinutes = Math.max(20, radioOperationMinutes(fieldCount, action.format, action.codebookId) - (retransmission ? 10 : 0));
         const performanceTimeDelta = mode === "manual"
           ? action.manualPerformance!.grade === "excellent" ? -10 : action.manualPerformance!.grade === "rough" ? 10 : 0
           : 0;
-        const operationMinutes = Math.max(20, baselineOperationMinutes + performanceTimeDelta);
+        const interruptionTimeMinutes = mode === "manual" ? action.manualPerformance!.interruptionTimeMinutes ?? 0 : 0;
+        const operationMinutes = Math.max(20, baselineOperationMinutes + performanceTimeDelta + interruptionTimeMinutes);
         elapsedDuration = waitMinutes + operationMinutes;
         const completedAt = addMinutes(next.currentTime, elapsedDuration);
         const receiptDueAt = addMinutes(completedAt, action.timing === "scheduled" ? 20 : 40);
         const repeatedCodebook = codebook.usageCount > 0 && codebook.id === "book_cipher";
         const performanceSignalDelta = mode === "manual"
-          ? action.manualPerformance!.errorCount * 1.5 + action.manualPerformance!.correctionCount * 0.5 + (action.manualPerformance!.grade === "excellent" ? -3 : 0)
+          ? action.manualPerformance!.errorCount * 1.5 + action.manualPerformance!.correctionCount * 0.5 + (action.manualPerformance!.grade === "excellent" ? -3 : 0) + (action.manualPerformance!.interruptionRiskDelta ?? 0)
           : 0;
-        const signalWeight = Math.max(1, Math.round(siteRisk + operationMinutes / 3 + (action.timing === "immediate" ? 8 : 0) + (repeatedCodebook ? 6 : 0) + performanceSignalDelta));
+        const signalWeight = Math.max(1, Math.round(siteRisk + operationMinutes / 3 + (action.timing === "immediate" ? 8 : 0) + (repeatedCodebook ? 6 : 0) + (retransmission ? 4 : 0) + performanceSignalDelta));
+        const exposureBefore = next.network.exposure;
         codebook.usageCount += 1;
         codebook.lastUsedAt = completedAt;
         if (codebook.usesRemaining !== null) codebook.usesRemaining -= 1;
@@ -449,13 +455,33 @@ export class CampaignEngine {
           receiptSummary: "电文已经发出，正在等待组织回执。",
           mode,
           ...(mode === "manual" ? { morse: action.manualPerformance } : {}),
+          signalWeight,
+          exposureDelta: 0,
+          warningSigns: radioWarningSigns(signalWeight, Boolean(retransmission), action.manualPerformance?.interruptionDecisions?.length ?? 0),
+          retransmissionOfId: retransmission?.id ?? null,
         });
         next.radio.transmissions = next.radio.transmissions.slice(-30);
         next.network.exposure = clamp(next.network.exposure + signalWeight * 0.3 * next.difficulty.enemyResponseSpeed);
+        next.radio.transmissions.at(-1)!.exposureDelta = Number((next.network.exposure - exposureBefore).toFixed(1));
         next.personalSuspicion = clamp(next.personalSuspicion + Math.max(1, siteRisk / 4) * next.difficulty.enemyResponseSpeed);
         recordInvestigationEvidence(next, "radio_signal", action.locationId, signalWeight, append);
         append("radio.message_sent", { transmissionId: action.idempotencyKey, items, format: action.format, codebookId: action.codebookId, timing: action.timing, locationId: action.locationId, fieldCount, durationMinutes: elapsedDuration, receiptDueAt, mode, morse: mode === "manual" ? action.manualPerformance : undefined });
         narration = `电文已在${elapsedDuration}分钟内完成编码、发送和清理。组织回执预计稍后抵达。`;
+        break;
+      }
+      case "abort_radio_message": {
+        if (action.locationId !== next.currentLocationId) throw new Error("发报地点已经变化，不能处置原来的电台现场");
+        const riskDelta = action.riskDelta;
+        if (action.durationMinutes !== 10 || riskDelta === undefined || !Number.isFinite(riskDelta) || riskDelta < 1 || riskDelta > 10) throw new Error("销毁电文参数无效");
+        const siteRisk = radioSiteRisk(this.campaign, next, action.locationId);
+        if (siteRisk === null) throw new Error("当前地点无法处置发报现场");
+        elapsedDuration = 10;
+        const signalWeight = Math.round(siteRisk * 0.4 + riskDelta);
+        next.network.exposure = clamp(next.network.exposure + signalWeight * 0.15 * next.difficulty.enemyResponseSpeed);
+        recordInvestigationEvidence(next, "radio_signal", action.locationId, signalWeight, append);
+        append("radio.operation_aborted", { locationId: action.locationId, interruptionId: action.interruptionId, durationMinutes: elapsedDuration, signalWeight });
+        notices.push("你切断电源、销毁电文并清理现场。本次情报没有发出。敌方可能捕捉到短暂信号。");
+        narration = "电台已经停机，未完成的电文被销毁。";
         break;
       }
       case "dialogue": {
@@ -1176,6 +1202,17 @@ function radioOperationMinutes(fieldCount: number, format: RadioMessageFormat, c
   const fieldsPerTenMinutes = format === "compressed" ? 4 : 2;
   const transmission = Math.max(10, Math.ceil(fieldCount / fieldsPerTenMinutes) * 10);
   return encoding + transmission + 10;
+}
+
+function radioWarningSigns(signalWeight: number, retransmission: boolean, interruptionCount: number): string[] {
+  const signs = signalWeight < 16
+    ? ["频率较为干净，暂未察觉明显测向迹象。"]
+    : signalWeight < 28
+      ? ["发报结束后，附近街面出现了短暂停留的陌生车辆。"]
+      : ["耳机中出现可疑的同频回扫，敌方可能已经开始测向。", "当前据点不宜连续发报。"];
+  if (retransmission) signs.push("相同情报再次出现在频段上，通信规律更容易被归并。 ");
+  if (interruptionCount > 0) signs.push("途中干扰延长了电台暴露窗口。 ");
+  return signs.map((sign) => sign.trim());
 }
 
 function validateRadioPerformance(performance: Extract<GameAction, { type: "send_radio_message" }>["manualPerformance"]): void {

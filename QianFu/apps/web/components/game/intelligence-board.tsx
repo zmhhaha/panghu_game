@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { GameAction, PublicWorldState, RadioMessageFormat, RadioTiming } from "@qianfu/core";
-import { AlertTriangle, Archive, Check, Clock3, FileText, Link2, Radio, Send, ShieldAlert, UserRound, X } from "lucide-react";
-import { api, type GameContext, type RadioChallenge, type RadioChallengeRequest } from "@/lib/api";
+import type { GameAction, PublicWorldState, RadioMessageFormat, RadioTiming, RadioTransmission } from "@qianfu/core";
+import { AlertTriangle, Archive, Check, Clock3, FileText, Link2, Radio, RotateCcw, Send, ShieldAlert, UserRound, X } from "lucide-react";
+import { api, type GameContext, type PublicActionResult, type RadioChallenge, type RadioChallengeRequest } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { MorseRadioGame } from "@/components/game/morse-radio-game";
 
@@ -15,7 +15,7 @@ export function IntelligenceBoard({ gameInstanceId, state, context, busy, onActi
   state: PublicWorldState;
   context: GameContext;
   busy: boolean;
-  onAction: (action: GameAction) => void;
+  onAction: (action: GameAction) => Promise<PublicActionResult | null>;
 }) {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState(false);
@@ -27,6 +27,8 @@ export function IntelligenceBoard({ gameInstanceId, state, context, busy, onActi
   const [challengeSelection, setChallengeSelection] = useState<RadioChallengeRequest | null>(null);
   const [challengeBusy, setChallengeBusy] = useState(false);
   const [challengeError, setChallengeError] = useState("");
+  const [resultTransmission, setResultTransmission] = useState<RadioTransmission | null>(null);
+  const [abortedResult, setAbortedResult] = useState(false);
   const radioSites = context.radioSites.filter((site) => site.available && site.discovered);
   const [locationId, setLocationId] = useState(() => radioSites.some((site) => site.id === state.currentLocationId) ? state.currentLocationId : radioSites[0]?.id ?? "");
   const visibleIntel = context.intel.filter((item) => state.intel[item.id]?.knownFields.length > 0);
@@ -85,6 +87,28 @@ export function IntelligenceBoard({ gameInstanceId, state, context, busy, onActi
       setChallengeBusy(false);
     }
   };
+  const executeRadio = async (action: GameAction) => {
+    setChallenge(null);
+    setChallengeSelection(null);
+    const result = await onAction(action);
+    if (!result) return;
+    if (action.type === "send_radio_message") {
+      setResultTransmission(result.state.radio.transmissions.find((message) => message.id === action.idempotencyKey) ?? null);
+      setSelected({});
+    } else if (action.type === "abort_radio_message") {
+      setAbortedResult(true);
+    }
+  };
+  const prepareRetransmission = (message: RadioTransmission) => {
+    const fields: Record<string, boolean> = {};
+    for (const item of message.items) for (const field of item.fields) {
+      if (!state.intel[item.intelId]?.deliveredFields.includes(field)) fields[`${item.intelId}:${field}`] = true;
+    }
+    setSelected(fields);
+    setFormat("compressed");
+    if (radioSites.some((site) => site.id === state.currentLocationId)) setLocationId(state.currentLocationId);
+    setOpen(true);
+  };
 
   return <div className="mt-7 border-t border-line pt-5">
     <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs font-medium text-muted"><FileText size={15} />情报板 {visibleIntel.length}/{context.intel.length}</p>{visibleIntel.length > 0 && <div className="flex gap-3"><button onClick={() => setDossierOpen(true)} className="flex items-center gap-1.5 text-xs text-muted hover:text-paper"><Archive size={13} />情报档案</button><button onClick={prepare} className="flex items-center gap-1.5 text-xs text-copper hover:text-paper"><Radio size={13} />编制电文</button></div>}</div>
@@ -103,7 +127,7 @@ export function IntelligenceBoard({ gameInstanceId, state, context, busy, onActi
       </div>;
     })}</div>}
 
-    {state.radio.transmissions.length > 0 && <div className="mt-4 border-t border-line pt-4"><p className="text-[10px] text-muted">最近电文</p>{state.radio.transmissions.slice(-3).reverse().map((message) => <div key={message.id} className="mt-2 flex items-start justify-between gap-3 text-xs"><span className="min-w-0"><span className="line-clamp-2 text-muted">{message.receiptSummary}</span>{message.mode === "manual" && message.morse && <span className="mt-1 block truncate font-mono text-[10px] text-muted">{message.morse.sequence} · {message.morse.grade === "excellent" ? "优秀" : message.morse.grade === "steady" ? "稳定" : "粗糙"} · {message.morse.errorCount} 处误码</span>}</span><span className={message.receiptStatus === "confirmed" ? "shrink-0 text-safe" : message.receiptStatus === "partial" || message.receiptStatus === "no_receipt" ? "shrink-0 text-alert" : "shrink-0 text-copper"}>{receiptLabels[message.receiptStatus]}</span></div>)}</div>}
+    {state.radio.transmissions.length > 0 && <div className="mt-4 border-t border-line pt-4"><p className="text-[10px] text-muted">最近电文</p>{state.radio.transmissions.slice(-3).reverse().map((message) => { const canRetransmit = (message.receiptStatus === "partial" || message.receiptStatus === "no_receipt") && message.items.some((item) => item.fields.some((field) => !state.intel[item.intelId]?.deliveredFields.includes(field))); return <div key={message.id} className="mt-3 flex items-start justify-between gap-3 text-xs"><span className="min-w-0"><span className="line-clamp-2 text-muted">{message.receiptSummary}</span>{message.mode === "manual" && message.morse && <span className="mt-1 block truncate font-mono text-[10px] text-muted">{message.morse.sequence} · {message.morse.grade === "excellent" ? "优秀" : message.morse.grade === "steady" ? "稳定" : "粗糙"} · {message.morse.errorCount} 处误码</span>}{canRetransmit && <button disabled={busy} onClick={() => prepareRetransmission(message)} className="mt-2 flex items-center gap-1.5 text-[10px] text-copper hover:text-paper"><RotateCcw size={11} />补发未确认字段</button>}</span><span className={message.receiptStatus === "confirmed" ? "shrink-0 text-safe" : message.receiptStatus === "partial" || message.receiptStatus === "no_receipt" ? "shrink-0 text-alert" : "shrink-0 text-copper"}>{receiptLabels[message.receiptStatus]}</span></div>; })}</div>}
 
     {open && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="radio-title">
       <div className="my-6 w-full max-w-3xl border border-line bg-ink shadow-2xl">
@@ -118,15 +142,18 @@ export function IntelligenceBoard({ gameInstanceId, state, context, busy, onActi
             <Select label="密码本" value={codebookId} onChange={(value) => setCodebookId(value as typeof codebookId)} options={state.radio.codebooks.map((item) => ({ value: item.id, label: item.id === "one_time_pad" ? `一次一密 · 剩余 ${item.usesRemaining ?? 0} 页` : `书本密码 · 已用 ${item.usageCount} 次` }))} />
             <Select label="发送时机" value={timing} onChange={(value) => setTiming(value as RadioTiming)} options={[{ value: "immediate", label: "立即发送" }, { value: "scheduled", label: scheduledWindowKnown ? "等待约定窗口" : "约定窗口（尚未知晓）", disabled: !scheduledWindowKnown }]} />
             <Select label="发报地点" value={locationId} onChange={setLocationId} options={radioSites.map((site) => ({ value: site.id, label: `${site.name} · 热度${Math.round(site.currentHeat)}${site.id === state.currentLocationId ? " · 当前" : ""}` }))} />
-            <div className="border-l-2 border-copper bg-copper/[0.06] p-3 text-xs leading-6 text-muted"><p className="flex items-center justify-between"><span>字段</span><span className="text-paper">{fieldCount}</span></p><p className="flex items-center justify-between"><span>预计耗时</span><span className="text-paper">{estimate.totalMinutes} 分钟</span></p><p className="flex items-center justify-between"><span>信号风险</span><span className={riskLabel === "较高" ? "text-alert" : "text-copper"}>{riskLabel}</span></p></div>
+            <div className="border-l-2 border-copper bg-copper/[0.06] p-3 text-xs leading-6 text-muted"><p className="flex items-center justify-between"><span>字段</span><span className="text-paper">{fieldCount}</span></p><p className="flex items-center justify-between"><span>预计耗时</span><span className="text-paper">{estimate.totalMinutes} 分钟</span></p><p className="flex items-center justify-between"><span>信号风险</span><span className={riskLabel === "较高" ? "text-alert" : "text-copper"}>{riskLabel}</span></p><p className="flex items-center justify-between"><span>手动上限</span><span className={fieldCount > context.radioMinigame.maxManualFields ? "text-alert" : "text-paper"}>{context.radioMinigame.maxManualFields} 字段</span></p></div>
           </div>
         </div>
         {challengeError && <div className="border-t border-alert/30 bg-alert/10 px-5 py-3 text-xs text-[#efaaa4]">{challengeError}</div>}
-        <div className="flex flex-col gap-3 border-t border-line bg-panel px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="flex items-center gap-2 text-xs text-muted">{!atSelectedSite ? <><ShieldAlert size={13} className="text-alert" />需要先前往所选地点</> : timing === "scheduled" ? <><Clock3 size={13} />耗时包含等待下一个收报窗口</> : "立即发送更快，但更容易形成时间规律"}</p><div className="flex flex-wrap justify-end gap-2">{!context.radioMinigame.required && <Button variant="outline" disabled={busy || challengeBusy || fieldCount === 0 || !atSelectedSite || !codebookAvailable || (timing === "scheduled" && !scheduledWindowKnown)} onClick={() => { setOpen(false); onAction({ type: "send_radio_message", items, format, codebookId, timing, locationId, mode: "automatic", durationMinutes: 0, idempotencyKey: crypto.randomUUID() }); }}><Send size={15} />自动发送</Button>}<Button disabled={busy || challengeBusy || fieldCount === 0 || !atSelectedSite || !codebookAvailable || (timing === "scheduled" && !scheduledWindowKnown)} onClick={() => void startManual()}><Radio size={15} />{challengeBusy ? "校准频率..." : "手动发报"}</Button></div></div>
+        <div className="flex flex-col gap-3 border-t border-line bg-panel px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="flex items-center gap-2 text-xs text-muted">{!atSelectedSite ? <><ShieldAlert size={13} className="text-alert" />需要先前往所选地点</> : timing === "scheduled" ? <><Clock3 size={13} />耗时包含等待下一个收报窗口</> : "立即发送更快，但更容易形成时间规律"}</p><div className="flex flex-wrap justify-end gap-2">{!context.radioMinigame.required && <Button variant="outline" disabled={busy || challengeBusy || fieldCount === 0 || !atSelectedSite || !codebookAvailable || (timing === "scheduled" && !scheduledWindowKnown)} onClick={() => { setOpen(false); void executeRadio({ type: "send_radio_message", items, format, codebookId, timing, locationId, mode: "automatic", durationMinutes: 0, idempotencyKey: crypto.randomUUID() }); }}><Send size={15} />自动发送</Button>}<Button disabled={busy || challengeBusy || fieldCount === 0 || fieldCount > context.radioMinigame.maxManualFields || !atSelectedSite || !codebookAvailable || (timing === "scheduled" && !scheduledWindowKnown)} onClick={() => void startManual()}><Radio size={15} />{challengeBusy ? "校准频率..." : "手动发报"}</Button></div></div>
       </div>
     </div>}
 
-    {challenge && challengeSelection && <MorseRadioGame challenge={challenge} selection={challengeSelection} busy={busy} onCancel={() => { setChallenge(null); setOpen(true); }} onSend={(action) => { setChallenge(null); setChallengeSelection(null); onAction(action); }} />}
+    {challenge && challengeSelection && <MorseRadioGame challenge={challenge} selection={challengeSelection} busy={busy} onCancel={() => { setChallenge(null); setOpen(true); }} onSend={(action) => void executeRadio(action)} onAbort={(interruptionId) => void executeRadio({ type: "abort_radio_message", ...challengeSelection, challengeToken: challenge.token, interruptionId, durationMinutes: 0, idempotencyKey: crypto.randomUUID() })} />}
+
+    {resultTransmission && <RadioResultModal transmission={resultTransmission} context={context} onClose={() => setResultTransmission(null)} />}
+    {abortedResult && <div className="fixed inset-0 z-[80] grid place-items-center bg-black/80 p-4"><section className="w-full max-w-md border border-line bg-ink p-6 text-center"><h2 className="font-serif text-xl">电文已销毁</h2><p className="mt-3 text-sm leading-6 text-muted">本次情报没有发出。清理现场消耗了 10 分钟，短暂信号仍可能被敌方捕捉。</p><Button className="mt-6" onClick={() => setAbortedResult(false)}>返回战役</Button></section></div>}
 
     {dossierOpen && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="dossier-title">
       <div className="my-6 w-full max-w-4xl border border-line bg-ink shadow-2xl">
@@ -155,6 +182,16 @@ function formatEvidenceTime(value: string) {
 
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string; disabled?: boolean }> }) {
   return <label className="block text-xs text-muted">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 h-10 w-full border border-line bg-panel px-3 text-sm text-paper outline-none focus:border-copper">{options.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}</select></label>;
+}
+
+function RadioResultModal({ transmission, context, onClose }: { transmission: RadioTransmission; context: GameContext; onClose: () => void }) {
+  const performance = transmission.morse;
+  const risk = (transmission.signalWeight ?? 0) < 16 ? "较低" : (transmission.signalWeight ?? 0) < 28 ? "中等" : "较高";
+  const fields = transmission.items.flatMap((item) => {
+    const intel = context.intel.find((entry) => entry.id === item.intelId);
+    return item.fields.map((field) => `${intel?.title ?? item.intelId} · ${intel?.fieldLabels[field] ?? field}`);
+  });
+  return <div className="fixed inset-0 z-[80] grid place-items-center overflow-y-auto bg-black/85 p-4" role="dialog" aria-modal="true" aria-labelledby="radio-result-title"><section className="my-6 w-full max-w-2xl border border-line bg-ink shadow-2xl"><header className="flex items-start justify-between border-b border-line bg-panel px-5 py-4"><div><p className="text-xs text-copper">发送完成</p><h2 id="radio-result-title" className="mt-1 font-serif text-xl">电台清理结果</h2></div><button aria-label="关闭" onClick={onClose} className="grid h-9 w-9 place-items-center text-muted hover:text-paper"><X size={17} /></button></header><div className="grid gap-6 p-5 sm:grid-cols-2"><div><p className="text-xs text-muted">已发内容</p><ul className="mt-3 space-y-2 text-sm">{fields.map((field) => <li key={field}>{field}</li>)}</ul>{transmission.retransmissionOfId && <p className="mt-4 flex items-center gap-2 text-xs text-copper"><RotateCcw size={13} />本次为补发电文</p>}</div><div className="border-l-2 border-copper bg-copper/[0.06] p-4 text-xs leading-7 text-muted"><p className="flex justify-between"><span>发送方式</span><span className="text-paper">{transmission.mode === "manual" ? "手动发报" : "自动发送"}</span></p><p className="flex justify-between"><span>实际耗时</span><span className="text-paper">{transmission.durationMinutes} 分钟</span></p><p className="flex justify-between"><span>信号风险</span><span className={risk === "较高" ? "text-alert" : "text-copper"}>{risk}</span></p><p className="flex justify-between"><span>网络暴露变化</span><span className="text-paper">+{(transmission.exposureDelta ?? 0).toFixed(1)}</span></p>{performance && <><p className="flex justify-between"><span>符号准确率</span><span className="text-paper">{Math.round(performance.accuracy * 100)}%</span></p><p className="flex justify-between"><span>节奏稳定度</span><span className="text-paper">{Math.round(performance.timingScore * 100)}%</span></p><p className="flex justify-between"><span>误码</span><span className={performance.errorCount > 0 ? "text-alert" : "text-safe"}>{performance.errorCount} 处</span></p><p className="flex justify-between"><span>操作评价</span><span className="text-paper">{performance.grade === "excellent" ? "优秀" : performance.grade === "steady" ? "稳定" : "粗糙"}</span></p></>}</div></div>{transmission.warningSigns && transmission.warningSigns.length > 0 && <div className="border-t border-line px-5 py-4"><p className="text-xs text-muted">现场迹象</p><ul className="mt-2 space-y-1 text-xs leading-5 text-[#c99b79]">{transmission.warningSigns.map((sign) => <li key={sign}>{sign}</li>)}</ul></div>}<footer className="flex justify-end border-t border-line bg-panel px-5 py-4"><Button onClick={onClose}>返回战役</Button></footer></section></div>;
 }
 
 function estimateTransmission(currentTime: string, fieldCount: number, format: RadioMessageFormat, codebookId: "one_time_pad" | "book_cipher", timing: RadioTiming) {

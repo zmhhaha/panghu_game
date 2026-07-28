@@ -846,6 +846,43 @@ describe("radio transmission workflow", () => {
     expect(sent.state.intel.shipment.knownFields).toEqual(["time"]);
     expect(sent.state.intel.shipment).not.toHaveProperty("falseFields");
   });
+
+  it("applies interruption choices and records visible signal warnings", () => {
+    const state = createInitialWorld(radioCampaign, "interrupted-radio", "user-1", "undercover");
+    state.intel.shipment.knownFields = ["time"];
+    const engine = new CampaignEngine(radioCampaign, state);
+    const sent = engine.execute({
+      type: "send_radio_message", items: [{ intelId: "shipment", fields: ["time"] }],
+      format: "compressed", codebookId: "book_cipher", timing: "immediate", locationId: "wu-clock-shop", mode: "manual",
+      manualPerformance: { accuracy: 1, timingScore: 1, completion: 1, grade: "excellent", errorCount: 0, correctionCount: 0, sequence: ".----", interruptionDecisions: [{ interruptionId: "radio-check-1", decision: "force" }], interruptionTimeMinutes: 0, interruptionRiskDelta: 6 },
+      durationMinutes: 0, idempotencyKey: "interrupted-radio-send",
+    });
+    const transmission = sent.state.radio.transmissions[0]!;
+    expect(transmission.warningSigns?.length).toBeGreaterThan(0);
+    expect(transmission.signalWeight).toBeGreaterThan(0);
+    expect(transmission.exposureDelta).toBeGreaterThan(0);
+  });
+
+  it("consumes time when an interrupted operation is destroyed without sending intelligence", () => {
+    const state = createInitialWorld(radioCampaign, "aborted-radio", "user-1", "undercover");
+    const engine = new CampaignEngine(radioCampaign, state);
+    const result = engine.execute({ type: "abort_radio_message", locationId: "wu-clock-shop", interruptionId: "radio-check-1", riskDelta: 3, durationMinutes: 10, idempotencyKey: "abort-radio-operation" });
+    expect(result.state.currentTime).toBe("1942-05-12T00:10:00.000Z");
+    expect(result.state.radio.transmissions).toHaveLength(0);
+    expect(result.events.some((event) => event.type === "radio.operation_aborted")).toBe(true);
+  });
+
+  it("makes a partial-receipt retransmission shorter and marks the repeated pattern", () => {
+    const state = createInitialWorld(radioCampaign, "retransmit-radio", "user-1", "undercover");
+    state.intel.shipment.knownFields = ["time"];
+    state.radio.transmissions.push({ id: "first-radio", items: [{ intelId: "shipment", fields: ["time"] }], format: "compressed", codebookId: "book_cipher", timing: "immediate", locationId: "wu-clock-shop", fieldCount: 1, durationMinutes: 30, sentAt: state.currentTime, completedAt: state.currentTime, receiptDueAt: state.currentTime, receiptStatus: "no_receipt", receiptSummary: "未收到回执" });
+    const engine = new CampaignEngine(radioCampaign, state);
+    const result = engine.execute({ type: "send_radio_message", items: [{ intelId: "shipment", fields: ["time"] }], format: "compressed", codebookId: "book_cipher", timing: "immediate", locationId: "wu-clock-shop", mode: "automatic", durationMinutes: 0, idempotencyKey: "retransmit-radio-send" });
+    const transmission = result.state.radio.transmissions.at(-1)!;
+    expect(transmission.durationMinutes).toBe(20);
+    expect(transmission.retransmissionOfId).toBe("first-radio");
+    expect(transmission.warningSigns?.some((item) => item.includes("再次"))).toBe(true);
+  });
 });
 
 describe("autonomous comrade tasks", () => {
