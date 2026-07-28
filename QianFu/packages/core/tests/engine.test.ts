@@ -807,6 +807,45 @@ describe("radio transmission workflow", () => {
     expect(sent.state.status).toBe("active");
     expect(sent.state.radio.transmissions[0]?.receiptStatus).toBe("pending");
   });
+
+  it("requires manual Morse in iron curtain mode and applies verified performance", () => {
+    const ironState = createInitialWorld(radioCampaign, "iron-radio", "user-1", "iron_curtain");
+    ironState.intel.shipment.knownFields = ["time"];
+    ironState.intel.shipment.confidence = 0.9;
+    const ironEngine = new CampaignEngine(radioCampaign, ironState);
+    expect(() => ironEngine.execute({
+      type: "send_radio_message", items: [{ intelId: "shipment", fields: ["time"] }],
+      format: "compressed", codebookId: "book_cipher", timing: "immediate", locationId: "wu-clock-shop",
+      mode: "automatic", durationMinutes: 0, idempotencyKey: "iron-auto-radio",
+    })).toThrow("必须由玩家完成");
+
+    const sent = ironEngine.execute({
+      type: "send_radio_message", items: [{ intelId: "shipment", fields: ["time"] }],
+      format: "compressed", codebookId: "book_cipher", timing: "immediate", locationId: "wu-clock-shop",
+      mode: "manual", manualPerformance: { accuracy: 1, timingScore: 1, completion: 1, grade: "excellent", errorCount: 0, correctionCount: 0, sequence: ".----" },
+      durationMinutes: 0, idempotencyKey: "iron-manual-radio",
+    });
+    expect(sent.state.radio.transmissions[0]?.mode).toBe("manual");
+    expect(sent.state.radio.transmissions[0]?.morse?.grade).toBe("excellent");
+    expect(sent.state.radio.transmissions[0]?.durationMinutes).toBe(20);
+    expect(sent.state.intel.shipment.knownFields).toEqual(["time"]);
+  });
+
+  it("makes rough manual operation slower without changing intelligence truth", () => {
+    const state = createInitialWorld(radioCampaign, "rough-radio", "user-1", "undercover");
+    state.intel.shipment.knownFields = ["time"];
+    state.intel.shipment.confidence = 0.9;
+    const engine = new CampaignEngine(radioCampaign, state);
+    const sent = engine.execute({
+      type: "send_radio_message", items: [{ intelId: "shipment", fields: ["time"] }],
+      format: "compressed", codebookId: "book_cipher", timing: "immediate", locationId: "wu-clock-shop",
+      mode: "manual", manualPerformance: { accuracy: 0.3, timingScore: 0.2, completion: 1, grade: "rough", errorCount: 4, correctionCount: 3, sequence: ".----" },
+      durationMinutes: 0, idempotencyKey: "rough-manual-radio",
+    });
+    expect(sent.state.radio.transmissions[0]?.durationMinutes).toBe(40);
+    expect(sent.state.intel.shipment.knownFields).toEqual(["time"]);
+    expect(sent.state.intel.shipment).not.toHaveProperty("falseFields");
+  });
 });
 
 describe("autonomous comrade tasks", () => {

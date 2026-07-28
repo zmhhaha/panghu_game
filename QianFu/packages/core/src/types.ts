@@ -305,6 +305,27 @@ export interface IntelEvidence {
 export type RadioMessageFormat = "compressed" | "full";
 export type RadioTiming = "scheduled" | "immediate";
 export type RadioReceiptStatus = "pending" | "confirmed" | "partial" | "no_receipt";
+export type RadioTransmissionMode = "automatic" | "manual";
+export type RadioPerformanceGrade = "excellent" | "steady" | "rough";
+
+export interface RadioManualPerformance {
+  accuracy: number;
+  timingScore: number;
+  completion: number;
+  grade: RadioPerformanceGrade;
+  errorCount: number;
+  correctionCount: number;
+  sequence: string;
+}
+
+export interface RadioMinigameConfig {
+  required: boolean;
+  unitMs: number;
+  timingToleranceMs: number;
+  focusWindow: number;
+  correctionAllowance: number;
+  interference: "none" | "light" | "heavy";
+}
 
 export interface RadioCodebookState {
   id: "one_time_pad" | "book_cipher";
@@ -332,6 +353,8 @@ export interface RadioTransmission {
   receiptDueAt: string;
   receiptStatus: RadioReceiptStatus;
   receiptSummary: string;
+  mode?: RadioTransmissionMode;
+  morse?: RadioManualPerformance;
 }
 
 export interface RadioState {
@@ -661,6 +684,13 @@ export interface SendRadioMessageAction extends ActionBase {
   codebookId: RadioCodebookState["id"];
   timing: RadioTiming;
   locationId: string;
+  mode?: RadioTransmissionMode;
+  manualPerformance?: RadioManualPerformance;
+  challengeToken?: string;
+  attempt?: {
+    inputs: Array<{ symbol: "." | "-"; offsetMs: number }>;
+    correctionCount: number;
+  };
 }
 
 export interface DelegateComradeTaskAction extends ActionBase {

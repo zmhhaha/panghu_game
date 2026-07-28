@@ -1,17 +1,25 @@
 import { Router } from "express";
 import { z } from "zod";
-import { COVER_PROFILES, getDifficultyVisibility, getRadioSites, getRestAvailability, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
+import { CampaignEngine, COVER_PROFILES, getDifficultyVisibility, getRadioMinigameConfig, getRadioSites, getRestAvailability, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction, type RadioMessageItem } from "@qianfu/core";
 import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
 import { getCampaignDefinition } from "@qianfu/content";
 import { campaignOrchestrator } from "../agents/orchestrator.js";
 import { renderReportHtml } from "../reports.js";
+import { issueRadioChallenge, scoreRadioAttempt, verifyRadioChallenge } from "../radio-challenge.js";
 
 export const gamesRouter = Router();
 
 const difficultySchema = z.enum(["story", "undercover", "iron_curtain"]);
 const saveSlotSchema = z.union([z.literal("1"), z.literal("2")]);
 const duration = z.number().int().nonnegative().multipleOf(10);
+const radioSelectionSchema = z.object({
+  items: z.array(z.object({ intelId: z.string().min(1), fields: z.array(z.string().min(1)).min(1).max(20) })).min(1).max(6),
+  format: z.enum(["compressed", "full"]),
+  codebookId: z.enum(["one_time_pad", "book_cipher"]),
+  timing: z.enum(["scheduled", "immediate"]),
+  locationId: z.string().min(1),
+});
 const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("dialogue_start"), targetCharacterId: z.string().min(1), goal: z.enum(["small_talk", "build_trust", "probe_attitude", "request_information", "verify_intel", "apply_pressure", "recruit_probe", "long_talk"]), tone: z.enum(["neutral", "friendly", "formal", "urgent", "threatening"]), targetIntelId: z.string().min(1).optional(), allocatedMinutes: z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(60)]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("dialogue_turn"), sessionId: z.string().min(8), playerText: z.string().trim().min(1).max(DIALOGUE_MAX_TEXT_LENGTH), durationMinutes: z.literal(2), idempotencyKey: z.string().min(8).max(128) }),
@@ -27,11 +35,13 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("request_leave"), reason: z.enum(["family", "health", "official"]), durationMinutes: z.literal(10), idempotencyKey: z.string().min(8).max(128) }),
   z.object({
     type: z.literal("send_radio_message"),
-    items: z.array(z.object({ intelId: z.string().min(1), fields: z.array(z.string().min(1)).min(1).max(20) })).min(1).max(6),
-    format: z.enum(["compressed", "full"]),
-    codebookId: z.enum(["one_time_pad", "book_cipher"]),
-    timing: z.enum(["scheduled", "immediate"]),
-    locationId: z.string().min(1),
+    ...radioSelectionSchema.shape,
+    mode: z.enum(["automatic", "manual"]).default("automatic"),
+    challengeToken: z.string().min(32).max(16000).optional(),
+    attempt: z.object({
+      inputs: z.array(z.object({ symbol: z.enum([".", "-"]), offsetMs: z.number().int().nonnegative() })).max(2000),
+      correctionCount: z.number().int().nonnegative().max(2000),
+    }).optional(),
     durationMinutes: z.literal(0),
     idempotencyKey: z.string().min(8).max(128),
   }),
@@ -50,6 +60,10 @@ const actionSchema = z.discriminatedUnion("type", [
     idempotencyKey: z.string().min(8).max(128),
   }),
 ]);
+
+function canonicalRadioItems(items: RadioMessageItem[]): RadioMessageItem[] {
+  return items.map((item) => ({ intelId: item.intelId, fields: [...new Set(item.fields)] }));
+}
 
 gamesRouter.get("/", async (req, res, next) => {
   if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
@@ -87,6 +101,7 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
     res.json({
       campaign: { id: campaign.id, version: campaign.version, name: campaign.name },
       visibility: getDifficultyVisibility(state.difficulty.id),
+      radioMinigame: getRadioMinigameConfig(state.difficulty.id),
       settlement: {
         ready: state.status === "finished",
         pendingReceipts: state.radio.transmissions.filter((item) => item.receiptStatus === "pending").length,
@@ -227,6 +242,35 @@ gamesRouter.post("/:id/snapshots/:slot/load", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+gamesRouter.post("/:id/radio-challenges", async (req, res) => {
+  if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
+  const parsed = radioSelectionSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "电文参数无效", detail: parsed.error.flatten() }); return; }
+  try {
+    const state = await gameRepository.getGame(req.params.id, req.user.id);
+    if (!state) { res.status(404).json({ error: "战役不存在" }); return; }
+    const campaign = getCampaignDefinition(state.campaignId, state.campaignVersion);
+    const items = canonicalRadioItems(parsed.data.items);
+    new CampaignEngine(campaign, state).execute({
+      type: "send_radio_message", ...parsed.data, items, mode: "manual",
+      manualPerformance: { accuracy: 1, timingScore: 1, completion: 1, grade: "excellent", errorCount: 0, correctionCount: 0, sequence: "." },
+      durationMinutes: 0, idempotencyKey: `radio-preflight-${state.stateVersion}`,
+    });
+    const challenge = issueRadioChallenge({
+      userId: req.user.id, gameInstanceId: state.gameInstanceId, stateVersion: state.stateVersion,
+      items, format: parsed.data.format, codebookId: parsed.data.codebookId, timing: parsed.data.timing,
+      locationId: parsed.data.locationId, difficultyId: state.difficulty.id,
+    });
+    const content = items.map((item) => {
+      const definition = campaign.intel.find((intel) => intel.id === item.intelId);
+      return { intelId: item.intelId, title: definition?.title ?? item.intelId, fields: item.fields.map((field) => definition?.fieldLabels?.[field] ?? field) };
+    });
+    res.status(201).json({ ...challenge, content });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "无法编制发报挑战" });
+  }
+});
+
 gamesRouter.post("/:id/actions", async (req, res) => {
   if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
   const parsed = actionSchema.safeParse(req.body);
@@ -245,6 +289,26 @@ gamesRouter.post("/:id/actions", async (req, res) => {
       const current = await gameRepository.getGame(req.params.id, req.user.id);
       if (!current) { res.status(404).json({ error: "战役不存在" }); return; }
       action = await campaignOrchestrator.prepareRecruitmentTest(current, action);
+    } else if (action.type === "send_radio_message" && parsed.data.type === "send_radio_message") {
+      const current = await gameRepository.getGame(req.params.id, req.user.id);
+      if (!current) { res.status(404).json({ error: "战役不存在" }); return; }
+      const items = canonicalRadioItems(parsed.data.items);
+      if (parsed.data.mode === "manual") {
+        if (!parsed.data.challengeToken || !parsed.data.attempt) { res.status(400).json({ error: "手动发报缺少挑战或操作记录" }); return; }
+        const payload = verifyRadioChallenge(parsed.data.challengeToken, {
+          userId: req.user.id, gameInstanceId: current.gameInstanceId, stateVersion: current.stateVersion,
+          items, format: parsed.data.format, codebookId: parsed.data.codebookId, timing: parsed.data.timing,
+          locationId: parsed.data.locationId, difficultyId: current.difficulty.id,
+        });
+        action = {
+          type: "send_radio_message", items, format: parsed.data.format, codebookId: parsed.data.codebookId,
+          timing: parsed.data.timing, locationId: parsed.data.locationId, mode: "manual",
+          manualPerformance: scoreRadioAttempt(payload, parsed.data.attempt.inputs, parsed.data.attempt.correctionCount),
+          durationMinutes: 0, idempotencyKey: parsed.data.idempotencyKey,
+        };
+      } else {
+        action = { type: "send_radio_message", items, format: parsed.data.format, codebookId: parsed.data.codebookId, timing: parsed.data.timing, locationId: parsed.data.locationId, mode: "automatic", durationMinutes: 0, idempotencyKey: parsed.data.idempotencyKey };
+      }
     }
     const result = await gameRepository.execute(req.params.id, req.user.id, action);
     if (!result) { res.status(404).json({ error: "战役不存在" }); return; }

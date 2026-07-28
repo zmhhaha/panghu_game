@@ -241,7 +241,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
         <div className="mt-4 space-y-4"><Meter label="个人怀疑" value={state.personalSuspicion} color="bg-alert" /><Meter label="调查压力" value={state.investigation.pressure} color="bg-alert" /><Meter label="网络暴露" value={state.network.exposure} color="bg-copper" /><Meter label="行动精力" value={state.playerEnergy} color="bg-safe" /></div>
         {state.investigation.surveillanceLocationIds.length > 0 && <div className="mt-4 border-l-2 border-alert bg-alert/10 px-3 py-2"><p className="text-[10px] text-muted">疑似监视区域</p><p className="mt-1 text-xs leading-5 text-[#efaaa4]">{state.investigation.surveillanceLocationIds.map((id) => context.locations.find((location) => location.id === id)?.name ?? "未知地点").join("、")}</p></div>}
 
-        <IntelligenceBoard state={state} context={context} busy={busy} onAction={(action) => void act(action)} />
+        <IntelligenceBoard gameInstanceId={gameInstanceId} state={state} context={context} busy={busy} onAction={(action) => void act(action)} />
 
         <MissionObjectives state={state} context={context} />
       </aside>

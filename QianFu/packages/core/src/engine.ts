@@ -401,6 +401,9 @@ export class CampaignEngine {
       }
       case "send_radio_message": {
         if (action.durationMinutes !== 0) throw new Error("电文耗时由服务端计算");
+        const mode = action.mode ?? "automatic";
+        if (next.difficulty.id === "iron_curtain" && mode !== "manual") throw new Error("铁幕模式必须由玩家完成摩尔斯发报");
+        if (mode === "manual") validateRadioPerformance(action.manualPerformance);
         if (action.locationId !== next.currentLocationId) throw new Error("必须先抵达选定的发报地点");
         const siteRisk = radioSiteRisk(this.campaign, next, action.locationId);
         if (siteRisk === null) throw new Error("当前地点无法安全架设电台");
@@ -414,12 +417,19 @@ export class CampaignEngine {
         if (action.timing === "scheduled" && !scheduledWindowKnown) throw new Error("尚未掌握组织收报窗口");
 
         const waitMinutes = action.timing === "scheduled" ? minutesUntilRadioWindow(next.currentTime) : 0;
-        const operationMinutes = radioOperationMinutes(fieldCount, action.format, action.codebookId);
+        const baselineOperationMinutes = radioOperationMinutes(fieldCount, action.format, action.codebookId);
+        const performanceTimeDelta = mode === "manual"
+          ? action.manualPerformance!.grade === "excellent" ? -10 : action.manualPerformance!.grade === "rough" ? 10 : 0
+          : 0;
+        const operationMinutes = Math.max(20, baselineOperationMinutes + performanceTimeDelta);
         elapsedDuration = waitMinutes + operationMinutes;
         const completedAt = addMinutes(next.currentTime, elapsedDuration);
         const receiptDueAt = addMinutes(completedAt, action.timing === "scheduled" ? 20 : 40);
         const repeatedCodebook = codebook.usageCount > 0 && codebook.id === "book_cipher";
-        const signalWeight = Math.round(siteRisk + operationMinutes / 3 + (action.timing === "immediate" ? 8 : 0) + (repeatedCodebook ? 6 : 0));
+        const performanceSignalDelta = mode === "manual"
+          ? action.manualPerformance!.errorCount * 1.5 + action.manualPerformance!.correctionCount * 0.5 + (action.manualPerformance!.grade === "excellent" ? -3 : 0)
+          : 0;
+        const signalWeight = Math.max(1, Math.round(siteRisk + operationMinutes / 3 + (action.timing === "immediate" ? 8 : 0) + (repeatedCodebook ? 6 : 0) + performanceSignalDelta));
         codebook.usageCount += 1;
         codebook.lastUsedAt = completedAt;
         if (codebook.usesRemaining !== null) codebook.usesRemaining -= 1;
@@ -437,12 +447,14 @@ export class CampaignEngine {
           receiptDueAt,
           receiptStatus: "pending",
           receiptSummary: "电文已经发出，正在等待组织回执。",
+          mode,
+          ...(mode === "manual" ? { morse: action.manualPerformance } : {}),
         });
         next.radio.transmissions = next.radio.transmissions.slice(-30);
         next.network.exposure = clamp(next.network.exposure + signalWeight * 0.3 * next.difficulty.enemyResponseSpeed);
         next.personalSuspicion = clamp(next.personalSuspicion + Math.max(1, siteRisk / 4) * next.difficulty.enemyResponseSpeed);
         recordInvestigationEvidence(next, "radio_signal", action.locationId, signalWeight, append);
-        append("radio.message_sent", { transmissionId: action.idempotencyKey, items, format: action.format, codebookId: action.codebookId, timing: action.timing, locationId: action.locationId, fieldCount, durationMinutes: elapsedDuration, receiptDueAt });
+        append("radio.message_sent", { transmissionId: action.idempotencyKey, items, format: action.format, codebookId: action.codebookId, timing: action.timing, locationId: action.locationId, fieldCount, durationMinutes: elapsedDuration, receiptDueAt, mode, morse: mode === "manual" ? action.manualPerformance : undefined });
         narration = `电文已在${elapsedDuration}分钟内完成编码、发送和清理。组织回执预计稍后抵达。`;
         break;
       }
@@ -1166,6 +1178,18 @@ function radioOperationMinutes(fieldCount: number, format: RadioMessageFormat, c
   return encoding + transmission + 10;
 }
 
+function validateRadioPerformance(performance: Extract<GameAction, { type: "send_radio_message" }>["manualPerformance"]): void {
+  if (!performance) throw new Error("手动发报缺少服务端校验结果");
+  if (!Number.isFinite(performance.accuracy) || performance.accuracy < 0 || performance.accuracy > 1
+    || !Number.isFinite(performance.timingScore) || performance.timingScore < 0 || performance.timingScore > 1
+    || !Number.isFinite(performance.completion) || performance.completion < 0 || performance.completion > 1
+    || !Number.isInteger(performance.errorCount) || performance.errorCount < 0
+    || !Number.isInteger(performance.correctionCount) || performance.correctionCount < 0
+    || !/^[.\- /]+$/.test(performance.sequence) || performance.sequence.length > 2000) {
+    throw new Error("手动发报校验结果无效");
+  }
+}
+
 function minutesUntilRadioWindow(iso: string): number {
   const minute = minuteOfDay(iso);
   const windows = [600, 900, 1260];
@@ -1186,7 +1210,11 @@ function advanceRadioReceipts(
     const timingBonus = transmission.timing === "scheduled" ? 10 : 0;
     const heatPenalty = Math.min(20, state.investigation.locationHeat[transmission.locationId] ?? 0);
     const difficultyPenalty = Math.max(0, state.difficulty.enemyResponseSpeed - 1) * 12;
-    const receptionScore = averageConfidence * 60 + codebookBonus + formatBonus + timingBonus - heatPenalty - difficultyPenalty;
+    const manualQuality = transmission.mode === "manual" && transmission.morse
+      ? transmission.morse.accuracy * 0.65 + transmission.morse.timingScore * 0.25 + transmission.morse.completion * 0.1
+      : null;
+    const performanceBonus = manualQuality === null ? 0 : (manualQuality - 0.65) * 30;
+    const receptionScore = averageConfidence * 60 + codebookBonus + formatBonus + timingBonus + performanceBonus - heatPenalty - difficultyPenalty;
 
     if (receptionScore >= 68) {
       transmission.receiptStatus = "confirmed";

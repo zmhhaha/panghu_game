@@ -1,12 +1,14 @@
 import type {
   ActionResult, CampaignReportBundle, CampaignShareSummary, DifficultyConfig,
   DifficultyVisibilityPolicy, GameAction, GameEvent, PublicWorldState, RecruitmentCase, SharedCampaignReport,
+  RadioMessageFormat, RadioMessageItem, RadioMinigameConfig, RadioTiming,
 } from "@qianfu/core";
 
 type PublicActionResult = Omit<ActionResult, "state"> & { state: PublicWorldState };
 
 export interface GameContext {
   visibility: DifficultyVisibilityPolicy;
+  radioMinigame: RadioMinigameConfig;
   campaign: { id: string; version: string; name: string };
   settlement: { ready: boolean; pendingReceipts: number };
   locations: { id: string; name: string; district: string; travelMinutes: Record<string, number>; discovered: boolean; stage: "unknown" | "rumored" | "located" | "accessible" | "compromised"; hint: string | null }[];
@@ -58,6 +60,23 @@ export interface PlayerSnapshotSummary {
   slot: 1 | 2; label: string; savedAt: string; currentTime: string; stateVersion: number; lastEventSeq: number;
 }
 
+export interface RadioChallenge {
+  token: string;
+  sequence: string;
+  groups: string[];
+  config: RadioMinigameConfig;
+  expiresAt: string;
+  content: Array<{ intelId: string; title: string; fields: string[] }>;
+}
+
+export interface RadioChallengeRequest {
+  items: RadioMessageItem[];
+  format: RadioMessageFormat;
+  codebookId: "one_time_pad" | "book_cipher";
+  timing: RadioTiming;
+  locationId: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -86,6 +105,7 @@ export const api = {
   deleteGame: (id: string) => request<{ deleted: true }>(`/api/v1/games/${id}`, { method: "DELETE" }),
   getContext: (id: string) => request<GameContext>(`/api/v1/games/${id}/context`),
   getEvents: (id: string) => request<{ events: GameEvent[] }>(`/api/v1/games/${id}/events`),
+  createRadioChallenge: (id: string, selection: RadioChallengeRequest) => request<RadioChallenge>(`/api/v1/games/${id}/radio-challenges`, { method: "POST", body: JSON.stringify(selection) }),
   listSnapshots: (id: string) => request<{ snapshots: PlayerSnapshotSummary[] }>(`/api/v1/games/${id}/snapshots`),
   saveSnapshot: (id: string, slot: 1 | 2, label: string) => request<PlayerSnapshotSummary>(`/api/v1/games/${id}/snapshots/${slot}`, { method: "PUT", body: JSON.stringify({ label }) }),
   loadSnapshot: (id: string, slot: 1 | 2) => request<{ state: PublicWorldState; events: GameEvent[] }>(`/api/v1/games/${id}/snapshots/${slot}/load`, { method: "POST", body: "{}" }),

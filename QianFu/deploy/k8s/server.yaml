@@ -66,6 +66,9 @@ spec:
                 secretKeyRef: { name: qianfu-agent, key: CUSTOM_MODEL, optional: true }
             - name: LLM_TIMEOUT_MS
               value: "20000"
+            - name: RADIO_CHALLENGE_SECRET
+              valueFrom:
+                secretKeyRef: { name: qianfu-agent, key: RADIO_CHALLENGE_SECRET, optional: true }
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

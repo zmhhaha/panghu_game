@@ -3,13 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import type { GameAction, PublicWorldState, RadioMessageFormat, RadioTiming } from "@qianfu/core";
 import { AlertTriangle, Archive, Check, Clock3, FileText, Link2, Radio, Send, ShieldAlert, UserRound, X } from "lucide-react";
-import type { GameContext } from "@/lib/api";
+import { api, type GameContext, type RadioChallenge, type RadioChallengeRequest } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { MorseRadioGame } from "@/components/game/morse-radio-game";
 
 const receiptLabels = { pending: "等待回执", confirmed: "完整收到", partial: "部分收到", no_receipt: "未获回执" } as const;
 const assessmentLabels = { unverified: "尚未核验", corroborates: "独立印证", contradicts: "存在矛盾", dependent: "同源转述" } as const;
 
-export function IntelligenceBoard({ state, context, busy, onAction }: {
+export function IntelligenceBoard({ gameInstanceId, state, context, busy, onAction }: {
+  gameInstanceId: string;
   state: PublicWorldState;
   context: GameContext;
   busy: boolean;
@@ -21,6 +23,10 @@ export function IntelligenceBoard({ state, context, busy, onAction }: {
   const [format, setFormat] = useState<RadioMessageFormat>("compressed");
   const [codebookId, setCodebookId] = useState<"one_time_pad" | "book_cipher">("one_time_pad");
   const [timing, setTiming] = useState<RadioTiming>("immediate");
+  const [challenge, setChallenge] = useState<RadioChallenge | null>(null);
+  const [challengeSelection, setChallengeSelection] = useState<RadioChallengeRequest | null>(null);
+  const [challengeBusy, setChallengeBusy] = useState(false);
+  const [challengeError, setChallengeError] = useState("");
   const radioSites = context.radioSites.filter((site) => site.available && site.discovered);
   const [locationId, setLocationId] = useState(() => radioSites.some((site) => site.id === state.currentLocationId) ? state.currentLocationId : radioSites[0]?.id ?? "");
   const visibleIntel = context.intel.filter((item) => state.intel[item.id]?.knownFields.length > 0);
@@ -64,6 +70,21 @@ export function IntelligenceBoard({ state, context, busy, onAction }: {
     if (radioSites.some((site) => site.id === state.currentLocationId)) setLocationId(state.currentLocationId);
     setOpen(true);
   };
+  const selection: RadioChallengeRequest = { items, format, codebookId, timing, locationId };
+  const startManual = async () => {
+    setChallengeBusy(true);
+    setChallengeError("");
+    try {
+      const result = await api.createRadioChallenge(gameInstanceId, selection);
+      setChallengeSelection(selection);
+      setChallenge(result);
+      setOpen(false);
+    } catch (reason) {
+      setChallengeError(reason instanceof Error ? reason.message : "无法建立发报连接");
+    } finally {
+      setChallengeBusy(false);
+    }
+  };
 
   return <div className="mt-7 border-t border-line pt-5">
     <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs font-medium text-muted"><FileText size={15} />情报板 {visibleIntel.length}/{context.intel.length}</p>{visibleIntel.length > 0 && <div className="flex gap-3"><button onClick={() => setDossierOpen(true)} className="flex items-center gap-1.5 text-xs text-muted hover:text-paper"><Archive size={13} />情报档案</button><button onClick={prepare} className="flex items-center gap-1.5 text-xs text-copper hover:text-paper"><Radio size={13} />编制电文</button></div>}</div>
@@ -82,7 +103,7 @@ export function IntelligenceBoard({ state, context, busy, onAction }: {
       </div>;
     })}</div>}
 
-    {state.radio.transmissions.length > 0 && <div className="mt-4 border-t border-line pt-4"><p className="text-[10px] text-muted">最近电文</p>{state.radio.transmissions.slice(-3).reverse().map((message) => <div key={message.id} className="mt-2 flex items-start justify-between gap-3 text-xs"><span className="line-clamp-2 text-muted">{message.receiptSummary}</span><span className={message.receiptStatus === "confirmed" ? "shrink-0 text-safe" : message.receiptStatus === "partial" || message.receiptStatus === "no_receipt" ? "shrink-0 text-alert" : "shrink-0 text-copper"}>{receiptLabels[message.receiptStatus]}</span></div>)}</div>}
+    {state.radio.transmissions.length > 0 && <div className="mt-4 border-t border-line pt-4"><p className="text-[10px] text-muted">最近电文</p>{state.radio.transmissions.slice(-3).reverse().map((message) => <div key={message.id} className="mt-2 flex items-start justify-between gap-3 text-xs"><span className="min-w-0"><span className="line-clamp-2 text-muted">{message.receiptSummary}</span>{message.mode === "manual" && message.morse && <span className="mt-1 block truncate font-mono text-[10px] text-muted">{message.morse.sequence} · {message.morse.grade === "excellent" ? "优秀" : message.morse.grade === "steady" ? "稳定" : "粗糙"} · {message.morse.errorCount} 处误码</span>}</span><span className={message.receiptStatus === "confirmed" ? "shrink-0 text-safe" : message.receiptStatus === "partial" || message.receiptStatus === "no_receipt" ? "shrink-0 text-alert" : "shrink-0 text-copper"}>{receiptLabels[message.receiptStatus]}</span></div>)}</div>}
 
     {open && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="radio-title">
       <div className="my-6 w-full max-w-3xl border border-line bg-ink shadow-2xl">
@@ -100,9 +121,12 @@ export function IntelligenceBoard({ state, context, busy, onAction }: {
             <div className="border-l-2 border-copper bg-copper/[0.06] p-3 text-xs leading-6 text-muted"><p className="flex items-center justify-between"><span>字段</span><span className="text-paper">{fieldCount}</span></p><p className="flex items-center justify-between"><span>预计耗时</span><span className="text-paper">{estimate.totalMinutes} 分钟</span></p><p className="flex items-center justify-between"><span>信号风险</span><span className={riskLabel === "较高" ? "text-alert" : "text-copper"}>{riskLabel}</span></p></div>
           </div>
         </div>
-        <div className="flex flex-col gap-3 border-t border-line bg-panel px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="flex items-center gap-2 text-xs text-muted">{!atSelectedSite ? <><ShieldAlert size={13} className="text-alert" />需要先前往所选地点</> : timing === "scheduled" ? <><Clock3 size={13} />耗时包含等待下一个收报窗口</> : "立即发送更快，但更容易形成时间规律"}</p><Button disabled={busy || fieldCount === 0 || !atSelectedSite || !codebookAvailable || (timing === "scheduled" && !scheduledWindowKnown)} onClick={() => { setOpen(false); onAction({ type: "send_radio_message", items, format, codebookId, timing, locationId, durationMinutes: 0, idempotencyKey: crypto.randomUUID() }); }}><Send size={15} />发送电文</Button></div>
+        {challengeError && <div className="border-t border-alert/30 bg-alert/10 px-5 py-3 text-xs text-[#efaaa4]">{challengeError}</div>}
+        <div className="flex flex-col gap-3 border-t border-line bg-panel px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="flex items-center gap-2 text-xs text-muted">{!atSelectedSite ? <><ShieldAlert size={13} className="text-alert" />需要先前往所选地点</> : timing === "scheduled" ? <><Clock3 size={13} />耗时包含等待下一个收报窗口</> : "立即发送更快，但更容易形成时间规律"}</p><div className="flex flex-wrap justify-end gap-2">{!context.radioMinigame.required && <Button variant="outline" disabled={busy || challengeBusy || fieldCount === 0 || !atSelectedSite || !codebookAvailable || (timing === "scheduled" && !scheduledWindowKnown)} onClick={() => { setOpen(false); onAction({ type: "send_radio_message", items, format, codebookId, timing, locationId, mode: "automatic", durationMinutes: 0, idempotencyKey: crypto.randomUUID() }); }}><Send size={15} />自动发送</Button>}<Button disabled={busy || challengeBusy || fieldCount === 0 || !atSelectedSite || !codebookAvailable || (timing === "scheduled" && !scheduledWindowKnown)} onClick={() => void startManual()}><Radio size={15} />{challengeBusy ? "校准频率..." : "手动发报"}</Button></div></div>
       </div>
     </div>}
+
+    {challenge && challengeSelection && <MorseRadioGame challenge={challenge} selection={challengeSelection} busy={busy} onCancel={() => { setChallenge(null); setOpen(true); }} onSend={(action) => { setChallenge(null); setChallengeSelection(null); onAction(action); }} />}
 
     {dossierOpen && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="dossier-title">
       <div className="my-6 w-full max-w-4xl border border-line bg-ink shadow-2xl">
