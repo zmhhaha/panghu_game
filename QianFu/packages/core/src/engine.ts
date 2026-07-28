@@ -635,6 +635,8 @@ export class CampaignEngine {
         break;
       case "rest": {
         if (action.durationMinutes !== 0) throw new Error("Rest duration is calculated by the server");
+        const availability = getRestAvailability(this.campaign, next);
+        if (!availability.available) throw new Error(availability.reason);
         const rest = calculateRest(next.currentTime, action.sleepMinutes);
         if (!rest) throw new Error("只能在夜间开始休息，时长为一至十二小时且以三十分钟为单位");
         elapsedDuration = rest.minutes;
@@ -1109,6 +1111,29 @@ export function getRadioSites(campaign: CampaignDefinition, state: WorldState) {
     const available = Boolean(location.radioSite?.initiallyAvailable || (requirement && state.network.activeMemberIds.includes(requirement)));
     return { id: location.id, name: location.name, baseRisk: location.radioSite!.baseRisk, available, requiresRecruitedCharacterId: requirement ?? null };
   });
+}
+
+export function getRestAvailability(campaign: CampaignDefinition, state: WorldState): { available: boolean; reason: string } {
+  const location = campaign.locations.find((item) => item.id === state.currentLocationId);
+  const site = location?.radioSite;
+  if (!site) {
+    return { available: false, reason: "这里只是公开活动地点，没有安全过夜条件。请前往安全住处，或已加入组织的同志据点。" };
+  }
+  if (!state.discoveredLocationIds.includes(location.id) || state.locationKnowledge?.[location.id]?.stage === "compromised") {
+    return { available: false, reason: "当前据点已经暴露或被封锁，不能在此休息。" };
+  }
+  if (site.requiresRecruitedCharacterId) {
+    const member = state.characters[site.requiresRecruitedCharacterId];
+    if (!state.network.activeMemberIds.includes(site.requiresRecruitedCharacterId)) {
+      return { available: false, reason: "这里尚不是组织据点。只有对应同志正式加入网络后，才能在此休息。" };
+    }
+    if (member?.exposed) {
+      return { available: false, reason: "负责此据点的同志已经暴露，这里不再适合过夜。" };
+    }
+  } else if (!site.initiallyAvailable) {
+    return { available: false, reason: "这里尚未建立可供过夜的安全条件。" };
+  }
+  return { available: true, reason: "当前地点具备安全过夜条件。" };
 }
 
 function normalizeRadioItems(

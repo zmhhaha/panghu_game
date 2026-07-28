@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { COVER_PROFILES, getDifficultyVisibility, getRadioSites, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
+import { COVER_PROFILES, getDifficultyVisibility, getRadioSites, getRestAvailability, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
 import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
 import { getCampaignDefinition } from "@qianfu/content";
@@ -107,6 +107,7 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
         };
       }),
       narrativeThreads: state.narrativeThreads ?? [],
+      rest: getRestAvailability(campaign, state),
       radioSites: getRadioSites(campaign, state).map((site) => ({
         ...site,
         discovered: state.discoveredLocationIds.includes(site.id),

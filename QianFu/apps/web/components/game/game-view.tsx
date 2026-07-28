@@ -109,7 +109,13 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   }).formatToParts(new Date(state.currentTime));
   const currentMinute = Number(clockParts.find((part) => part.type === "hour")?.value ?? 0) * 60
     + Number(clockParts.find((part) => part.type === "minute")?.value ?? 0);
-  const canRest = currentMinute >= 20 * 60 || currentMinute < 6 * 60;
+  const isRestTime = currentMinute >= 20 * 60 || currentMinute < 6 * 60;
+  const canRest = context.rest.available && isRestTime;
+  const restDisabledReason = !context.rest.available
+    ? context.rest.reason
+    : !isRestTime
+      ? "当前并非休息时段，仅可在 20:00 至次日 06:00 开始休息。"
+      : context.rest.reason;
 
   if (state.status === "finished") return <SettlementReport gameInstanceId={gameInstanceId} />;
 
@@ -170,11 +176,12 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
             <select aria-label="休息时长" value={sleepMinutes} onChange={(event) => setSleepMinutes(Number(event.target.value))} className="h-10 min-w-0 border border-line bg-panel px-2 text-xs text-paper outline-none focus:border-copper">
               {Array.from({ length: 23 }, (_, index) => (index + 2) * 30).map((minutes) => <option key={minutes} value={minutes}>{formatSleepDuration(minutes)}</option>)}
             </select>
-            <Button variant="outline" disabled={busy || state.status !== "active" || !canRest} title={canRest ? "结束当前行动并休息" : "仅可在夜间开始休息"}
+            <Button variant="outline" disabled={busy || state.status !== "active" || !canRest} title={canRest ? "结束当前行动并休息" : restDisabledReason}
               onClick={() => void act({ type: "rest", sleepMinutes, durationMinutes: 0, idempotencyKey: crypto.randomUUID() })}>
               <BedDouble size={15} />休息
             </Button>
           </div>
+          <p className={`mt-2 text-[10px] leading-4 ${canRest ? "text-muted" : "text-[#c99b79]"}`}>{canRest ? "当前地点安全，可以选择休息时长。" : restDisabledReason}</p>
         </div>
         <CoverIdentityPanel state={state} busy={busy} onAction={(action) => void act(action)} />
         <SaveSlotsPanel gameInstanceId={gameInstanceId} state={state} disabled={busy} onLoaded={(loadedState, loadedEvents) => { setState(loadedState); setEvents(loadedEvents); void api.getContext(gameInstanceId).then(setContext); setError(""); }} />

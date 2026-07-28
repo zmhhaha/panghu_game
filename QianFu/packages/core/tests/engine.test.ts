@@ -573,6 +573,53 @@ describe("sequential missions, interrogation, and radio sites", () => {
     expect(getRadioSites(sequentialCampaign, state).find((site) => site.id === "ally-shop")?.available).toBe(true);
   });
 
+  it("allows rest only at the initial safehouse or an active comrade site", () => {
+    const officeState = createInitialWorld(sequentialCampaign, "rest-office", "user-1");
+    officeState.currentTime = "1942-05-12T12:00:00.000Z";
+    expect(() => new CampaignEngine(sequentialCampaign, officeState).execute({
+      type: "rest", sleepMinutes: 360, durationMinutes: 0, idempotencyKey: "rest-at-office",
+    })).toThrow("没有安全过夜条件");
+
+    const safeState = createInitialWorld(sequentialCampaign, "rest-safe", "user-1");
+    safeState.currentTime = "1942-05-12T12:00:00.000Z";
+    safeState.currentLocationId = "safe-flat";
+    const rested = new CampaignEngine(sequentialCampaign, safeState).execute({
+      type: "rest", sleepMinutes: 360, durationMinutes: 0, idempotencyKey: "rest-at-safehouse",
+    });
+    expect(rested.state.currentTime).toBe("1942-05-12T18:00:00.000Z");
+
+    const allyState = createInitialWorld(sequentialCampaign, "rest-ally", "user-1");
+    allyState.currentTime = "1942-05-12T12:00:00.000Z";
+    allyState.currentLocationId = "ally-shop";
+    allyState.discoveredLocationIds.push("ally-shop");
+    allyState.locationKnowledge!["ally-shop"] = { stage: "accessible", sourceEventId: "test", hint: null, updatedAt: allyState.currentTime };
+    expect(() => new CampaignEngine(sequentialCampaign, allyState).execute({
+      type: "rest", sleepMinutes: 360, durationMinutes: 0, idempotencyKey: "rest-before-recruitment",
+    })).toThrow("正式加入网络后");
+    allyState.network.activeMemberIds.push("ally");
+    expect(new CampaignEngine(sequentialCampaign, allyState).execute({
+      type: "rest", sleepMinutes: 360, durationMinutes: 0, idempotencyKey: "rest-after-recruitment",
+    }).state.currentTime).toBe("1942-05-12T18:00:00.000Z");
+  });
+
+  it("rejects rest at a compromised or exposed comrade site", () => {
+    const state = createInitialWorld(sequentialCampaign, "rest-compromised", "user-1");
+    state.currentTime = "1942-05-12T12:00:00.000Z";
+    state.currentLocationId = "ally-shop";
+    state.discoveredLocationIds.push("ally-shop");
+    state.network.activeMemberIds.push("ally");
+    state.locationKnowledge!["ally-shop"] = { stage: "compromised", sourceEventId: "raid", hint: null, updatedAt: state.currentTime };
+    expect(() => new CampaignEngine(sequentialCampaign, state).execute({
+      type: "rest", sleepMinutes: 360, durationMinutes: 0, idempotencyKey: "rest-compromised-site",
+    })).toThrow("已经暴露或被封锁");
+
+    state.locationKnowledge!["ally-shop"].stage = "accessible";
+    state.characters.ally.exposed = true;
+    expect(() => new CampaignEngine(sequentialCampaign, state).execute({
+      type: "rest", sleepMinutes: 360, durationMinutes: 0, idempotencyKey: "rest-exposed-member",
+    })).toThrow("同志已经暴露");
+  });
+
   it("activates a delayed interrogation, blocks other actions, and resolves after three answers", () => {
     const interrogationCampaign: CampaignDefinition = {
       ...sequentialCampaign,
