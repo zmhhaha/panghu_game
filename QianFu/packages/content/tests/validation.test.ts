@@ -4,9 +4,11 @@ import { LINJIANG_1942, validateCampaign } from "../src/index.js";
 describe("campaign content", () => {
   it("validates the Linjiang campaign", () => {
     expect(validateCampaign(LINJIANG_1942)).toEqual({ valid: true, errors: [] });
-    expect(LINJIANG_1942.locations).toHaveLength(6);
+    expect(LINJIANG_1942.locations).toHaveLength(7);
     expect(LINJIANG_1942.characters).toHaveLength(8);
-    expect(LINJIANG_1942.intel).toHaveLength(10);
+    expect(LINJIANG_1942.intel).toHaveLength(13);
+    expect(LINJIANG_1942.objectives).toHaveLength(3);
+    expect(LINJIANG_1942.locations.filter((location) => location.radioSite?.initiallyAvailable).map((location) => location.id)).toEqual(["safe-flat"]);
   });
 
   it("rejects broken references", () => {
