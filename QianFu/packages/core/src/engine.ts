@@ -152,6 +152,9 @@ export class CampaignEngine {
       this.state.activeDialogue.discoveredFields ??= [];
     }
     this.state.discoveredLocationIds ??= [this.state.currentLocationId];
+    for (const location of campaign.locations.filter((item) => item.radioSite?.initiallyAvailable)) {
+      if (!this.state.discoveredLocationIds.includes(location.id)) this.state.discoveredLocationIds.push(location.id);
+    }
     this.state.locationKnowledge ??= {};
     for (const location of campaign.locations) {
       this.state.locationKnowledge[location.id] ??= {
@@ -165,6 +168,19 @@ export class CampaignEngine {
     this.state.resolvedLeadIds ??= [];
     this.state.resolvedNarrativeEventIds ??= [];
     this.state.narrativeThreads ??= [];
+    this.state.intel ??= {};
+    for (const definition of campaign.intel) {
+      this.state.intel[definition.id] ??= {
+        id: definition.id,
+        knownFields: [],
+        confidence: 0,
+        collectedSourceIds: [],
+        evidence: [],
+        deliveredFields: [],
+        deliveredAt: null,
+        deliveryMethod: null,
+      };
+    }
     this.state.completedObjectiveIds ??= campaign.objectives
       .filter((objective) => objectiveSatisfied(campaign, this.state, objective))
       .map((objective) => objective.id);

@@ -601,9 +601,15 @@ describe("sequential missions, interrogation, and radio sites", () => {
     const state = createInitialWorld(sequentialCampaign, "old-sequential-save", "user-1");
     delete (state as { completedObjectiveIds?: string[] }).completedObjectiveIds;
     delete (state as { interrogation?: WorldState["interrogation"] }).interrogation;
+    delete state.intel.second;
+    state.discoveredLocationIds = state.discoveredLocationIds.filter((id) => id !== "safe-flat");
+    delete state.locationKnowledge?.["safe-flat"];
     const migrated = new CampaignEngine(sequentialCampaign, state).getState();
     expect(migrated.completedObjectiveIds).toEqual([]);
     expect(migrated.interrogation).toBeNull();
+    expect(migrated.intel.second).toMatchObject({ knownFields: [], deliveredFields: [], confidence: 0 });
+    expect(migrated.discoveredLocationIds).toContain("safe-flat");
+    expect(migrated.locationKnowledge?.["safe-flat"]?.stage).toBe("accessible");
   });
 });
 
