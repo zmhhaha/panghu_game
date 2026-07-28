@@ -327,7 +327,8 @@ gamesRouter.post("/:id/actions", async (req, res) => {
         items, format: parsed.data.format, codebookId: parsed.data.codebookId, timing: parsed.data.timing,
         locationId: parsed.data.locationId, difficultyId: current.difficulty.id,
       });
-      const interruption = payload.interruptions.find((item) => item.id === parsed.data.interruptionId);
+      const interruptionId = parsed.data.interruptionId;
+      const interruption = payload.interruptions.find((item) => item.id === interruptionId);
       if (!interruption) { res.status(400).json({ error: "发报途中事件无效" }); return; }
       const riskDelta = interruption.kind === "patrol" ? 4 : interruption.kind === "power_flicker" ? 3 : 2;
       action = { type: "abort_radio_message", locationId: parsed.data.locationId, riskDelta, interruptionId: interruption.id, durationMinutes: 10, idempotencyKey: parsed.data.idempotencyKey };
