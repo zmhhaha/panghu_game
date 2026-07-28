@@ -513,7 +513,7 @@ describe("sequential missions, interrogation, and radio sites", () => {
       schedule: [{ startMinute: 0, endMinute: 1440, locationId: "ally-shop", activity: "work" }],
       reliability: { loyalty: 90, discipline: 80, pressureResistance: 70, courage: 70, competence: 80 },
     }, {
-      id: "interrogator", name: "Interrogator", publicIdentity: "Investigator", hiddenAlignment: "hostile", initialLocationId: "archive-office", recruitable: false,
+      id: "interrogator", name: "Interrogator", publicIdentity: "Investigator", hiddenAlignment: "enemy", initialLocationId: "archive-office", recruitable: false,
       schedule: [{ startMinute: 0, endMinute: 1440, locationId: "archive-office", activity: "work" }],
       reliability: { loyalty: 10, discipline: 90, pressureResistance: 90, courage: 80, competence: 90 },
     }],
