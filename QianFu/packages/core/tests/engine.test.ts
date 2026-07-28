@@ -361,6 +361,8 @@ describe("public cover identity", () => {
     expect(result.state.resolvedLeadIds).toContain("public-repair-record");
     expect(result.events.some((event) => event.type === "lead.resolved")).toBe(true);
     expect(result.events.some((event) => event.type === "intel.dialogue_discovered")).toBe(false);
+    expect(result.events.find((event) => event.type === "location.discovered")?.payload).toMatchObject({ locationName: "Radio", hint: "A public repair record needs checking." });
+    expect(result.events.find((event) => event.type === "character.introduced")?.payload).toMatchObject({ characterName: "Zhou", publicIdentity: "Technician", hint: "A public repair record needs checking." });
   });
 
   it("uses relationship-driven controller events to stage and then unlock a location", () => {
@@ -400,13 +402,16 @@ describe("public cover identity", () => {
     expect(engine.getState().locationKnowledge?.dock?.stage).toBe("rumored");
     expect(engine.getState().discoveredLocationIds).not.toContain("dock");
     expect(engine.getState().narrativeThreads?.find((thread) => thread.id === "receipt")?.title).toBe("Missing receipt");
+    let finalTurn;
     for (let turn = 6; turn <= 10; turn += 1) {
-      engine.execute({ type: "dialogue_turn", sessionId: "event-dialogue", playerText: `Public work ${turn}`, durationMinutes: 2, idempotencyKey: `event-turn-${turn}` });
+      finalTurn = engine.execute({ type: "dialogue_turn", sessionId: "event-dialogue", playerText: `Public work ${turn}`, durationMinutes: 2, idempotencyKey: `event-turn-${turn}` });
     }
     expect(engine.getState().locationKnowledge?.dock?.stage).toBe("accessible");
     expect(engine.getState().discoveredLocationIds).toContain("dock");
     expect(engine.getState().knownCharacterIds).toContain("dispatcher");
     expect(engine.getState().resolvedNarrativeEventIds).toEqual(["receipt-rumor", "receipt-referral"]);
+    expect(finalTurn?.events.find((event) => event.type === "location.stage_changed")?.payload).toMatchObject({ locationName: "Dock", stage: "accessible", hint: "The referral permits a visit." });
+    expect(finalTurn?.events.find((event) => event.type === "character.introduced")?.payload).toMatchObject({ characterName: "Dispatcher", publicIdentity: "Dispatcher" });
   });
 
   it("accepts leave as a public record instead of treating it as an unexplained absence", () => {

@@ -31,7 +31,7 @@ function TimelineItem({ event, context, detailed = false }: { event: GameEvent; 
 
 function eventCategory(type: string): EventFilter {
   if (type.startsWith("dialogue") || type === "character.introduced" || type === "character.identified") return "dialogue";
-  if (type.startsWith("narrative") || type === "location.stage_changed") return "movement";
+  if (type.startsWith("narrative") || type === "location.stage_changed" || type === "location.discovered") return "movement";
   if (type.startsWith("intel") || type.startsWith("radio")) return "intel";
   if (type.startsWith("cover")) return type === "cover.supervisor_check" || type === "cover.absence_recorded" ? "threat" : "movement";
   if (type === "player.moved" || type === "player.waited" || type === "player.rested" || type.startsWith("character.schedule")) return "movement";
@@ -55,7 +55,7 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
     "investigation.action_taken": "敌方调查行动", "character.schedule_advanced": "人物行程变化",
     "mission.objective_completed": "任务完成", "mission.objective_unlocked": "后续任务",
     "interrogation.scheduled": "收到传唤", "interrogation.started": "盘问开始", "interrogation.resolved": "盘问结束",
-    "narrative.event_resolved": "剧情事件", "narrative.thread_updated": "调查线程更新", "location.stage_changed": "地点认知变化",
+    "narrative.event_resolved": "剧情事件", "narrative.thread_updated": "调查线程更新", "location.discovered": "解锁地点", "location.stage_changed": "地点认知变化",
     "cover.work_completed": "完成公开工作", "cover.activity_credited": "形成在岗记录", "cover.leave_approved": "请假登记", "cover.absence_recorded": "异常缺勤", "cover.supervisor_check": "上级核查",
   };
   const title = labels[event.type] ?? "行动记录";
@@ -67,6 +67,17 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
           : reports || (typeof payload.summary === "string" ? payload.summary : typeof payload.notice === "string" ? payload.notice : title);
   if (event.type === "mission.objective_completed") return { title, text: `${objective ?? String(payload.title ?? "当前任务")}已经完成。` };
   if (event.type === "mission.objective_unlocked") return { title, text: `组织下达了${objective ?? String(payload.title ?? "后续任务")}。` };
+  if (event.type === "location.discovered") return { title, text: `已解锁地点：${String(payload.locationName ?? location ?? "未知地点")}。${hintText(payload)}` };
+  if (event.type === "location.stage_changed") {
+    const stage = String(payload.stage ?? "");
+    const prefix = stage === "rumored" ? "获得新的地点传闻" : stage === "located" ? `已确认地点位置：${String(payload.locationName ?? location ?? "未知地点")}` : `已解锁地点：${String(payload.locationName ?? location ?? "未知地点")}`;
+    return { title, text: `${prefix}。${hintText(payload)}` };
+  }
+  if (event.type === "character.introduced") {
+    const name = String(payload.characterName ?? character ?? "未知人物");
+    const identity = typeof payload.publicIdentity === "string" ? `（${payload.publicIdentity}）` : "";
+    return { title, text: `已认识人物：${name}${identity}。${hintText(payload)}` };
+  }
   if (event.type === "interrogation.scheduled") return { title, text: "警备处发来传唤，要求核对你的公开身份与近期行踪。" };
   if (event.type === "interrogation.started") return { title, text: "敌方盘问正式开始，其他行动暂时中止。" };
   if (event.type === "interrogation.resolved") {
@@ -77,7 +88,11 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
 }
 
 function formatTime(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+  return new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+}
+
+function hintText(payload: Record<string, unknown>) {
+  return typeof payload.hint === "string" && payload.hint.trim() ? payload.hint : "相关线索已经记入行动日志。";
 }
 
 function formatRestDuration(minutes: number) {

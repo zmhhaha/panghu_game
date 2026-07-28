@@ -36,7 +36,7 @@ function Status({ status }: { status: GameContext["objectives"][number]["status"
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+  return new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 }
 
 function formatRemaining(minutes: number) {

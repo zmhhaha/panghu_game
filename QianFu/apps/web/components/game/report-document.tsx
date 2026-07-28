@@ -2,7 +2,7 @@ import type { CampaignReport } from "@qianfu/core";
 import { Clock3, FileCheck2, Radio, ShieldAlert, UserCheck, UsersRound } from "lucide-react";
 
 const dateTime = (iso: string) => new Intl.DateTimeFormat("zh-CN", {
-  year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+  timeZone: "Asia/Shanghai", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
 }).format(new Date(iso));
 
 const truthLabels = { true: "真实", false: "错误", partial: "部分真实" } as const;

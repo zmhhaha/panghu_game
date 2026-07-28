@@ -9,6 +9,17 @@ describe("campaign content", () => {
     expect(LINJIANG_1942.intel).toHaveLength(13);
     expect(LINJIANG_1942.objectives).toHaveLength(3);
     expect(LINJIANG_1942.locations.filter((location) => location.radioSite?.initiallyAvailable).map((location) => location.id)).toEqual(["safe-flat"]);
+    expect(LINJIANG_1942.startTime).toBe("1942-05-12T00:00:00.000Z");
+    expect(LINJIANG_1942.objectives.map((objective) => objective.deadline)).toEqual([
+      "1942-05-15T14:00:00.000Z",
+      "1942-05-18T14:00:00.000Z",
+      "1942-05-22T14:00:00.000Z",
+    ]);
+    for (const objective of LINJIANG_1942.objectives) {
+      for (const intelId of objective.requiredIntelIds) {
+        expect(Date.parse(LINJIANG_1942.intel.find((intel) => intel.id === intelId)!.expiresAt)).toBeGreaterThanOrEqual(Date.parse(objective.deadline));
+      }
+    }
   });
 
   it("rejects broken references", () => {

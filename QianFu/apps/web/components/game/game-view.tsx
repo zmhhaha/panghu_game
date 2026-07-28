@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import type { DialogueGoal, DialogueTone, GameEvent, PublicWorldState } from "@qianfu/core";
 import {
   ArrowLeft, ChevronRight, Clock3, Download, MapPin,
-  BedDouble, MessageSquare, ShieldAlert, Timer, UserRound, UsersRound,
+  BedDouble, MessageSquare, ShieldAlert, Timer, UserRound, UsersRound, X,
 } from "lucide-react";
 import { api, type GameContext } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,11 @@ const tones: Array<{ id: DialogueTone; label: string }> = [
   { id: "formal", label: "正式" }, { id: "urgent", label: "急切" }, { id: "threatening", label: "强硬" },
 ];
 
+type DiscoveryNotice = {
+  locations: Array<{ key: string; title: string; detail: string }>;
+  characters: Array<{ key: string; title: string; detail: string }>;
+};
+
 export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const [state, setState] = useState<PublicWorldState | null>(null);
   const [context, setContext] = useState<GameContext | null>(null);
@@ -48,6 +53,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const [tone, setTone] = useState<DialogueTone>("neutral");
   const [targetIntelId, setTargetIntelId] = useState("");
   const [sleepMinutes, setSleepMinutes] = useState(8 * 60);
+  const [discoveryNotice, setDiscoveryNotice] = useState<DiscoveryNotice | null>(null);
 
   const load = async () => {
     try {
@@ -74,6 +80,8 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
       setEvents((items) => [...items, ...result.events]);
       const publicContext = await api.getContext(gameInstanceId);
       setContext(publicContext);
+      const notice = buildDiscoveryNotice(result.events, publicContext);
+      if (notice.locations.length > 0 || notice.characters.length > 0) setDiscoveryNotice(notice);
       setSelectedNpc((current) => publicContext.characters.some((character) => character.id === current && character.known)
         ? current : publicContext.characters[0]?.id ?? "");
       return result;
@@ -104,7 +112,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   const verifiableIntel = context.intel.filter((intel) => selectedCharacter?.verifiableIntelIds.includes(intel.id));
   const selectedCandidate = context.recruitmentCandidates.find((candidate) => candidate.id === selectedNpc);
   const formattedTime = new Intl.DateTimeFormat("zh-CN", {
-    month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+    timeZone: "Asia/Shanghai", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(new Date(state.currentTime));
   const canRest = context.rest.available;
   const restDisabledReason = context.rest.reason;
@@ -117,17 +125,20 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
 
   if (state.activeDialogue) {
     const activeNpc = context.characters.find((item) => item.id === state.activeDialogue?.characterId);
-    return <DialoguePanel
-      state={state}
-      npcName={activeNpc?.name ?? state.activeDialogue.characterId}
-      npcIdentity={activeNpc?.publicIdentity ?? "身份不明"}
-      goal={state.activeDialogue.goal}
-      tone={state.activeDialogue.tone}
-      busy={busy}
-      error={error}
-      onSend={async (text) => { await act({ type: "dialogue_turn", sessionId: state.activeDialogue!.id, playerText: text, durationMinutes: 2, idempotencyKey: crypto.randomUUID() }); }}
-      onEnd={() => void act({ type: "dialogue_end", sessionId: state.activeDialogue!.id, durationMinutes: 0, idempotencyKey: crypto.randomUUID() })}
-    />;
+    return <>
+      <DialoguePanel
+        state={state}
+        npcName={activeNpc?.name ?? state.activeDialogue.characterId}
+        npcIdentity={activeNpc?.publicIdentity ?? "身份不明"}
+        goal={state.activeDialogue.goal}
+        tone={state.activeDialogue.tone}
+        busy={busy}
+        error={error}
+        onSend={async (text) => { await act({ type: "dialogue_turn", sessionId: state.activeDialogue!.id, playerText: text, durationMinutes: 2, idempotencyKey: crypto.randomUUID() }); }}
+        onEnd={() => void act({ type: "dialogue_end", sessionId: state.activeDialogue!.id, durationMinutes: 0, idempotencyKey: crypto.randomUUID() })}
+      />
+      <DiscoveryModal notice={discoveryNotice} onClose={() => setDiscoveryNotice(null)} />
+    </>;
   }
 
   const startDialogue = () => {
@@ -248,7 +259,52 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
         <MissionObjectives state={state} context={context} />
       </aside>
     </div>
+    <DiscoveryModal notice={discoveryNotice} onClose={() => setDiscoveryNotice(null)} />
   </main>;
+}
+
+function DiscoveryModal({ notice, onClose }: { notice: DiscoveryNotice | null; onClose: () => void }) {
+  if (!notice) return null;
+  return <div className="fixed inset-0 z-[90] grid place-items-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="discovery-title">
+      <section className="my-6 w-full max-w-lg border border-line bg-ink shadow-2xl">
+        <header className="flex items-start justify-between border-b border-line bg-panel px-5 py-4">
+          <div><p className="text-xs text-copper">行动带来了新的联系</p><h2 id="discovery-title" className="mt-1 font-serif text-xl">新的发现</h2></div>
+          <button aria-label="关闭" onClick={onClose} className="grid h-9 w-9 place-items-center text-muted hover:text-paper"><X size={17} /></button>
+        </header>
+        <div className="divide-y divide-line px-5">
+          {[...notice.locations, ...notice.characters].map((item) => <article key={item.key} className="py-4">
+            <p className="text-sm text-paper">{item.title}</p>
+            <p className="mt-2 text-xs leading-6 text-muted">{item.detail}</p>
+          </article>)}
+        </div>
+        <footer className="flex justify-end border-t border-line bg-panel px-5 py-4"><Button onClick={onClose}>记下线索</Button></footer>
+      </section>
+    </div>;
+}
+
+function buildDiscoveryNotice(events: GameEvent[], context: GameContext): DiscoveryNotice {
+  const locations = new Map<string, { key: string; title: string; detail: string }>();
+  const characters = new Map<string, { key: string; title: string; detail: string }>();
+  for (const event of events) {
+    const payload = event.payload as Record<string, unknown>;
+    const hint = typeof payload.hint === "string" && payload.hint.trim() ? payload.hint : "相关信息已经记入行动日志。";
+    if (event.type === "location.discovered" || event.type === "location.stage_changed") {
+      const id = String(payload.locationId ?? "");
+      const stage = String(payload.stage ?? "accessible");
+      const fallbackName = context.locations.find((item) => item.id === id)?.name;
+      const name = typeof payload.locationName === "string" ? payload.locationName : fallbackName;
+      const title = stage === "rumored" ? "获得新的地点传闻" : stage === "located" ? `已确认地点：${name ?? "未知地点"}` : `新地点：${name ?? "未知地点"}`;
+      locations.set(id || event.id, { key: `location-${id || event.id}`, title, detail: hint });
+    }
+    if (event.type === "character.introduced" || event.type === "character.identified") {
+      const id = String(payload.characterId ?? "");
+      const fallback = context.characters.find((item) => item.id === id);
+      const name = typeof payload.characterName === "string" ? payload.characterName : fallback?.name ?? "未知人物";
+      const identity = typeof payload.publicIdentity === "string" ? payload.publicIdentity : fallback?.publicIdentity;
+      characters.set(id || event.id, { key: `character-${id || event.id}`, title: `新人物：${name}${identity ? `，${identity}` : ""}`, detail: hint });
+    }
+  }
+  return { locations: [...locations.values()], characters: [...characters.values()] };
 }
 
 function SectionLabel({ icon, text }: { icon: React.ReactNode; text: string }) {

@@ -866,12 +866,14 @@ function resolveCampaignLeads(
         hint: lead.hint,
         updatedAt: state.currentTime,
       };
-      append("location.discovered", { locationId, leadId: lead.id, hint: lead.hint, sourceCharacterId: characterId });
+      const location = campaign.locations.find((item) => item.id === locationId);
+      append("location.discovered", { locationId, locationName: location?.name, stage: "accessible", leadId: lead.id, hint: lead.hint, sourceCharacterId: characterId });
     }
     for (const introducedCharacterId of lead.characterIds) {
       if (!state.characters[introducedCharacterId] || state.knownCharacterIds.includes(introducedCharacterId)) continue;
       state.knownCharacterIds.push(introducedCharacterId);
-      append("character.introduced", { characterId: introducedCharacterId, leadId: lead.id, hint: lead.hint, sourceCharacterId: characterId });
+      const introduced = campaign.characters.find((item) => item.id === introducedCharacterId);
+      append("character.introduced", { characterId: introducedCharacterId, characterName: introduced?.name, publicIdentity: introduced?.publicIdentity, leadId: lead.id, hint: lead.hint, sourceCharacterId: characterId });
     }
     resolved.push(lead.id);
     append("lead.resolved", { leadId: lead.id, trigger, hint: lead.hint, sourceCharacterId: characterId, profileId, workKind });
@@ -944,12 +946,14 @@ function advanceNarrativeEvents(
       if (nextStage === "accessible" && !state.discoveredLocationIds.includes(effect.locationId)) {
         state.discoveredLocationIds.push(effect.locationId);
       }
-      append("location.stage_changed", { locationId: effect.locationId, stage: nextStage, eventId: event.id, hint: effect.hint });
+      const location = campaign.locations.find((item) => item.id === effect.locationId);
+      append("location.stage_changed", { locationId: effect.locationId, locationName: nextStage === "rumored" ? undefined : location?.name, stage: nextStage, eventId: event.id, hint: effect.hint });
     }
     for (const characterId of event.effects.introduceCharacterIds ?? []) {
       if (!state.characters[characterId] || state.knownCharacterIds.includes(characterId)) continue;
       state.knownCharacterIds.push(characterId);
-      append("character.introduced", { characterId, eventId: event.id, hint: event.visibleSummary });
+      const introduced = campaign.characters.find((item) => item.id === characterId);
+      append("character.introduced", { characterId, characterName: introduced?.name, publicIdentity: introduced?.publicIdentity, eventId: event.id, hint: event.visibleSummary });
     }
     if (event.effects.thread) {
       state.narrativeThreads ??= [];
@@ -1007,7 +1011,8 @@ function advanceMissionObjectives(
       for (const characterId of effects.introduceCharacterIds ?? []) {
         if (state.characters[characterId] && !state.knownCharacterIds.includes(characterId)) {
           state.knownCharacterIds.push(characterId);
-          append("character.introduced", { characterId, objectiveId: objective.id, hint: effects.notice });
+          const introduced = campaign.characters.find((item) => item.id === characterId);
+          append("character.introduced", { characterId, characterName: introduced?.name, publicIdentity: introduced?.publicIdentity, objectiveId: objective.id, hint: effects.notice });
         }
       }
       for (const locationId of effects.unlockLocationIds ?? []) {
@@ -1015,13 +1020,14 @@ function advanceMissionObjectives(
         if (!state.discoveredLocationIds.includes(locationId)) state.discoveredLocationIds.push(locationId);
         state.locationKnowledge ??= {};
         state.locationKnowledge[locationId] = { stage: "accessible", sourceEventId: objective.id, hint: effects.notice, updatedAt: state.currentTime };
-        append("location.stage_changed", { locationId, stage: "accessible", objectiveId: objective.id, hint: effects.notice });
+        const location = campaign.locations.find((item) => item.id === locationId);
+        append("location.stage_changed", { locationId, locationName: location?.name, stage: "accessible", objectiveId: objective.id, hint: effects.notice });
       }
       if (effects.interrogation && (!state.interrogation || state.interrogation.status === "resolved")) {
         const interrogator = campaign.characters.find((character) => character.id === effects.interrogation?.interrogatorCharacterId);
         if (interrogator && !state.knownCharacterIds.includes(interrogator.id)) {
           state.knownCharacterIds.push(interrogator.id);
-          append("character.introduced", { characterId: interrogator.id, objectiveId: objective.id, hint: "敌方以公开调查名义安排盘问" });
+          append("character.introduced", { characterId: interrogator.id, characterName: interrogator.name, publicIdentity: interrogator.publicIdentity, objectiveId: objective.id, hint: "敌方以公开调查名义安排盘问" });
         }
         state.interrogation = {
           id: `${objective.id}:interrogation`, triggerObjectiveId: objective.id,
@@ -1568,8 +1574,7 @@ function leaveReasonLabel(reason: Extract<GameAction, { type: "request_leave" }>
 
 function minuteOfDay(iso: string): number {
   const date = new Date(iso);
-  // Campaign timestamps are stored as UTC instants. All player-facing schedules
-  // use the campaign's fixed Shanghai setting, matching the web UI.
+  // Campaign timestamps are UTC instants rendered on the fixed Shanghai clock.
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Shanghai",
     hour: "2-digit",
