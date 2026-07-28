@@ -26,6 +26,7 @@ const positions: Record<string, { x: number; y: number }> = {
   "jianghai-hotel": { x: 76, y: 62 },
   "third-dock": { x: 28, y: 81 },
   "wu-clock-shop": { x: 20, y: 52 },
+  "safe-flat": { x: 70, y: 87 },
 };
 
 const roads = [
@@ -34,6 +35,7 @@ const roads = [
   ["radio-office", "jianghai-hotel"], ["linjiang-news", "jianghai-hotel"],
   ["linjiang-news", "wu-clock-shop"], ["wu-clock-shop", "third-dock"],
   ["linjiang-news", "third-dock"], ["jianghai-hotel", "third-dock"],
+  ["linjiang-news", "safe-flat"], ["jianghai-hotel", "safe-flat"],
 ] as const;
 
 export function CityMap({ locations, currentLocationId, travelMinutes, disabled, onTravel }: {
