@@ -3,6 +3,7 @@ import { z } from "zod";
 const npcResponseSchema = z.object({
   visibleSpeech: z.string().min(1).max(800),
   privateIntent: z.string().max(300).catch("").default(""),
+  evidenceQuote: z.string().max(160).catch("").default(""),
   requestedEffects: z.array(z.object({
     type: z.string().max(40),
     value: z.number().min(-20).max(20),
@@ -32,6 +33,7 @@ export function parseModelJson(content: string): unknown {
           return {
             visibleSpeech,
             privateIntent: recoverStringField(trimmed, "privateIntent", ["requestedEffects"]) ?? "",
+            evidenceQuote: "",
             requestedEffects: [],
           };
         }
@@ -39,7 +41,7 @@ export function parseModelJson(content: string): unknown {
     }
     if (!/[{}]/.test(trimmed) && trimmed.length <= 800) {
       const speech = trimmed.replace(/^['"]|['"]$/g, "").trim();
-      if (speech) return { visibleSpeech: speech, privateIntent: "", requestedEffects: [] };
+      if (speech) return { visibleSpeech: speech, privateIntent: "", evidenceQuote: "", requestedEffects: [] };
     }
     throw new Error("LLM returned invalid JSON");
   }
@@ -78,7 +80,7 @@ class OpenAiCompatibleProvider implements AgentProvider {
       const repaired = await this.request([
         ...messages,
         { role: "assistant", content },
-        { role: "user", content: "上一次内容语义不变，只修正格式。仅输出合法JSON对象，字段必须是visibleSpeech字符串、privateIntent字符串、requestedEffects数组。" },
+        { role: "user", content: "上一次内容语义不变，只修正格式。仅输出合法JSON对象，字段必须是visibleSpeech字符串、privateIntent字符串、evidenceQuote字符串、requestedEffects数组。" },
       ], 0);
       return parseModelJson(repaired);
     }

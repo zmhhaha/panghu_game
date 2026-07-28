@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
-import { COVER_PROFILES, getDifficultyVisibility, isCharacterAvailableAt, toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
+import { COVER_PROFILES, getDifficultyVisibility, getRadioSites, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction } from "@qianfu/core";
 import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
-import { LINJIANG_1942 } from "@qianfu/content";
+import { getCampaignDefinition } from "@qianfu/content";
 import { campaignOrchestrator } from "../agents/orchestrator.js";
 import { renderReportHtml } from "../reports.js";
 
@@ -16,6 +16,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("dialogue_start"), targetCharacterId: z.string().min(1), goal: z.enum(["small_talk", "build_trust", "probe_attitude", "request_information", "verify_intel", "apply_pressure", "recruit_probe", "long_talk"]), tone: z.enum(["neutral", "friendly", "formal", "urgent", "threatening"]), targetIntelId: z.string().min(1).optional(), allocatedMinutes: z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(60)]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("dialogue_turn"), sessionId: z.string().min(8), playerText: z.string().trim().min(1).max(DIALOGUE_MAX_TEXT_LENGTH), durationMinutes: z.literal(2), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("dialogue_end"), sessionId: z.string().min(8), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("interrogation_answer"), interrogationId: z.string().min(8), strategy: z.enum(["calm", "formal", "deflect", "counter_question"]), playerText: z.string().trim().min(4).max(300), durationMinutes: z.literal(10), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("move"), destinationId: z.string().min(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("observe"), targetCharacterId: z.string().min(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("wait"), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
@@ -73,23 +74,24 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
   try {
     const state = await gameRepository.getGame(req.params.id, req.user.id);
     if (!state) { res.status(404).json({ error: "战役不存在" }); return; }
-    const visibleCharacters = LINJIANG_1942.characters
+    const campaign = getCampaignDefinition(state.campaignId, state.campaignVersion);
+    const visibleCharacters = campaign.characters
       .filter((character) => state.characters[character.id]?.locationId === state.currentLocationId && isCharacterAvailableAt(character, state.currentTime))
       .map((character) => {
         const known = state.knownCharacterIds?.includes(character.id) ?? false;
-        const verifiableIntelIds = LINJIANG_1942.intel
+        const verifiableIntelIds = campaign.intel
           .filter((intel) => intel.sourceCharacterIds.includes(character.id) && (state.intel[intel.id]?.knownFields.length ?? 0) > 0)
           .map((intel) => intel.id);
         return { id: character.id, name: known ? character.name : "？？？", publicIdentity: known ? character.publicIdentity : "尚未认识", recruitable: known && character.recruitable, known, verifiableIntelIds };
       });
     res.json({
-      campaign: { id: LINJIANG_1942.id, version: LINJIANG_1942.version, name: LINJIANG_1942.name },
+      campaign: { id: campaign.id, version: campaign.version, name: campaign.name },
       visibility: getDifficultyVisibility(state.difficulty.id),
       settlement: {
         ready: state.status === "finished",
         pendingReceipts: state.radio.transmissions.filter((item) => item.receiptStatus === "pending").length,
       },
-      locations: LINJIANG_1942.locations.map(({ id, name, district }) => {
+      locations: campaign.locations.map(({ id, name, district, travelMinutes }) => {
         const legacyDiscovered = state.discoveredLocationIds?.includes(id) ?? id === state.currentLocationId;
         const knowledge = state.locationKnowledge?.[id];
         const stage = knowledge?.stage ?? (legacyDiscovered ? "accessible" : "unknown");
@@ -98,17 +100,23 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
           id,
           name: identified ? name : "？？？",
           district: identified ? district : stage === "rumored" ? "区域传闻" : "区域未确认",
+          travelMinutes,
           discovered: stage === "accessible",
           stage,
           hint: knowledge?.hint ?? null,
         };
       }),
       narrativeThreads: state.narrativeThreads ?? [],
+      radioSites: getRadioSites(campaign, state).map((site) => ({
+        ...site,
+        discovered: state.discoveredLocationIds.includes(site.id),
+        currentHeat: state.investigation.locationHeat[site.id] ?? 0,
+      })),
       characters: visibleCharacters,
-      networkMembers: LINJIANG_1942.characters
+      networkMembers: campaign.characters
         .filter((character) => state.network.activeMemberIds.includes(character.id))
         .map((character) => ({ id: character.id, name: character.name, publicIdentity: character.publicIdentity })),
-      recruitmentCandidates: LINJIANG_1942.characters
+      recruitmentCandidates: campaign.characters
         .filter((character) => character.recruitable && state.knownCharacterIds.includes(character.id))
         .map((character) => {
           const candidate = state.characters[character.id];
@@ -132,10 +140,11 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
             canRecruit: !candidate.recruited && rapportReady && testsReady && candidate.locationId === state.currentLocationId,
           };
         }),
-      intel: LINJIANG_1942.intel.map(({ id, title, requiredFields, fieldLabels }) => ({ id, title, requiredFields, fieldLabels: fieldLabels ?? {} })),
-      objectives: LINJIANG_1942.objectives.map((objective) => {
+      intel: campaign.intel.filter((definition) => isIntelUnlocked(campaign, state, definition.id) || (state.intel[definition.id]?.knownFields.length ?? 0) > 0).map(({ id, title, requiredFields, fieldLabels }) => ({ id, title, requiredFields, fieldLabels: fieldLabels ?? {} })),
+      objectives: campaign.objectives.map((objective) => {
+        const unlocked = isObjectiveUnlocked(state, objective);
         const intel = objective.requiredIntelIds.map((intelId) => {
-          const definition = LINJIANG_1942.intel.find((item) => item.id === intelId)!;
+          const definition = campaign.intel.find((item) => item.id === intelId)!;
           const current = state.intel[intelId];
           const knownFields = current?.knownFields ?? [];
           const deliveredFields = current?.deliveredFields ?? (current?.deliveredAt ? [...knownFields] : []);
@@ -154,13 +163,13 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
         const remainingMinutes = Math.max(0, Math.round((Date.parse(objective.deadline) - Date.parse(state.currentTime)) / 60_000));
         return {
           id: objective.id,
-          title: objective.id === "confirm-radio-shipment" ? "确认无线电设备运输并安全送出" : objective.id,
+          title: objective.title ?? objective.id,
           deadline: objective.deadline,
           minimumConfidence: objective.minimumConfidence,
           acceptedDeliveryMethods: objective.acceptedDeliveryMethods,
-          status: completed ? "completed" : remainingMinutes === 0 ? "overdue" : allReady ? "ready_to_transmit" : "in_progress",
+          status: !unlocked ? "locked" : completed ? "completed" : remainingMinutes === 0 ? "overdue" : allReady ? "ready_to_transmit" : "in_progress",
           remainingMinutes,
-          intel,
+          intel: unlocked ? intel : [],
         };
       }),
     });
@@ -297,6 +306,7 @@ gamesRouter.get("/:id/export", async (req, res, next) => {
     const state = await gameRepository.getGame(req.params.id, req.user.id);
     const events = await gameRepository.getEvents(req.params.id, req.user.id);
     if (!state || !events) { res.status(404).json({ error: "战役不存在" }); return; }
+    const campaign = getCampaignDefinition(state.campaignId, state.campaignVersion);
     const format = req.query.format === "html" ? "html" : "json";
     if (state.status !== "finished") {
       if (format === "html") { res.status(409).json({ error: "战役结算后才能导出 HTML 战报" }); return; }
@@ -304,7 +314,7 @@ gamesRouter.get("/:id/export", async (req, res, next) => {
       res.setHeader("Content-Disposition", `attachment; filename="qianfu-progress-${state.gameInstanceId}.json"`);
       res.json({
         schemaVersion: "1.0.0", kind: "player_progress", exportedAt: new Date().toISOString(),
-        campaign: { id: LINJIANG_1942.id, version: LINJIANG_1942.version, name: LINJIANG_1942.name },
+        campaign: { id: campaign.id, version: campaign.version, name: campaign.name },
         state: toPublicWorldState(state), events: toPublicGameEvents(events),
       });
       return;

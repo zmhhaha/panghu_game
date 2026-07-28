@@ -8,6 +8,11 @@ function finishedFixture(campaign: CampaignDefinition = LINJIANG_1942) {
   state.knownCharacterIds.push("han-shijie");
   state.intel["false-warehouse"].knownFields = ["warehouse"];
   state.intel["false-warehouse"].confidence = 0.8;
+  state.intel["false-warehouse"].evidence.push({
+    id: "report-evidence", field: "warehouse", sourceId: "han-shijie", sourceLabel: "韩世杰",
+    sourceType: "testimony", upstreamSourceId: "han-shijie", assessment: "unverified",
+    summary: "韩世杰提供了“仓库编号：七码头二号仓”线索，尚缺独立来源核验。", collectedAt: state.currentTime,
+  });
   const engine = new CampaignEngine(campaign, state);
   const result = engine.execute({ type: "wait", durationMinutes: 6000, idempotencyKey: "finish-report-test" });
   return { state: result.state, events: result.events as GameEvent[] };
@@ -51,5 +56,8 @@ describe("campaign reports", () => {
 
     expect(html).toContain("仓库编号");
     expect(html).not.toContain(">warehouse<");
+    expect(html).toContain("情报证据链");
+    expect(html).toContain("韩世杰");
+    expect(html).toContain("七码头二号仓");
   });
 });

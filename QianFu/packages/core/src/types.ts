@@ -79,6 +79,11 @@ export interface LocationDefinition {
   name: string;
   district: string;
   travelMinutes: Record<string, number>;
+  radioSite?: {
+    baseRisk: number;
+    initiallyAvailable?: boolean;
+    requiresRecruitedCharacterId?: string;
+  };
 }
 
 export interface ScheduleEntry {
@@ -150,6 +155,7 @@ export interface IntelDefinition {
   truth: "true" | "false" | "partial";
   requiredFields: string[];
   fieldLabels?: Record<string, string>;
+  fieldValues?: Record<string, string>;
   sourceCharacterIds: string[];
   sourceOrigins?: Record<string, string>;
   sourceRequirements?: Record<string, { familiarity: number; privateTrust: number }>;
@@ -158,12 +164,24 @@ export interface IntelDefinition {
 
 export interface MissionObjective {
   id: string;
+  title?: string;
+  sequence?: number;
   required: boolean;
   deadline: string;
   requiredIntelIds: string[];
   minimumConfidence: number;
   acceptedDeliveryMethods: string[];
   recipientId: string;
+  unlockAfterObjectiveIds?: string[];
+  completionEffects?: {
+    investigationPressure?: number;
+    personalSuspicion?: number;
+    networkExposure?: number;
+    introduceCharacterIds?: string[];
+    unlockLocationIds?: string[];
+    interrogation?: { interrogatorCharacterId: string; delayMinutes: number };
+    notice: string;
+  };
 }
 
 export interface CampaignLead {
@@ -362,6 +380,20 @@ export interface EnemyInvestigationState {
   lastActionAt: string | null;
 }
 
+export type InterrogationStrategy = "calm" | "formal" | "deflect" | "counter_question";
+
+export interface InterrogationState {
+  id: string;
+  triggerObjectiveId: string;
+  interrogatorCharacterId: string;
+  status: "pending" | "active" | "resolved";
+  dueAt: string;
+  questions: string[];
+  answers: Array<{ question: string; text: string; strategy: InterrogationStrategy; at: string }>;
+  consistency: number;
+  outcome: "cleared" | "watched" | "compromised" | null;
+}
+
 export interface ScoreBreakdown {
   mission: number;
   intelligence: number;
@@ -402,6 +434,8 @@ export interface CampaignReportIntelItem {
     corroboratedFields: number;
     conflictingFields: number;
     dependentRecords: number;
+    sources?: string[];
+    records?: string[];
   };
 }
 
@@ -487,6 +521,7 @@ export interface WorldState {
   resolvedLeadIds?: string[];
   resolvedNarrativeEventIds?: string[];
   narrativeThreads?: NarrativeThreadState[];
+  completedObjectiveIds?: string[];
   status: GameStatus;
   stateVersion: number;
   lastEventSeq: number;
@@ -501,6 +536,7 @@ export interface WorldState {
   network: NetworkState;
   radio: RadioState;
   investigation: EnemyInvestigationState;
+  interrogation?: InterrogationState | null;
   ending: CampaignEnding | null;
   closedAt: string | null;
 }
@@ -575,6 +611,7 @@ export interface DialogueAction extends ActionBase {
     visibleSpeech: string;
     privateIntent: string;
     requestedEffects: Array<{ type: string; value: number; reason: string }>;
+    evidenceQuote?: string;
     provider: "model" | "fallback";
   };
 }
@@ -608,6 +645,13 @@ export interface DialogueTurnAction extends ActionBase {
 export interface DialogueEndAction extends ActionBase {
   type: "dialogue_end";
   sessionId: string;
+}
+
+export interface InterrogationAnswerAction extends ActionBase {
+  type: "interrogation_answer";
+  interrogationId: string;
+  strategy: InterrogationStrategy;
+  playerText: string;
 }
 
 export interface SendRadioMessageAction extends ActionBase {
@@ -645,7 +689,7 @@ export interface RecruitCandidateAction extends ActionBase {
   targetCharacterId: string;
 }
 
-export type GameAction = MoveAction | ObserveAction | WaitAction | RestAction | RecordIntelAction | TransmitIntelAction | CoverWorkAction | RequestLeaveAction | SendRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
+export type GameAction = MoveAction | ObserveAction | WaitAction | RestAction | RecordIntelAction | TransmitIntelAction | CoverWorkAction | RequestLeaveAction | SendRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | InterrogationAnswerAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
 
 export interface ActionResult {
   state: WorldState;

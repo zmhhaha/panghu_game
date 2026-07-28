@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { GameAction, PublicWorldState, RadioMessageFormat, RadioTiming } from "@qianfu/core";
 import { AlertTriangle, Archive, Check, Clock3, FileText, Link2, Radio, Send, ShieldAlert, UserRound, X } from "lucide-react";
 import type { GameContext } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
-const radioSiteRisk: Record<string, number> = { "wu-clock-shop": 4, "jianghai-hotel": 10, "radio-office": 18 };
 const receiptLabels = { pending: "等待回执", confirmed: "完整收到", partial: "部分收到", no_receipt: "未获回执" } as const;
 const assessmentLabels = { unverified: "尚未核验", corroborates: "独立印证", contradicts: "存在矛盾", dependent: "同源转述" } as const;
 
@@ -22,10 +21,14 @@ export function IntelligenceBoard({ state, context, busy, onAction }: {
   const [format, setFormat] = useState<RadioMessageFormat>("compressed");
   const [codebookId, setCodebookId] = useState<"one_time_pad" | "book_cipher">("one_time_pad");
   const [timing, setTiming] = useState<RadioTiming>("immediate");
-  const radioSites = context.locations.filter((location) => location.discovered && location.id in radioSiteRisk);
-  const [locationId, setLocationId] = useState(() => radioSiteRisk[state.currentLocationId] !== undefined ? state.currentLocationId : radioSites[0]?.id ?? "");
+  const radioSites = context.radioSites.filter((site) => site.available && site.discovered);
+  const [locationId, setLocationId] = useState(() => radioSites.some((site) => site.id === state.currentLocationId) ? state.currentLocationId : radioSites[0]?.id ?? "");
   const visibleIntel = context.intel.filter((item) => state.intel[item.id]?.knownFields.length > 0);
   const scheduledWindowKnown = (state.intel["radio-window"]?.knownFields.length ?? 0) > 0;
+
+  useEffect(() => {
+    if (!radioSites.some((site) => site.id === locationId)) setLocationId(radioSites[0]?.id ?? "");
+  }, [locationId, radioSites]);
 
   const items = useMemo(() => visibleIntel.map((item) => ({
     intelId: item.id,
@@ -34,7 +37,8 @@ export function IntelligenceBoard({ state, context, busy, onAction }: {
   const fieldCount = items.reduce((total, item) => total + item.fields.length, 0);
   const codebook = state.radio.codebooks.find((item) => item.id === codebookId);
   const estimate = estimateTransmission(state.currentTime, fieldCount, format, codebookId, timing);
-  const riskScore = (radioSiteRisk[locationId] ?? 20) + estimate.operationMinutes / 3 + (timing === "immediate" ? 8 : 0) + (codebookId === "book_cipher" && (codebook?.usageCount ?? 0) > 0 ? 6 : 0);
+  const selectedSite = radioSites.find((site) => site.id === locationId);
+  const riskScore = (selectedSite?.baseRisk ?? 20) + (selectedSite?.currentHeat ?? 0) * 0.5 + estimate.operationMinutes / 3 + (timing === "immediate" ? 8 : 0) + (codebookId === "book_cipher" && (codebook?.usageCount ?? 0) > 0 ? 6 : 0);
   const riskLabel = riskScore < 18 ? "较低" : riskScore < 28 ? "中等" : "较高";
   const atSelectedSite = locationId === state.currentLocationId;
   const codebookAvailable = codebook && (codebook.usesRemaining === null || codebook.usesRemaining > 0);
@@ -57,7 +61,7 @@ export function IntelligenceBoard({ state, context, busy, onAction }: {
       }
       setSelected(defaults);
     }
-    if (radioSiteRisk[state.currentLocationId] !== undefined) setLocationId(state.currentLocationId);
+    if (radioSites.some((site) => site.id === state.currentLocationId)) setLocationId(state.currentLocationId);
     setOpen(true);
   };
 
@@ -92,7 +96,7 @@ export function IntelligenceBoard({ state, context, busy, onAction }: {
             <Select label="电文形式" value={format} onChange={(value) => setFormat(value as RadioMessageFormat)} options={[{ value: "compressed", label: "压缩摘要" }, { value: "full", label: "完整报码" }]} />
             <Select label="密码本" value={codebookId} onChange={(value) => setCodebookId(value as typeof codebookId)} options={state.radio.codebooks.map((item) => ({ value: item.id, label: item.id === "one_time_pad" ? `一次一密 · 剩余 ${item.usesRemaining ?? 0} 页` : `书本密码 · 已用 ${item.usageCount} 次` }))} />
             <Select label="发送时机" value={timing} onChange={(value) => setTiming(value as RadioTiming)} options={[{ value: "immediate", label: "立即发送" }, { value: "scheduled", label: scheduledWindowKnown ? "等待约定窗口" : "约定窗口（尚未知晓）", disabled: !scheduledWindowKnown }]} />
-            <Select label="发报地点" value={locationId} onChange={setLocationId} options={radioSites.map((site) => ({ value: site.id, label: `${site.name}${site.id === state.currentLocationId ? " · 当前" : ""}` }))} />
+            <Select label="发报地点" value={locationId} onChange={setLocationId} options={radioSites.map((site) => ({ value: site.id, label: `${site.name} · 热度${Math.round(site.currentHeat)}${site.id === state.currentLocationId ? " · 当前" : ""}` }))} />
             <div className="border-l-2 border-copper bg-copper/[0.06] p-3 text-xs leading-6 text-muted"><p className="flex items-center justify-between"><span>字段</span><span className="text-paper">{fieldCount}</span></p><p className="flex items-center justify-between"><span>预计耗时</span><span className="text-paper">{estimate.totalMinutes} 分钟</span></p><p className="flex items-center justify-between"><span>信号风险</span><span className={riskLabel === "较高" ? "text-alert" : "text-copper"}>{riskLabel}</span></p></div>
           </div>
         </div>

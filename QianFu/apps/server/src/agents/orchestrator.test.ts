@@ -1,4 +1,4 @@
-import { createInitialWorld } from "@qianfu/core";
+import { createInitialWorld, type CampaignDefinition } from "@qianfu/core";
 import { LINJIANG_1942 } from "@qianfu/content";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CampaignOrchestrator } from "./orchestrator.js";
@@ -19,6 +19,7 @@ describe("CampaignOrchestrator", () => {
       visibleSpeech: "家里都好，劳你挂念。",
       privateIntent: "继续观察",
       requestedEffects: [],
+      evidenceQuote: "",
     });
   });
 
@@ -31,6 +32,7 @@ describe("CampaignOrchestrator", () => {
       visibleSpeech: "档案科管的是文件，不是来客。你问这个做什么？",
       privateIntent: "继续观察",
       requestedEffects: [],
+      evidenceQuote: "",
     });
   });
 
@@ -113,6 +115,46 @@ describe("CampaignOrchestrator", () => {
     expect(user.recentDialogue).toHaveLength(2);
     expect(user.playerText).toBe("因为有人让我来取修好的怀表。");
     expect(user.npcRelationship).toBeTruthy();
+    expect(user.immutableScene.playerPublicIdentity).toBe("机要处档案员");
+    expect(user.immutableScene.npcPublicIdentity).toBe("钟表店老板");
+    expect(user.permittedEvidence).toEqual([]);
+    expect(capturedSystem).toContain("Never borrow another NPC's profession");
+    expect(prepared.agentOutcome?.provider).toBe("model");
+  });
+
+  it("resolves NPC context from the state's campaign id and version", async () => {
+    const customCampaign: CampaignDefinition = {
+      ...LINJIANG_1942,
+      id: "custom-campaign",
+      version: "2.0.0",
+      characters: [{
+        id: "custom-contact", name: "许掌柜", publicIdentity: "药铺掌柜", hiddenAlignment: "neutral",
+        initialLocationId: "archive-office", recruitable: false,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "archive-office", activity: "看店" }],
+        reliability: { loyalty: 50, discipline: 60, pressureResistance: 50, courage: 40, competence: 70 },
+        personality: { traits: ["审慎"], speechStyle: "简短", values: ["生意"], fears: ["查封"], verbalHabits: ["药不能乱抓"], sensitiveTopics: [] },
+      }],
+      intel: [], objectives: [], publicLeads: [], narrativeEvents: [],
+    };
+    const state = createInitialWorld(customCampaign, "custom-game", "custom-user");
+    state.activeDialogue = { id: "custom-session", characterId: "custom-contact", goal: "small_talk", tone: "neutral", targetIntelId: null, allocatedMinutes: 10, elapsedMinutes: 0, maxTurns: 5, turnCount: 0, status: "active", transcript: [] };
+    let systemPrompt = "";
+    const provider: AgentProvider = {
+      name: "test",
+      async complete(system) {
+        systemPrompt = system;
+        return { visibleSpeech: "药不能乱抓。您哪里不舒服？", privateIntent: "观察来客", evidenceQuote: "", requestedEffects: [] };
+      },
+    };
+    const resolver = vi.fn(() => customCampaign);
+    const prepared = await new CampaignOrchestrator(provider, resolver).prepareTurn(state, {
+      type: "dialogue_turn", sessionId: "custom-session", playerText: "想买点止咳药。", durationMinutes: 2, idempotencyKey: "custom-turn-0001",
+    });
+
+    expect(resolver).toHaveBeenCalledWith("custom-campaign", "2.0.0");
+    expect(systemPrompt).toContain("许掌柜");
+    expect(systemPrompt).toContain("药铺掌柜");
+    expect(systemPrompt).not.toContain("老吴");
     expect(prepared.agentOutcome?.provider).toBe("model");
   });
 });

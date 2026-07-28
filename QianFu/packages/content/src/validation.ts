@@ -25,11 +25,18 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
   const locations = new Set(locationIds);
   const characters = new Set(characterIds);
   const intel = new Set(intelIds);
+  const objectiveIds = campaign.objectives.map((item) => item.id);
+  for (const id of duplicateIds(objectiveIds)) errors.push(`duplicate objective id: ${id}`);
+  const objectives = new Set(objectiveIds);
   for (const location of campaign.locations) {
     for (const [targetId, minutes] of Object.entries(location.travelMinutes)) {
       if (!locations.has(targetId)) errors.push(`location ${location.id} references unknown destination ${targetId}`);
       if (minutes <= 0 || minutes % 10 !== 0) errors.push(`travel time ${location.id} -> ${targetId} must be a positive multiple of 10`);
     }
+    if (location.radioSite?.requiresRecruitedCharacterId && !characters.has(location.radioSite.requiresRecruitedCharacterId)) {
+      errors.push(`radio site ${location.id} requires unknown character ${location.radioSite.requiresRecruitedCharacterId}`);
+    }
+    if (location.radioSite && location.radioSite.baseRisk < 0) errors.push(`radio site ${location.id} has invalid base risk`);
   }
   for (const character of campaign.characters) {
     if (!locations.has(character.initialLocationId)) errors.push(`character ${character.id} has unknown initial location`);
@@ -59,6 +66,18 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
     for (const intelId of objective.requiredIntelIds) {
       if (!intel.has(intelId)) errors.push(`objective ${objective.id} references unknown intel ${intelId}`);
     }
+    for (const dependencyId of objective.unlockAfterObjectiveIds ?? []) {
+      if (!objectives.has(dependencyId)) errors.push(`objective ${objective.id} depends on unknown objective ${dependencyId}`);
+      if (dependencyId === objective.id) errors.push(`objective ${objective.id} cannot depend on itself`);
+    }
+    for (const characterId of objective.completionEffects?.introduceCharacterIds ?? []) {
+      if (!characters.has(characterId)) errors.push(`objective ${objective.id} introduces unknown character ${characterId}`);
+    }
+    for (const locationId of objective.completionEffects?.unlockLocationIds ?? []) {
+      if (!locations.has(locationId)) errors.push(`objective ${objective.id} unlocks unknown location ${locationId}`);
+    }
+    const interrogatorId = objective.completionEffects?.interrogation?.interrogatorCharacterId;
+    if (interrogatorId && !characters.has(interrogatorId)) errors.push(`objective ${objective.id} uses unknown interrogator ${interrogatorId}`);
   }
   for (const leadId of duplicateIds((campaign.publicLeads ?? []).map((lead) => lead.id))) {
     errors.push(`duplicate public lead id: ${leadId}`);

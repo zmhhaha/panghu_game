@@ -1,11 +1,15 @@
-import type { CharacterState, GameEvent, IntelEvidence, IntelState, WorldState } from "./types.js";
+import type { CharacterState, GameEvent, IntelEvidence, IntelState, InterrogationState, WorldState } from "./types.js";
 
 export type PublicCharacterState = Pick<CharacterState, "id" | "templateId" | "locationId" | "recruited" | "exposed" | "agentTier">;
 export type PublicIntelEvidence = Omit<IntelEvidence, "sourceId" | "upstreamSourceId">;
-export type PublicWorldState = Omit<WorldState, "characters" | "intel" | "dialogueMemories" | "investigation"> & {
+export type PublicInterrogationState = Omit<InterrogationState, "answers"> & {
+  answers: Array<Pick<InterrogationState["answers"][number], "strategy" | "at">>;
+};
+export type PublicWorldState = Omit<WorldState, "characters" | "intel" | "dialogueMemories" | "investigation" | "interrogation"> & {
   characters: Record<string, PublicCharacterState>;
   intel: Record<string, Pick<IntelState, "id" | "knownFields" | "confidence" | "deliveredFields" | "deliveredAt" | "deliveryMethod"> & { evidence: PublicIntelEvidence[] }>;
   investigation: Pick<WorldState["investigation"], "pressure" | "locationHeat" | "surveillanceLocationIds" | "lastActionAt">;
+  interrogation: PublicInterrogationState | null;
 };
 
 export function toPublicWorldState(state: WorldState): PublicWorldState {
@@ -60,14 +64,18 @@ export function toPublicWorldState(state: WorldState): PublicWorldState {
     evidence: [],
     lastActionAt: null,
   };
-  const { dialogueMemories: _privateMemories, characters: _privateCharacters, intel: _privateIntel, investigation: _privateInvestigation, ...publicState } = clonedState;
+  const publicInterrogation = clonedState.interrogation ? {
+    ...clonedState.interrogation,
+    answers: clonedState.interrogation.answers.map(({ strategy, at }) => ({ strategy, at })),
+  } : null;
+  const { dialogueMemories: _privateMemories, characters: _privateCharacters, intel: _privateIntel, investigation: _privateInvestigation, interrogation: _privateInterrogation, ...publicState } = clonedState;
   const { evidence: _privateEvidence, ...publicInvestigation } = privateInvestigation;
-  return { ...publicState, characters: visibleCharacters, intel: visibleIntel, investigation: publicInvestigation };
+  return { ...publicState, characters: visibleCharacters, intel: visibleIntel, investigation: publicInvestigation, interrogation: publicInterrogation };
 }
 
 export function toPublicGameEvents(events: GameEvent[]): GameEvent[] {
   return events
-    .filter((event) => !event.type.startsWith("investigation.evidence_"))
+    .filter((event) => !event.type.startsWith("investigation.evidence_") && event.type !== "interrogation.answer_recorded")
     .map((event) => event.type === "dialogue.completed" || event.type === "dialogue.turn_completed"
       ? {
           ...event,

@@ -1,22 +1,24 @@
 import type { CampaignDefinition, CharacterDefinition, LocationDefinition } from "@qianfu/core";
 import { assertValidCampaign } from "../../validation.js";
 
-const travel = (archive: number, radio: number, newspaper: number, hotel: number, dock: number, clock: number) => ({
+const travel = (archive: number, radio: number, newspaper: number, hotel: number, dock: number, clock: number, safe = 20) => ({
   "archive-office": archive,
   "radio-office": radio,
   "linjiang-news": newspaper,
   "jianghai-hotel": hotel,
   "third-dock": dock,
   "wu-clock-shop": clock,
+  "safe-flat": safe,
 });
 
 const locations: LocationDefinition[] = [
-  { id: "archive-office", name: "机要楼档案科", district: "政务区", travelMinutes: travel(10, 10, 20, 20, 40, 30) },
-  { id: "radio-office", name: "电讯科", district: "政务区", travelMinutes: travel(10, 10, 20, 20, 40, 30) },
-  { id: "linjiang-news", name: "临江日报社", district: "旧城区", travelMinutes: travel(20, 20, 10, 20, 30, 20) },
-  { id: "jianghai-hotel", name: "江海饭店", district: "商业区", travelMinutes: travel(20, 20, 20, 10, 30, 20) },
-  { id: "third-dock", name: "三号码头", district: "码头区", travelMinutes: travel(40, 40, 30, 30, 10, 30) },
-  { id: "wu-clock-shop", name: "老吴钟表店", district: "旧城区", travelMinutes: travel(30, 30, 20, 20, 30, 10) },
+  { id: "archive-office", name: "机要楼档案科", district: "政务区", travelMinutes: travel(10, 10, 20, 20, 40, 30), radioSite: { baseRisk: 18, requiresRecruitedCharacterId: "chen-jingwen" } },
+  { id: "radio-office", name: "电讯科", district: "政务区", travelMinutes: travel(10, 10, 20, 20, 40, 30), radioSite: { baseRisk: 16, requiresRecruitedCharacterId: "zhou-qiming" } },
+  { id: "linjiang-news", name: "临江日报社", district: "旧城区", travelMinutes: travel(20, 20, 10, 20, 30, 20), radioSite: { baseRisk: 9, requiresRecruitedCharacterId: "lin-ruolan" } },
+  { id: "jianghai-hotel", name: "江海饭店", district: "商业区", travelMinutes: travel(20, 20, 20, 10, 30, 20), radioSite: { baseRisk: 11, requiresRecruitedCharacterId: "shen-manqiu" } },
+  { id: "third-dock", name: "三号码头", district: "码头区", travelMinutes: travel(40, 40, 30, 30, 10, 30), radioSite: { baseRisk: 14, requiresRecruitedCharacterId: "zhao-fusheng" } },
+  { id: "wu-clock-shop", name: "老吴钟表店", district: "旧城区", travelMinutes: travel(30, 30, 20, 20, 30, 10), radioSite: { baseRisk: 6, requiresRecruitedCharacterId: "old-wu" } },
+  { id: "safe-flat", name: "城南安全住处", district: "城南住宅区", travelMinutes: travel(20, 30, 20, 20, 40, 20, 10), radioSite: { baseRisk: 5, initiallyAvailable: true } },
 ];
 
 const reliability = (loyalty: number, discipline: number, pressureResistance: number, courage: number, competence: number) => ({
@@ -31,7 +33,7 @@ const characters: CharacterDefinition[] = [
   { id: "shen-manqiu", name: "沈曼秋", publicIdentity: "医院护士", hiddenAlignment: "organization", initialLocationId: "jianghai-hotel", recruitable: true, reliability: reliability(92, 81, 42, 65, 74), schedule: [{ startMinute: 1080, endMinute: 1200, locationId: "jianghai-hotel", activity: "为秘密伤员送药" }] },
   { id: "han-shijie", name: "韩世杰", publicIdentity: "警备处调查员", hiddenAlignment: "enemy", initialLocationId: "archive-office", recruitable: false, reliability: reliability(8, 91, 88, 82, 89), schedule: [{ startMinute: 540, endMinute: 960, locationId: "archive-office", activity: "核查异常借阅记录" }] },
   { id: "luo-boan", name: "罗伯安", publicIdentity: "商会秘书", hiddenAlignment: "neutral", initialLocationId: "jianghai-hotel", recruitable: false, reliability: reliability(31, 62, 55, 44, 80), schedule: [{ startMinute: 660, endMinute: 960, locationId: "jianghai-hotel", activity: "安排商会宴请" }] },
-  { id: "old-wu", name: "老吴", publicIdentity: "钟表店老板", hiddenAlignment: "organization", initialLocationId: "wu-clock-shop", recruitable: false, reliability: reliability(96, 94, 68, 61, 70), schedule: [{ startMinute: 480, endMinute: 1200, locationId: "wu-clock-shop", activity: "经营店铺并维护交通线" }] },
+  { id: "old-wu", name: "老吴", publicIdentity: "钟表店老板", hiddenAlignment: "organization", initialLocationId: "wu-clock-shop", recruitable: true, reliability: reliability(96, 94, 68, 61, 70), schedule: [{ startMinute: 480, endMinute: 1200, locationId: "wu-clock-shop", activity: "经营店铺并维护交通线" }] },
 ];
 
 const personalityById: Record<string, CharacterDefinition["personality"]> = {
@@ -212,18 +214,40 @@ const draft: CampaignDefinition = {
     },
   ],
   intel: [
-    { id: "shipment-time", title: "运输时间", truth: "true", requiredFields: ["date", "hour"], sourceCharacterIds: ["chen-jingwen", "zhao-fusheng"], sourceRequirements: { "chen-jingwen": { familiarity: 12, privateTrust: 10 }, "zhao-fusheng": { familiarity: 10, privateTrust: 7 } }, expiresAt: "1942-05-15T22:00:00.000Z" },
-    { id: "shipment-place", title: "运输地点", truth: "true", requiredFields: ["dock", "warehouse"], sourceCharacterIds: ["zhao-fusheng", "lin-ruolan"], sourceRequirements: { "zhao-fusheng": { familiarity: 11, privateTrust: 8 }, "lin-ruolan": { familiarity: 10, privateTrust: 8 } }, expiresAt: "1942-05-15T22:00:00.000Z" },
-    { id: "shipment-cargo", title: "货物内容", truth: "true", requiredFields: ["category", "quantity"], sourceCharacterIds: ["chen-jingwen", "zhou-qiming"], sourceRequirements: { "chen-jingwen": { familiarity: 15, privateTrust: 12 }, "zhou-qiming": { familiarity: 10, privateTrust: 7 } }, expiresAt: "1942-05-15T22:00:00.000Z" },
-    { id: "vehicle-route", title: "车辆路线", truth: "partial", requiredFields: ["origin", "checkpoint"], sourceCharacterIds: ["zhao-fusheng"], sourceRequirements: { "zhao-fusheng": { familiarity: 12, privateTrust: 9 } }, expiresAt: "1942-05-15T20:00:00.000Z" },
-    { id: "escort-list", title: "押运名单", truth: "partial", requiredFields: ["leader", "unit"], sourceCharacterIds: ["chen-jingwen", "han-shijie"], expiresAt: "1942-05-15T20:00:00.000Z" },
-    { id: "radio-window", title: "组织收报窗口", truth: "true", requiredFields: ["date", "start", "duration"], sourceCharacterIds: ["old-wu", "zhou-qiming"], expiresAt: "1942-05-15T22:20:00.000Z" },
-    { id: "false-warehouse", title: "二号仓库假消息", truth: "false", requiredFields: ["warehouse"], sourceCharacterIds: ["han-shijie"], expiresAt: "1942-05-15T18:00:00.000Z" },
-    { id: "archive-audit", title: "档案借阅核查", truth: "true", requiredFields: ["scope", "investigator"], sourceCharacterIds: ["chen-jingwen", "han-shijie"], expiresAt: "1942-05-14T18:00:00.000Z" },
-    { id: "hotel-meeting", title: "江海饭店会面", truth: "partial", requiredFields: ["room", "attendees"], sourceCharacterIds: ["luo-boan", "chen-jingwen"], expiresAt: "1942-05-13T22:00:00.000Z" },
-    { id: "inspection-order", title: "临时封锁命令", truth: "true", requiredFields: ["checkpoint", "start"], sourceCharacterIds: ["lin-ruolan", "han-shijie"], expiresAt: "1942-05-15T12:00:00.000Z" },
+    { id: "shipment-time", title: "运输时间", truth: "true", requiredFields: ["date", "hour"], fieldValues: { date: "5月15日", hour: "凌晨2时40分" }, sourceCharacterIds: ["chen-jingwen", "zhao-fusheng"], sourceRequirements: { "chen-jingwen": { familiarity: 12, privateTrust: 10 }, "zhao-fusheng": { familiarity: 10, privateTrust: 7 } }, expiresAt: "1942-05-15T22:00:00.000Z" },
+    { id: "shipment-place", title: "运输地点", truth: "true", requiredFields: ["dock", "warehouse"], fieldValues: { dock: "三号码头东侧泊位", warehouse: "八码头旧棉纱仓" }, sourceCharacterIds: ["zhao-fusheng", "lin-ruolan"], sourceRequirements: { "zhao-fusheng": { familiarity: 11, privateTrust: 8 }, "lin-ruolan": { familiarity: 10, privateTrust: 8 } }, expiresAt: "1942-05-15T22:00:00.000Z" },
+    { id: "shipment-cargo", title: "货物内容", truth: "true", requiredFields: ["category", "quantity"], fieldValues: { category: "短波收发报机及备用电子管", quantity: "木箱24只" }, sourceCharacterIds: ["chen-jingwen", "zhou-qiming"], sourceRequirements: { "chen-jingwen": { familiarity: 15, privateTrust: 12 }, "zhou-qiming": { familiarity: 10, privateTrust: 7 } }, expiresAt: "1942-05-15T22:00:00.000Z" },
+    { id: "vehicle-route", title: "车辆路线", truth: "partial", requiredFields: ["origin", "checkpoint"], fieldValues: { origin: "江北铁路货场", checkpoint: "西关检查站" }, sourceCharacterIds: ["zhao-fusheng"], sourceRequirements: { "zhao-fusheng": { familiarity: 12, privateTrust: 9 } }, expiresAt: "1942-05-15T20:00:00.000Z" },
+    { id: "escort-list", title: "押运名单", truth: "partial", requiredFields: ["leader", "unit"], fieldValues: { leader: "韩世杰", unit: "警备处机动队第二组" }, sourceCharacterIds: ["chen-jingwen", "han-shijie"], expiresAt: "1942-05-15T20:00:00.000Z" },
+    { id: "radio-window", title: "组织收报窗口", truth: "true", requiredFields: ["date", "start", "duration"], fieldValues: { date: "5月15日", start: "凌晨1时50分", duration: "15分钟" }, sourceCharacterIds: ["old-wu", "zhou-qiming"], expiresAt: "1942-05-15T22:20:00.000Z" },
+    { id: "false-warehouse", title: "二号仓库假消息", truth: "false", requiredFields: ["warehouse"], fieldValues: { warehouse: "七码头二号仓" }, sourceCharacterIds: ["han-shijie"], expiresAt: "1942-05-15T18:00:00.000Z" },
+    { id: "archive-audit", title: "档案借阅核查", truth: "true", requiredFields: ["scope", "investigator"], fieldValues: { scope: "5月10日至12日的机要档案借阅记录", investigator: "韩世杰" }, sourceCharacterIds: ["chen-jingwen", "han-shijie"], expiresAt: "1942-05-14T18:00:00.000Z" },
+    { id: "hotel-meeting", title: "江海饭店会面", truth: "partial", requiredFields: ["room", "attendees"], fieldValues: { room: "三楼307房", attendees: "陈敬文与罗伯安" }, sourceCharacterIds: ["luo-boan", "chen-jingwen"], expiresAt: "1942-05-13T22:00:00.000Z" },
+    { id: "inspection-order", title: "临时封锁命令", truth: "true", requiredFields: ["checkpoint", "start"], fieldValues: { checkpoint: "西关与三号码头路口", start: "5月14日晚10时" }, sourceCharacterIds: ["lin-ruolan", "han-shijie"], expiresAt: "1942-05-15T12:00:00.000Z" },
+    { id: "enemy-watchlist", title: "敌方重点监视名单", truth: "true", requiredFields: ["targets", "priority"], fieldValues: { targets: "报社、电讯科与沿江货运行", priority: "电讯科技术人员列为第一优先" }, sourceCharacterIds: ["lin-ruolan", "han-shijie"], sourceRequirements: { "lin-ruolan": { familiarity: 14, privateTrust: 10 }, "han-shijie": { familiarity: 12, privateTrust: 6 } }, expiresAt: "1942-05-19T18:00:00.000Z" },
+    { id: "safehouse-raid-plan", title: "交通线搜捕计划", truth: "true", requiredFields: ["locations", "time"], fieldValues: { locations: "旧城钟表铺与江海饭店后巷", time: "5月19日凌晨4时同时搜查" }, sourceCharacterIds: ["old-wu", "shen-manqiu"], sourceRequirements: { "old-wu": { familiarity: 12, privateTrust: 10 }, "shen-manqiu": { familiarity: 10, privateTrust: 8 } }, expiresAt: "1942-05-19T22:00:00.000Z" },
+    { id: "evacuation-route", title: "人员撤离路线", truth: "true", requiredFields: ["route", "contact"], fieldValues: { route: "三号码头经南岸药材船转出", contact: "商会药材行六码头收货员" }, sourceCharacterIds: ["zhao-fusheng", "luo-boan"], sourceRequirements: { "zhao-fusheng": { familiarity: 14, privateTrust: 10 }, "luo-boan": { familiarity: 12, privateTrust: 9 } }, expiresAt: "1942-05-20T18:00:00.000Z" },
   ],
-  objectives: [{ id: "confirm-radio-shipment", required: true, deadline: "1942-05-15T22:00:00.000Z", requiredIntelIds: ["shipment-time", "shipment-place", "shipment-cargo"], minimumConfidence: 0.7, acceptedDeliveryMethods: ["radio", "courier"], recipientId: "organization" }],
+  objectives: [
+    {
+      id: "confirm-radio-shipment", title: "第一任务：确认无线电设备运输", sequence: 1, required: true,
+      deadline: "1942-05-15T22:00:00.000Z", requiredIntelIds: ["shipment-time", "shipment-place", "shipment-cargo"], minimumConfidence: 0.7,
+      acceptedDeliveryMethods: ["radio", "courier"], recipientId: "organization",
+      completionEffects: { investigationPressure: 25, personalSuspicion: 4, interrogation: { interrogatorCharacterId: "han-shijie", delayMinutes: 30 }, notice: "设备运输遭到破坏后，特务机关认定城内存在完整地下网络，开始扩大临检并倒查近期档案与货运记录。" },
+    },
+    {
+      id: "trace-security-crackdown", title: "第二任务：查明特务机关清查部署", sequence: 2, required: true,
+      unlockAfterObjectiveIds: ["confirm-radio-shipment"], deadline: "1942-05-17T22:00:00.000Z", requiredIntelIds: ["archive-audit", "inspection-order", "escort-list"], minimumConfidence: 0.72,
+      acceptedDeliveryMethods: ["radio", "courier"], recipientId: "organization",
+      completionEffects: { investigationPressure: 20, networkExposure: 5, introduceCharacterIds: ["old-wu", "shen-manqiu"], unlockLocationIds: ["wu-clock-shop", "jianghai-hotel"], notice: "组织避开了第一轮清查，但敌方转而搜捕交通线。老吴与沈曼秋分别传来公开可解释的求助，你需要保全人员和备用联络点。" },
+    },
+    {
+      id: "preserve-underground-network", title: "第三任务：保全交通线并组织撤离", sequence: 3, required: true,
+      unlockAfterObjectiveIds: ["trace-security-crackdown"], deadline: "1942-05-20T22:00:00.000Z", requiredIntelIds: ["enemy-watchlist", "safehouse-raid-plan", "evacuation-route"], minimumConfidence: 0.75,
+      acceptedDeliveryMethods: ["radio", "courier"], recipientId: "organization",
+      completionEffects: { investigationPressure: 10, notice: "最后一批警戒名单和撤离安排已经送达，组织开始分批转移人员并切断暴露线路。" },
+    },
+  ],
 };
 
 const fieldLabels: Record<string, Record<string, string>> = {
@@ -237,6 +261,9 @@ const fieldLabels: Record<string, Record<string, string>> = {
   "archive-audit": { scope: "核查范围", investigator: "调查负责人" },
   "hotel-meeting": { room: "会面房间", attendees: "出席人员" },
   "inspection-order": { checkpoint: "封锁检查站", start: "封锁时间" },
+  "enemy-watchlist": { targets: "重点监视对象", priority: "搜查优先级" },
+  "safehouse-raid-plan": { locations: "计划搜查地点", time: "同时行动时间" },
+  "evacuation-route": { route: "撤离路线", contact: "沿途接应人" },
 };
 
 const sharedSourceOrigins: Record<string, Record<string, string>> = {

@@ -9,8 +9,9 @@ export interface GameContext {
   visibility: DifficultyVisibilityPolicy;
   campaign: { id: string; version: string; name: string };
   settlement: { ready: boolean; pendingReceipts: number };
-  locations: { id: string; name: string; district: string; discovered: boolean; stage: "unknown" | "rumored" | "located" | "accessible" | "compromised"; hint: string | null }[];
+  locations: { id: string; name: string; district: string; travelMinutes: Record<string, number>; discovered: boolean; stage: "unknown" | "rumored" | "located" | "accessible" | "compromised"; hint: string | null }[];
   narrativeThreads: Array<{ id: string; title: string; summary: string; status: "active" | "resolved"; sourceEventId: string; updatedAt: string }>;
+  radioSites: Array<{ id: string; name: string; baseRisk: number; available: boolean; discovered: boolean; currentHeat: number; requiresRecruitedCharacterId: string | null }>;
   characters: { id: string; name: string; publicIdentity: string; recruitable: boolean; known: boolean; verifiableIntelIds: string[] }[];
   networkMembers: { id: string; name: string; publicIdentity: string }[];
   recruitmentCandidates: Array<{
@@ -36,7 +37,7 @@ export interface GameContext {
     deadline: string;
     minimumConfidence: number;
     acceptedDeliveryMethods: string[];
-    status: "in_progress" | "ready_to_transmit" | "completed" | "overdue";
+    status: "locked" | "in_progress" | "ready_to_transmit" | "completed" | "overdue";
     remainingMinutes: number;
     intel: Array<{
       id: string;
@@ -63,6 +64,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
   if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    const authenticationExpired = response.status === 401 || (response.status === 403 && contentType.includes("text/html"));
+    if (authenticationExpired && typeof window !== "undefined") {
+      const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.location.assign(`/oauth2/start?rd=${encodeURIComponent(returnTo)}`);
+      throw new Error("登录状态已过期，正在重新登录");
+    }
     const payload = await response.json().catch(() => ({ error: "请求失败" }));
     throw new Error(payload.error || `HTTP ${response.status}`);
   }

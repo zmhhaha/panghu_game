@@ -105,11 +105,14 @@ export function buildCampaignReportBundle(
 }
 
 function summarizeIntelEvidence(intel: WorldState["intel"][string]) {
+  const evidence = intel.evidence ?? [];
   return {
-    totalRecords: intel.evidence?.length ?? 0,
-    corroboratedFields: new Set((intel.evidence ?? []).filter((item) => item.assessment === "corroborates").map((item) => item.field)).size,
-    conflictingFields: new Set((intel.evidence ?? []).filter((item) => item.assessment === "contradicts").map((item) => item.field)).size,
-    dependentRecords: (intel.evidence ?? []).filter((item) => item.assessment === "dependent").length,
+    totalRecords: evidence.length,
+    corroboratedFields: new Set(evidence.filter((item) => item.assessment === "corroborates").map((item) => item.field)).size,
+    conflictingFields: new Set(evidence.filter((item) => item.assessment === "contradicts").map((item) => item.field)).size,
+    dependentRecords: evidence.filter((item) => item.assessment === "dependent").length,
+    sources: [...new Set(evidence.map((item) => item.sourceLabel))],
+    records: evidence.map((item) => item.summary),
   };
 }
 
@@ -129,7 +132,8 @@ function buildTimeline(campaign: CampaignDefinition, events: GameEvent[]): Campa
     "lead.resolved", "narrative.event_resolved", "location.stage_changed", "cover.work_completed", "cover.activity_credited",
     "character.recruitment_progress", "comrade.task_completed", "comrade.task_failed",
     "radio.message_sent", "radio.receipt_received", "investigation.surveillance_started", "player.moved",
-    "player.rested",
+    "player.rested", "mission.objective_completed", "mission.objective_unlocked", "interrogation.scheduled",
+    "interrogation.started", "interrogation.resolved",
   ].includes(event.type));
   return important.slice(-40).map((event) => describeEvent(campaign, event));
 }
@@ -160,6 +164,11 @@ function describeEvent(campaign: CampaignDefinition, event: GameEvent): Campaign
     "comrade.task_completed": ["同志回报", String(payload.report ?? "一项委派任务已经完成")],
     "comrade.task_failed": ["委派受挫", String(payload.report ?? "一项委派任务未能完成")],
     "investigation.surveillance_started": ["敌情变化", `${location?.name ?? "一处地点"}附近出现疑似监视`],
+    "mission.objective_completed": ["任务完成", `${String(payload.title ?? "当前任务")}已经完成，行动影响开始进入全局时间线`],
+    "mission.objective_unlocked": ["后续任务", `组织下达了${String(payload.title ?? "新的任务")}`],
+    "interrogation.scheduled": ["敌方传唤", "警备处要求核对公开身份与近期行踪"],
+    "interrogation.started": ["接受盘问", "敌方正式开始交叉核对公开记录"],
+    "interrogation.resolved": ["盘问结果", payload.outcome === "cleared" ? "暂时洗清嫌疑" : payload.outcome === "watched" ? "被列入继续观察名单" : "公开身份出现明显破绽"],
     "player.moved": ["转移地点", `抵达${location?.name ?? "新的地点"}`],
     "player.rested": ["夜间休息", `休息 ${formatRestDuration(Number(payload.durationMinutes ?? 0))}，恢复了 ${Number(payload.recovery ?? 0)} 点精力`],
   };
@@ -177,5 +186,6 @@ export function renderReportHtml(report: CampaignReport): string {
   const rows = report.timeline.map((item) => `<li><time>${escape(new Date(item.occurredAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }))}</time><strong>${escape(item.title)}</strong><span>${escape(item.detail)}</span></li>`).join("");
   const fieldText = (item: CampaignReport["intel"][number], fields: string[]) => fields.map((field) => item.fieldLabels[field] ?? field).join("、");
   const intel = report.intel.map((item) => `<tr><td>${escape(item.title)}</td><td>${escape(fieldText(item, item.knownFields) || "未完整确认")}</td><td>${escape(fieldText(item, item.deliveredFields ?? []) || "未确认送达")}</td><td>${Math.round(item.confidence * 100)}%</td><td>${escape(item.deliveryMethod ? deliveryLabels[item.deliveryMethod] ?? item.deliveryMethod : "未送出")}</td></tr>`).join("");
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><meta name="viewport" content="width=device-width"><title>${escape(report.campaign.name)} - 战役档案</title><style>body{margin:0;background:#151817;color:#e5e8e4;font:15px/1.7 Arial,sans-serif}main{max-width:900px;margin:auto;padding:48px 24px}h1,h2{font-family:serif;font-weight:500}small,time{color:#929b96}header{border-bottom:1px solid #343b38;padding-bottom:24px}.grade{font-size:52px;color:#76a7a1}section{margin-top:36px}dl{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}dl div,table{border:1px solid #343b38;padding:14px}dt{color:#929b96;font-size:12px}dd{margin:4px 0 0;font-size:20px}table{width:100%;border-collapse:collapse}td,th{padding:10px;border-bottom:1px solid #343b38;text-align:left}li{display:grid;grid-template-columns:150px 110px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid #343b38}@media(max-width:650px){dl{grid-template-columns:1fr}li{grid-template-columns:1fr;gap:2px}}</style></head><body><main><header><small>潜线 · 战役结算档案</small><h1>${escape(report.campaign.name)}</h1><p>${escape(report.summary)}</p><div class="grade">${escape(report.ending.score.grade)}</div><small>${escape(report.ending.title)} · ${escape(report.difficulty.label)}</small></header><section><h2>行动概览</h2><dl><div><dt>总评分</dt><dd>${report.ending.score.total}</dd></div><div><dt>传递情报</dt><dd>${report.statistics.deliveredIntel}</dd></div><div><dt>联络同志</dt><dd>${report.statistics.recruitedComrades}</dd></div></dl></section><section><h2>情报结算</h2><table><thead><tr><th>情报</th><th>已知内容</th><th>确认送达</th><th>可信度</th><th>方式</th></tr></thead><tbody>${intel}</tbody></table></section><section><h2>关键时间线</h2><ol>${rows || "<li><span>没有可公开的关键行动记录</span></li>"}</ol></section></main></body></html>`;
+  const evidence = report.intel.map((item) => `<article><h3>${escape(item.title)}</h3><p><small>来源：${escape(item.evidenceSummary.sources?.join("、") || "无可公开来源")}</small></p><ul>${item.evidenceSummary.records?.map((record) => `<li>${escape(record)}</li>`).join("") || "<li>尚未形成可核验记录</li>"}</ul></article>`).join("");
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><meta name="viewport" content="width=device-width"><title>${escape(report.campaign.name)} - 战役档案</title><style>body{margin:0;background:#151817;color:#e5e8e4;font:15px/1.7 Arial,sans-serif}main{max-width:900px;margin:auto;padding:48px 24px}h1,h2{font-family:serif;font-weight:500}small,time{color:#929b96}header{border-bottom:1px solid #343b38;padding-bottom:24px}.grade{font-size:52px;color:#76a7a1}section{margin-top:36px}dl{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}dl div,table{border:1px solid #343b38;padding:14px}dt{color:#929b96;font-size:12px}dd{margin:4px 0 0;font-size:20px}table{width:100%;border-collapse:collapse}td,th{padding:10px;border-bottom:1px solid #343b38;text-align:left}li{padding:10px 0;border-bottom:1px solid #343b38}.timeline li{display:grid;grid-template-columns:150px 110px 1fr;gap:12px}article{border-bottom:1px solid #343b38;padding:12px 0}@media(max-width:650px){dl{grid-template-columns:1fr}.timeline li{grid-template-columns:1fr;gap:2px}}</style></head><body><main><header><small>潜线 · 战役结算档案</small><h1>${escape(report.campaign.name)}</h1><p>${escape(report.summary)}</p><div class="grade">${escape(report.ending.score.grade)}</div><small>${escape(report.ending.title)} · ${escape(report.difficulty.label)}</small></header><section><h2>行动概览</h2><dl><div><dt>总评分</dt><dd>${report.ending.score.total}</dd></div><div><dt>传递情报</dt><dd>${report.statistics.deliveredIntel}</dd></div><div><dt>联络同志</dt><dd>${report.statistics.recruitedComrades}</dd></div></dl></section><section><h2>情报结算</h2><table><thead><tr><th>情报</th><th>已知内容</th><th>确认送达</th><th>可信度</th><th>方式</th></tr></thead><tbody>${intel}</tbody></table></section><section><h2>情报证据链</h2>${evidence}</section><section><h2>关键时间线</h2><ol class="timeline">${rows || "<li><span>没有可公开的关键行动记录</span></li>"}</ol></section></main></body></html>`;
 }

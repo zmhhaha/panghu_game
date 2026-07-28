@@ -36,7 +36,7 @@ function eventCategory(type: string): EventFilter {
   if (type.startsWith("cover")) return type === "cover.supervisor_check" || type === "cover.absence_recorded" ? "threat" : "movement";
   if (type === "player.moved" || type === "player.waited" || type === "player.rested" || type.startsWith("character.schedule")) return "movement";
   if (type.startsWith("comrade") || type.startsWith("character.recruitment")) return "network";
-  if (type.startsWith("investigation")) return "threat";
+  if (type.startsWith("investigation") || type.startsWith("interrogation")) return "threat";
   return "movement";
 }
 
@@ -44,6 +44,7 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
   const location = context.locations.find((item) => item.id === payload.to || item.id === payload.locationId)?.name;
   const intel = context.intel.find((item) => item.id === payload.intelId)?.title;
   const character = context.characters.find((item) => item.id === payload.characterId || item.id === payload.memberId)?.name;
+  const objective = context.objectives.find((item) => item.id === payload.objectiveId)?.title;
   const reports = typeof payload.report === "string" ? payload.report : "";
   const labels: Record<string, string> = {
     "dialogue.started": "开始对话", "dialogue.turn_completed": "对话推进", "dialogue.ended": "结束对话",
@@ -52,6 +53,8 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
     "intel.transmitted": "传递情报", "radio.message_sent": "发出电报", "radio.receipt_received": "收到回执",
     "comrade.task_completed": "同志任务完成", "comrade.task_failed": "同志任务失败", "character.recruited": "正式招募",
     "investigation.action_taken": "敌方调查行动", "character.schedule_advanced": "人物行程变化",
+    "mission.objective_completed": "任务完成", "mission.objective_unlocked": "后续任务",
+    "interrogation.scheduled": "收到传唤", "interrogation.started": "盘问开始", "interrogation.resolved": "盘问结束",
     "narrative.event_resolved": "剧情事件", "narrative.thread_updated": "调查线程更新", "location.stage_changed": "地点认知变化",
     "cover.work_completed": "完成公开工作", "cover.activity_credited": "形成在岗记录", "cover.leave_approved": "请假登记", "cover.absence_recorded": "异常缺勤", "cover.supervisor_check": "上级核查",
   };
@@ -62,6 +65,14 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
       : event.type === "intel.transmitted" ? `你通过${payload.method === "radio" ? "电台" : "交通员"}传递了${intel ?? "情报"}。`
         : event.type === "dialogue.started" || event.type === "dialogue.ended" ? `${character ?? "目标人物"}${event.type === "dialogue.started" ? "开始与你交谈" : "的对话结束"}。`
           : reports || (typeof payload.summary === "string" ? payload.summary : typeof payload.notice === "string" ? payload.notice : title);
+  if (event.type === "mission.objective_completed") return { title, text: `${objective ?? String(payload.title ?? "当前任务")}已经完成。` };
+  if (event.type === "mission.objective_unlocked") return { title, text: `组织下达了${objective ?? String(payload.title ?? "后续任务")}。` };
+  if (event.type === "interrogation.scheduled") return { title, text: "警备处发来传唤，要求核对你的公开身份与近期行踪。" };
+  if (event.type === "interrogation.started") return { title, text: "敌方盘问正式开始，其他行动暂时中止。" };
+  if (event.type === "interrogation.resolved") {
+    const outcome = payload.outcome === "cleared" ? "暂时洗清嫌疑" : payload.outcome === "watched" ? "被列入继续观察名单" : "公开身份出现明显破绽";
+    return { title, text: `盘问结束：${outcome}。` };
+  }
   return { title, text };
 }
 

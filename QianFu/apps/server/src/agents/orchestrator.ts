@@ -1,6 +1,6 @@
-import type { DialogueAction, DialogueMemory, DialogueTurnAction, RecruitmentTestAction, WorldState } from "@qianfu/core";
+import { getCoverProfile, isIntelUnlocked, type CampaignDefinition, type DialogueAction, type DialogueMemory, type DialogueTurnAction, type RecruitmentTestAction, type WorldState } from "@qianfu/core";
 import { DIALOGUE_TEXT_LIMITS } from "@qianfu/core/dialogue";
-import { LINJIANG_1942 } from "@qianfu/content";
+import { getCampaignDefinition } from "@qianfu/content";
 import { createAgentProvider, parseModelJson, parseNpcResponse, type AgentProvider, type NpcAgentResponse } from "./provider.js";
 import { z } from "zod";
 
@@ -12,20 +12,24 @@ export interface AgentPreparation {
 
 /** Owns global context and gives each NPC only its permitted projection. */
 export class CampaignOrchestrator {
-  constructor(private readonly provider: AgentProvider | null = createAgentProvider()) {
+  constructor(
+    private readonly provider: AgentProvider | null = createAgentProvider(),
+    private readonly resolveCampaign: (id: string, version: string) => CampaignDefinition = getCampaignDefinition,
+  ) {
     console.info(`[QianFu Agent] provider=${provider?.name ?? "fallback"}`);
   }
 
   async prepareDialogue(state: WorldState, action: DialogueAction): Promise<AgentPreparation> {
-    const character = LINJIANG_1942.characters.find((item) => item.id === action.targetCharacterId);
+    const campaign = this.resolveCampaign(state.campaignId, state.campaignVersion);
+    const character = campaign.characters.find((item) => item.id === action.targetCharacterId);
     const memory = state.dialogueMemories?.[action.targetCharacterId] ?? {
       characterId: action.targetCharacterId, summary: "尚未与玩家交谈。", lastPrivateIntent: null, turns: [], lastGoal: null, interactionCount: 0,
     };
-    const directorSummary = this.buildDirectorSummary(state, action);
+    const directorSummary = this.buildDirectorSummary(campaign, state, action);
     if (!character || !this.provider) return { action, provider: "fallback", directorSummary };
 
     try {
-      const npc = await this.runNpcAgent(character, state, action, memory, directorSummary);
+      const npc = await this.runNpcAgent(campaign, character, state, action, memory, directorSummary);
       npc.visibleSpeech = npc.visibleSpeech.slice(0, DIALOGUE_TEXT_LIMITS[action.goal]);
       console.info(`[QianFu Agent] npc=${character.id} provider=${this.provider.name} status=success`);
       return { action: { ...action, agentOutcome: { ...npc, provider: "model" } }, provider: "model", directorSummary };
@@ -50,7 +54,8 @@ export class CampaignOrchestrator {
   }
 
   async prepareRecruitmentTest(state: WorldState, action: RecruitmentTestAction): Promise<RecruitmentTestAction> {
-    const character = LINJIANG_1942.characters.find((item) => item.id === action.targetCharacterId);
+    const campaign = this.resolveCampaign(state.campaignId, state.campaignVersion);
+    const character = campaign.characters.find((item) => item.id === action.targetCharacterId);
     if (!character || !this.provider) return action;
     try {
       const system = 'You are the screening-action agent for a spy game. Describe only observable external behavior during the candidate screening plan. Never reveal hidden alignment, true reliability, backend values, or the final verdict. Output JSON only: {"observation":"an observation under 240 Chinese characters"}.';
@@ -65,7 +70,7 @@ export class CampaignOrchestrator {
   }
 
   private async runNpcAgent(
-    character: typeof LINJIANG_1942.characters[number], state: WorldState,
+    campaign: CampaignDefinition, character: CampaignDefinition["characters"][number], state: WorldState,
     action: DialogueAction, memory: DialogueMemory, scene: string,
   ): Promise<NpcAgentResponse> {
     const provider = this.provider;
@@ -75,6 +80,9 @@ export class CampaignOrchestrator {
     };
     const relationship = state.characters[character.id];
     const recentDialogue = memory.turns.slice(-8).map(({ speaker, text }) => ({ speaker, text }));
+    const cover = getCoverProfile(state.cover.profileId);
+    const localTime = formatLocalSceneTime(state.currentTime);
+    const permittedEvidence = this.buildPermittedEvidence(campaign, state, character.id, action);
 
     const system = [
       `你正在扮演谍战游戏中的${character.name}，公开身份是${character.publicIdentity}。`,
@@ -86,11 +94,16 @@ export class CampaignOrchestrator {
       "通常回复1到4句中文。关系不足时可以回避、反问、撒谎或转移话题，不要为了推进剧情主动泄露情报。",
       `visibleSpeech不得超过${DIALOGUE_TEXT_LIMITS[action.goal]}个字符；${action.goal === "small_talk" ? "寒暄只说简短自然的日常话，不展开长篇叙述。" : action.goal === "long_talk" ? "长谈可以完整表达观点，但仍要像当面交谈。" : "控制在两三句有针对性的话内。"}`,
       "只输出JSON对象：visibleSpeech是对玩家说的话；privateIntent是未说出口的一句真实意图；requestedEffects必须是数组，通常输出[]，需要建议状态变化时元素格式为{type,value,reason}。",
+      `Immutable scene facts: local time is ${localTime}; the player's public identity is ${cover.title}; the NPC is ${character.publicIdentity}. Never contradict these facts.`,
+      "Never borrow another NPC's profession, verbal habits, memories, or concerns. A dock worker must not speak as an editor; an editor must not speak as a merchant or technician.",
+      "Only claim a concrete intelligence fact when it appears in permittedEvidence. If a fact is spoken, evidenceQuote must be an exact non-empty substring copied from visibleSpeech. Otherwise evidenceQuote must be an empty string.",
+      "Output JSON fields: visibleSpeech, privateIntent, evidenceQuote, requestedEffects.",
     ].join("\n");
 
     const user = JSON.stringify({
       scene,
       sceneBoundary: dialogueBoundary(action.goal),
+      immutableScene: { localTime, playerPublicIdentity: cover.title, npcPublicIdentity: character.publicIdentity },
       playerTone: action.tone,
       playerText: action.playerText,
       npcPersonality: personality,
@@ -106,21 +119,83 @@ export class CampaignOrchestrator {
       previousPrivateIntent: memory.lastPrivateIntent,
       recentDialogue,
       interactionCount: memory.interactionCount,
+      permittedEvidence,
     });
     const response = parseNpcResponse(await provider.complete(system, user));
     const previousNpc = memory.turns.filter((turn) => turn.speaker === "npc").at(-1)?.text?.trim();
     if (previousNpc && response.visibleSpeech.trim() === previousNpc) throw new Error("NPC response repeated the previous turn");
     if (response.visibleSpeech.trim() === action.playerText.trim()) throw new Error("NPC response echoed the player");
+    if (response.evidenceQuote && !response.visibleSpeech.includes(response.evidenceQuote)) throw new Error("NPC evidence quote is not visible to the player");
+    if (response.evidenceQuote && !permittedEvidence.some((evidence) => response.evidenceQuote.includes(evidence.value))) {
+      throw new Error("NPC evidence quote did not contain an authorized fact");
+    }
+    validateSceneConsistency(character.id, response.visibleSpeech, action.playerText, localTime);
     return response;
   }
 
-  private buildDirectorSummary(state: WorldState, action: DialogueAction): string {
-    const location = LINJIANG_1942.locations.find((item) => item.id === state.currentLocationId);
-    const targetIntel = action.targetIntelId ? LINJIANG_1942.intel.find((item) => item.id === action.targetIntelId) : null;
+  private buildPermittedEvidence(campaign: CampaignDefinition, state: WorldState, characterId: string, action: DialogueAction) {
+    if (action.goal !== "request_information" && action.goal !== "verify_intel") return [];
+    const session = state.activeDialogue;
+    if (session?.status === "active" && session.characterId === characterId) {
+      const earnedSlots = session.turnCount < 2 ? 0 : Math.floor((session.turnCount - 2) / 5) + 1;
+      if ((session.discoveredFields?.length ?? 0) >= earnedSlots) return [];
+    }
+    const relationship = state.characters[characterId];
+    if (!relationship) return [];
+    const definitions = action.goal === "verify_intel"
+      ? campaign.intel.filter((item) => item.id === action.targetIntelId)
+      : campaign.intel;
+    for (const definition of definitions) {
+      if (!isIntelUnlocked(campaign, state, definition.id)) continue;
+      if (!definition.sourceCharacterIds.includes(characterId)) continue;
+      const requirement = definition.sourceRequirements?.[characterId];
+      if (requirement && (relationship.familiarity < requirement.familiarity || relationship.privateTrust < requirement.privateTrust)) continue;
+      const intel = state.intel[definition.id];
+      if (!intel) continue;
+      const field = action.goal === "verify_intel"
+        ? intel.knownFields.find((candidate) => !intel.evidence.some((item) => item.field === candidate && item.sourceId === characterId))
+        : definition.requiredFields.find((candidate) => !intel.knownFields.includes(candidate));
+      if (!field) continue;
+      const value = definition.fieldValues?.[field];
+      if (!value) continue;
+      return [{
+        intelId: definition.id,
+        intelTitle: definition.title,
+        field,
+        fieldLabel: definition.fieldLabels?.[field] ?? field,
+        value,
+      }];
+    }
+    return [];
+  }
+
+  private buildDirectorSummary(campaign: CampaignDefinition, state: WorldState, action: DialogueAction): string {
+    const location = campaign.locations.find((item) => item.id === state.currentLocationId);
+    const targetIntel = action.targetIntelId ? campaign.intel.find((item) => item.id === action.targetIntelId) : null;
     const session = state.activeDialogue;
     const target = targetIntel ? `；核验对象：${targetIntel.title}（玩家已知字段：${state.intel[targetIntel.id]?.knownFields.map((field) => targetIntel.fieldLabels?.[field] ?? field).join("、") || "无"}）` : "";
     return `时间：${state.currentTime}；地点：${location?.name ?? "未知"}；交谈目标：${action.goal}${target}；本次会话已进行${session?.elapsedMinutes ?? 0}分钟，共${session?.allocatedMinutes ?? action.durationMinutes}分钟。世界规则和情报判定由主控系统负责。`;
   }
+}
+
+function formatLocalSceneTime(currentTime: string): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).format(new Date(currentTime));
+}
+
+function validateSceneConsistency(characterId: string, speech: string, playerText: string, localTime: string) {
+  const hour = Number(localTime.match(/(\d{2}):/)?.[1] ?? 12);
+  if (hour >= 7 && hour < 18 && /大半夜|深更半夜|这么晚|夜里还/.test(speech) && !/昨夜|昨晚|半夜|夜里/.test(playerText)) {
+    throw new Error("NPC contradicted the current time of day");
+  }
+  const roleLeakage: Record<string, RegExp> = {
+    "zhao-fusheng": /稿费|交稿|写进晚报|报社截稿|这篇稿子/,
+    "zhou-qiming": /稿费|商号掌柜|写进晚报/,
+    "chen-jingwen": /稿费|商号掌柜|码头调度/,
+    "lin-ruolan": /入库调度|机房维修|哪家商号的掌柜/,
+  };
+  if (roleLeakage[characterId]?.test(speech)) throw new Error("NPC response leaked another role's persona");
 }
 
 export const campaignOrchestrator = new CampaignOrchestrator();

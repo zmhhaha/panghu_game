@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CampaignEngine, calculateScore, createInitialWorld, toPublicGameEvents, toPublicWorldState, type CampaignDefinition, type WorldState } from "../src/index.js";
+import { CampaignEngine, calculateScore, createInitialWorld, getRadioSites, toPublicGameEvents, toPublicWorldState, type CampaignDefinition, type WorldState } from "../src/index.js";
 
 const campaign: CampaignDefinition = {
   id: "test", version: "1.0.0", engineVersion: "1.0.0", name: "Test",
-  startTime: "1942-05-12T08:00:00.000Z",
+  startTime: "1942-05-12T00:00:00.000Z",
   locations: [
     { id: "office", name: "Office", district: "A", travelMinutes: { station: 20 } },
     { id: "station", name: "Station", district: "A", travelMinutes: { office: 20 } },
@@ -39,17 +39,21 @@ describe("CampaignEngine", () => {
     const first = engine.execute(action);
     const duplicate = engine.execute(action);
     expect(first.state.currentLocationId).toBe("station");
-    expect(first.state.currentTime).toBe("1942-05-12T08:20:00.000Z");
+    expect(first.state.currentTime).toBe("1942-05-12T00:20:00.000Z");
     expect(duplicate.duplicate).toBe(true);
     expect(duplicate.state.currentTime).toBe(first.state.currentTime);
   });
 
   it("finishes after verified intelligence is transmitted", () => {
-    const engine = new CampaignEngine(campaign, createInitialWorld(campaign, "game-2", "user-1"));
+    const state = createInitialWorld(campaign, "game-2", "user-1");
+    state.narrativeThreads = [{ id: "shipment-thread", title: "追查运输", summary: "查清运输安排", status: "active", sourceEventId: "opening", updatedAt: state.currentTime }];
+    const engine = new CampaignEngine(campaign, state);
     engine.execute({ type: "record_intel", intelId: "shipment", fields: ["time"], confidenceDelta: 0.8, durationMinutes: 20, idempotencyKey: "record-1" });
     const result = engine.execute({ type: "transmit_intel", intelId: "shipment", method: "radio", durationMinutes: 20, idempotencyKey: "send-1" });
     expect(result.state.status).toBe("finished");
     expect(result.state.ending?.type).toBe("complete_success");
+    expect(result.state.narrativeThreads?.[0]?.status).toBe("resolved");
+    expect(result.events.some((event) => event.type === "narrative.thread_updated")).toBe(true);
   });
 
   it("does not finish when required fields are missing", () => {
@@ -57,7 +61,18 @@ describe("CampaignEngine", () => {
     engine.execute({ type: "record_intel", intelId: "shipment", fields: [], confidenceDelta: 0.9, durationMinutes: 20, idempotencyKey: "record-2" });
     expect(() => engine.execute({ type: "transmit_intel", intelId: "shipment", method: "radio", durationMinutes: 20, idempotencyKey: "send-2" })).toThrow("no known fields");
     expect(engine.getState().status).toBe("active");
-    expect(engine.getState().currentTime).toBe("1942-05-12T08:20:00.000Z");
+    expect(engine.getState().currentTime).toBe("1942-05-12T00:20:00.000Z");
+  });
+
+  it("treats a completed mission under extreme investigation pressure as costly", () => {
+    const state = createInitialWorld(campaign, "high-pressure-success", "user-1");
+    state.investigation.pressure = 100;
+    const engine = new CampaignEngine(campaign, state);
+    engine.execute({ type: "record_intel", intelId: "shipment", fields: ["time"], confidenceDelta: 0.8, durationMinutes: 20, idempotencyKey: "pressure-record" });
+    const result = engine.execute({ type: "transmit_intel", intelId: "shipment", method: "radio", durationMinutes: 20, idempotencyKey: "pressure-send" });
+    expect(result.state.ending?.type).toBe("costly_success");
+    expect(result.state.ending?.reasons.some((reason) => reason.includes("调查压力"))).toBe(true);
+    expect(result.state.ending?.score.grade).not.toBe("S");
   });
 
   it("moves scheduled characters when the world clock crosses a schedule boundary", () => {
@@ -126,7 +141,7 @@ describe("CampaignEngine", () => {
     expect(result.state.intel.fact.collectedSourceIds).toEqual(["source"]);
   });
 
-  it("limits a dialogue session to one intelligence field while rapport accumulates by turn", () => {
+  it("rewards sustained dialogue with additional intelligence opportunities", () => {
     const conversational: CampaignDefinition = {
       ...campaign,
       characters: [{
@@ -142,8 +157,32 @@ describe("CampaignEngine", () => {
     for (let turn = 0; turn < 10; turn += 1) engine.execute({ type: "dialogue_turn", sessionId: "session-trust", playerText: `Trust ${turn}`, durationMinutes: 2, idempotencyKey: `session-trust-${turn}` });
     engine.execute({ type: "dialogue_end", sessionId: "session-trust", durationMinutes: 0, idempotencyKey: "session-trust-end" });
     engine.execute({ type: "dialogue_start", targetCharacterId: "source", goal: "request_information", tone: "friendly", allocatedMinutes: 30, durationMinutes: 0, idempotencyKey: "session-request" });
-    for (let turn = 0; turn < 15; turn += 1) engine.execute({ type: "dialogue_turn", sessionId: "session-request", playerText: `Question ${turn}`, durationMinutes: 2, idempotencyKey: `session-request-${turn}` });
-    expect(engine.getState().intel.fact.knownFields).toHaveLength(1);
+    for (let turn = 0; turn < 2; turn += 1) engine.execute({ type: "dialogue_turn", sessionId: "session-request", playerText: `Question ${turn}`, durationMinutes: 2, idempotencyKey: `session-request-${turn}` });
+    expect(engine.getState().intel.fact.knownFields).toHaveLength(0);
+    for (let turn = 2; turn < 15; turn += 1) engine.execute({ type: "dialogue_turn", sessionId: "session-request", playerText: `Question ${turn}`, durationMinutes: 2, idempotencyKey: `session-request-${turn}` });
+    expect(engine.getState().intel.fact.knownFields).toEqual(["when", "where"]);
+  });
+
+  it("does not grant intelligence when the model reply states no evidence", () => {
+    const conversational: CampaignDefinition = {
+      ...campaign,
+      characters: [{
+        id: "source", name: "Source", publicIdentity: "Clerk", hiddenAlignment: "organization",
+        initialLocationId: "office", recruitable: false,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
+        reliability: { loyalty: 90, discipline: 70, pressureResistance: 70, courage: 60, competence: 80 },
+      }],
+      intel: [{ id: "fact", title: "Fact", truth: "true", requiredFields: ["when"], fieldValues: { when: "午夜" }, sourceCharacterIds: ["source"], expiresAt: "1942-05-13T20:00:00.000Z" }],
+    };
+    const state = createInitialWorld(conversational, "grounded-dialogue", "user-1");
+    state.characters.source.familiarity = 12;
+    state.characters.source.privateTrust = 10;
+    const engine = new CampaignEngine(conversational, state);
+    engine.execute({
+      type: "dialogue", targetCharacterId: "source", goal: "request_information", tone: "neutral", playerText: "那批货什么时候到？", durationMinutes: 30, idempotencyKey: "model-refusal",
+      agentOutcome: { visibleSpeech: "这件事我不能告诉你。", privateIntent: "拒绝透露", requestedEffects: [], evidenceQuote: "", provider: "model" },
+    });
+    expect(engine.getState().intel.fact.knownFields).toEqual([]);
   });
 
   it("requires rapport, three distinct screening tests, and an explicit recruitment decision", () => {
@@ -252,6 +291,23 @@ describe("public cover identity", () => {
     const dayState = createInitialWorld(coverCampaign, "day-rest", "user-1");
     dayState.currentTime = "1942-05-12T10:00:00.000Z";
     expect(() => new CampaignEngine(coverCampaign, dayState).execute({ type: "rest", sleepMinutes: 8 * 60, durationMinutes: 0, idempotencyKey: "day-rest-action" })).toThrow("只能在夜间");
+  });
+
+  it("lets rest reduce investigation pressure according to difficulty", () => {
+    const state = createInitialWorld(coverCampaign, "pressure-rest", "user-1", "undercover");
+    state.currentTime = "1942-05-12T20:00:00.000Z";
+    state.investigation.pressure = 60;
+    const result = new CampaignEngine(coverCampaign, state).execute({ type: "rest", sleepMinutes: 6 * 60, durationMinutes: 0, idempotencyKey: "pressure-rest-action" });
+    expect(result.state.investigation.pressure).toBeLessThan(60);
+  });
+
+  it("does not retroactively mark the opening day absent when a campaign starts after work", () => {
+    const lateOpeningCampaign = { ...coverCampaign, startTime: "1942-05-12T09:00:00.000Z" };
+    const state = createInitialWorld(lateOpeningCampaign, "late-opening", "user-1", "undercover", "archive_clerk");
+    expect(state.cover.lastAttendanceEvaluatedDate).toBe("1942-05-12");
+    const result = new CampaignEngine(lateOpeningCampaign, state).execute({ type: "wait", durationMinutes: 10, idempotencyKey: "late-opening-wait" });
+    expect(result.state.cover.consecutiveAbsences).toBe(0);
+    expect(result.events.some((event) => event.type === "cover.absence_recorded")).toBe(false);
   });
 
   it("does not allow conversations with NPCs outside their scheduled public routine", () => {
@@ -444,6 +500,113 @@ describe("field-level intelligence evidence", () => {
   });
 });
 
+describe("sequential missions, interrogation, and radio sites", () => {
+  const sequentialCampaign: CampaignDefinition = {
+    ...campaign,
+    locations: [
+      { id: "archive-office", name: "Archive", district: "A", travelMinutes: { "safe-flat": 20, "ally-shop": 20 } },
+      { id: "safe-flat", name: "Safe Flat", district: "B", travelMinutes: { "archive-office": 20, "ally-shop": 20 }, radioSite: { baseRisk: 5, initiallyAvailable: true } },
+      { id: "ally-shop", name: "Ally Shop", district: "B", travelMinutes: { "archive-office": 20, "safe-flat": 20 }, radioSite: { baseRisk: 8, requiresRecruitedCharacterId: "ally" } },
+    ],
+    characters: [{
+      id: "ally", name: "Ally", publicIdentity: "Shopkeeper", hiddenAlignment: "organization", initialLocationId: "ally-shop", recruitable: true,
+      schedule: [{ startMinute: 0, endMinute: 1440, locationId: "ally-shop", activity: "work" }],
+      reliability: { loyalty: 90, discipline: 80, pressureResistance: 70, courage: 70, competence: 80 },
+    }, {
+      id: "interrogator", name: "Interrogator", publicIdentity: "Investigator", hiddenAlignment: "hostile", initialLocationId: "archive-office", recruitable: false,
+      schedule: [{ startMinute: 0, endMinute: 1440, locationId: "archive-office", activity: "work" }],
+      reliability: { loyalty: 10, discipline: 90, pressureResistance: 90, courage: 80, competence: 90 },
+    }],
+    intel: ["first", "second", "third"].map((id) => ({
+      id, title: id, truth: "true" as const, requiredFields: ["fact"], sourceCharacterIds: [], expiresAt: "1942-05-20T20:00:00.000Z",
+    })),
+    objectives: [
+      { id: "mission-1", title: "任务一", sequence: 1, required: true, deadline: "1942-05-15T20:00:00.000Z", requiredIntelIds: ["first"], minimumConfidence: 0.7, acceptedDeliveryMethods: ["radio"], recipientId: "organization", completionEffects: { investigationPressure: 20, notice: "敌方扩大清查。" } },
+      { id: "mission-2", title: "任务二", sequence: 2, required: true, unlockAfterObjectiveIds: ["mission-1"], deadline: "1942-05-17T20:00:00.000Z", requiredIntelIds: ["second"], minimumConfidence: 0.7, acceptedDeliveryMethods: ["radio"], recipientId: "organization", completionEffects: { investigationPressure: 10, notice: "敌方开始追查交通线。" } },
+      { id: "mission-3", title: "任务三", sequence: 3, required: true, unlockAfterObjectiveIds: ["mission-2"], deadline: "1942-05-20T20:00:00.000Z", requiredIntelIds: ["third"], minimumConfidence: 0.7, acceptedDeliveryMethods: ["radio"], recipientId: "organization" },
+    ],
+  };
+
+  const completeIntel = (engine: CampaignEngine, intelId: string) => {
+    engine.execute({ type: "record_intel", intelId, fields: ["fact"], confidenceDelta: 0.8, durationMinutes: 10, idempotencyKey: `record-${intelId}` });
+    return engine.execute({ type: "transmit_intel", intelId, method: "radio", durationMinutes: 10, idempotencyKey: `send-${intelId}` });
+  };
+
+  it("locks future intelligence and continues into the second mission instead of settling", () => {
+    const engine = new CampaignEngine(sequentialCampaign, createInitialWorld(sequentialCampaign, "sequential-one", "user-1"));
+    expect(() => engine.execute({ type: "record_intel", intelId: "second", fields: ["fact"], confidenceDelta: 0.8, durationMinutes: 10, idempotencyKey: "locked-second" })).toThrow("后续任务尚未解锁");
+    const result = completeIntel(engine, "first");
+    expect(result.state.completedObjectiveIds).toEqual(["mission-1"]);
+    expect(result.state.status).toBe("active");
+    expect(result.events.some((event) => event.type === "mission.objective_completed")).toBe(true);
+    expect(result.events.some((event) => event.type === "mission.objective_unlocked")).toBe(true);
+    expect(result.state.investigation.pressure).toBeGreaterThanOrEqual(20);
+  });
+
+  it("settles only after all three missions and applies each completion effect once", () => {
+    const engine = new CampaignEngine(sequentialCampaign, createInitialWorld(sequentialCampaign, "sequential-all", "user-1"));
+    completeIntel(engine, "first");
+    completeIntel(engine, "second");
+    const result = completeIntel(engine, "third");
+    expect(result.state.completedObjectiveIds).toEqual(["mission-1", "mission-2", "mission-3"]);
+    expect(new Set(result.state.completedObjectiveIds).size).toBe(3);
+    expect(result.state.status).toBe("finished");
+    expect(result.state.ending?.type).toMatch(/success/);
+  });
+
+  it("starts with one usable radio safehouse and unlocks an ally site only after recruitment", () => {
+    const state = createInitialWorld(sequentialCampaign, "radio-sites", "user-1");
+    expect(state.discoveredLocationIds).toContain("safe-flat");
+    expect(getRadioSites(sequentialCampaign, state).find((site) => site.id === "safe-flat")?.available).toBe(true);
+    expect(getRadioSites(sequentialCampaign, state).find((site) => site.id === "ally-shop")?.available).toBe(false);
+
+    state.currentLocationId = "safe-flat";
+    state.intel.first.knownFields = ["fact"];
+    state.intel.first.confidence = 0.8;
+    const sent = new CampaignEngine(sequentialCampaign, state).execute({
+      type: "send_radio_message", items: [{ intelId: "first", fields: ["fact"] }], format: "compressed", codebookId: "book_cipher",
+      timing: "immediate", locationId: "safe-flat", durationMinutes: 0, idempotencyKey: "safehouse-radio",
+    });
+    expect(sent.state.radio.transmissions).toHaveLength(1);
+
+    state.network.activeMemberIds.push("ally");
+    expect(getRadioSites(sequentialCampaign, state).find((site) => site.id === "ally-shop")?.available).toBe(true);
+  });
+
+  it("activates a delayed interrogation, blocks other actions, and resolves after three answers", () => {
+    const interrogationCampaign: CampaignDefinition = {
+      ...sequentialCampaign,
+      objectives: sequentialCampaign.objectives.map((objective) => objective.id === "mission-1" ? {
+        ...objective,
+        completionEffects: { investigationPressure: 20, interrogation: { interrogatorCharacterId: "interrogator", delayMinutes: 30 }, notice: "敌方发出传唤。" },
+      } : objective),
+    };
+    const engine = new CampaignEngine(interrogationCampaign, createInitialWorld(interrogationCampaign, "interrogation-flow", "user-1"));
+    completeIntel(engine, "first");
+    expect(engine.getState().interrogation?.status).toBe("pending");
+    engine.execute({ type: "wait", durationMinutes: 30, idempotencyKey: "wait-for-interrogation" });
+    expect(engine.getState().interrogation?.status).toBe("active");
+    expect(() => engine.execute({ type: "move", destinationId: "safe-flat", durationMinutes: 20, idempotencyKey: "evade-interrogation" })).toThrow("必须先完成回答");
+
+    for (let index = 0; index < 3; index += 1) {
+      engine.execute({ type: "interrogation_answer", interrogationId: "mission-1:interrogation", strategy: "formal", playerText: `我按档案科登记调阅了公文，值班同事可以核对第${index + 1}项记录。`, durationMinutes: 10, idempotencyKey: `interrogation-answer-${index}` });
+    }
+    expect(engine.getState().interrogation?.status).toBe("resolved");
+    expect(engine.getState().interrogation?.outcome).toBe("cleared");
+    const publicState = toPublicWorldState(engine.getState());
+    expect(publicState.interrogation?.answers[0]).not.toHaveProperty("text");
+  });
+
+  it("migrates old saves without mission and interrogation state", () => {
+    const state = createInitialWorld(sequentialCampaign, "old-sequential-save", "user-1");
+    delete (state as { completedObjectiveIds?: string[] }).completedObjectiveIds;
+    delete (state as { interrogation?: WorldState["interrogation"] }).interrogation;
+    const migrated = new CampaignEngine(sequentialCampaign, state).getState();
+    expect(migrated.completedObjectiveIds).toEqual([]);
+    expect(migrated.interrogation).toBeNull();
+  });
+});
+
 describe("enemy investigation", () => {
   const investigationCampaign: CampaignDefinition = {
     ...campaign,
@@ -534,7 +697,7 @@ describe("radio transmission workflow", () => {
       format: "full", codebookId: "one_time_pad", timing: "scheduled", locationId: "wu-clock-shop",
       durationMinutes: 0, idempotencyKey: "radio-send",
     });
-    expect(sent.state.currentTime).toBe("1942-05-12T10:40:00.000Z");
+    expect(sent.state.currentTime).toBe("1942-05-12T01:40:00.000Z");
     expect(sent.state.radio.transmissions[0]?.receiptStatus).toBe("pending");
     expect(sent.state.intel.shipment.deliveredFields).toEqual([]);
     expect(sent.state.radio.codebooks.find((item) => item.id === "one_time_pad")?.usesRemaining).toBe(1);
@@ -568,7 +731,7 @@ describe("radio transmission workflow", () => {
   it("keeps a campaign open while an on-time transmission is awaiting its receipt", () => {
     const closeDeadlineCampaign: CampaignDefinition = {
       ...radioCampaign,
-      objectives: [{ ...radioCampaign.objectives[0], deadline: "1942-05-12T08:40:00.000Z" }],
+      objectives: [{ ...radioCampaign.objectives[0], deadline: "1942-05-12T00:40:00.000Z" }],
     };
     const state = createInitialWorld(closeDeadlineCampaign, "pending-deadline", "user-1");
     state.intel.shipment.knownFields = ["time"];
@@ -579,7 +742,7 @@ describe("radio transmission workflow", () => {
       format: "compressed", codebookId: "one_time_pad", timing: "immediate", locationId: "wu-clock-shop",
       durationMinutes: 0, idempotencyKey: "deadline-radio-send",
     });
-    expect(sent.state.currentTime).toBe("1942-05-12T08:40:00.000Z");
+    expect(sent.state.currentTime).toBe("1942-05-12T00:40:00.000Z");
     expect(sent.state.status).toBe("active");
     expect(sent.state.radio.transmissions[0]?.receiptStatus).toBe("pending");
   });

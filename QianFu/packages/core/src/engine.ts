@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { DIALOGUE_TEXT_LIMITS } from "./dialogue.js";
 import type {
   ActionResult, CampaignDefinition, CampaignEnding, CharacterState, GameAction,
-  GameEvent, IntelEvidenceSourceType, IntelState, LocationKnowledgeStage, NarrativeThreadState, RadioMessageFormat, RecruitmentEvidenceResult, RecruitmentTestType, ScoreBreakdown, WorldState,
+  GameEvent, IntelEvidenceSourceType, IntelState, InterrogationStrategy, LocationKnowledgeStage, MissionObjective, NarrativeThreadState, RadioMessageFormat, RecruitmentEvidenceResult, RecruitmentTestType, ScoreBreakdown, WorldState,
 } from "./types.js";
 import { DIFFICULTIES } from "./difficulties.js";
 import { getCoverProfile } from "./cover-profiles.js";
@@ -67,7 +67,15 @@ export function createInitialWorld(
     { id: item.id, knownFields: [], confidence: 0, collectedSourceIds: [], evidence: [], deliveredFields: [], deliveredAt: null, deliveryMethod: null },
   ]));
   const startingLocationId = profileApplies ? coverProfile.startingLocationId : campaign.locations[0]?.id ?? "";
-  const initiallyDiscovered = profileApplies ? [coverProfile.startingLocationId] : campaign.locations.slice(0, 3).map((location) => location.id);
+  const initiallyDiscovered = [...new Set([
+    ...(profileApplies ? [coverProfile.startingLocationId] : campaign.locations.slice(0, 3).map((location) => location.id)),
+    ...campaign.locations.filter((location) => location.radioSite?.initiallyAvailable).map((location) => location.id),
+  ])];
+  const cover = createInitialCoverState(coverProfile.id);
+  if (coverProfile.workHours && minuteOfDay(campaign.startTime) >= coverProfile.workHours.endMinute) {
+    // A campaign that opens after the shift cannot retroactively punish the player for that day.
+    cover.lastAttendanceEvaluatedDate = coverDate(campaign.startTime);
+  }
 
   return {
     gameInstanceId,
@@ -89,13 +97,14 @@ export function createInitialWorld(
     resolvedLeadIds: [],
     resolvedNarrativeEventIds: [],
     narrativeThreads: [],
+    completedObjectiveIds: [],
     status: "active",
     stateVersion: 0,
     lastEventSeq: 0,
     playerEnergy: 100,
     playerStress: 0,
     personalSuspicion: 0,
-    cover: createInitialCoverState(coverProfile.id),
+    cover,
     characters,
     dialogueMemories,
     activeDialogue: null,
@@ -115,6 +124,7 @@ export function createInitialWorld(
       evidence: [],
       lastActionAt: null,
     },
+    interrogation: null,
     ending: null,
     closedAt: null,
   };
@@ -155,6 +165,9 @@ export class CampaignEngine {
     this.state.resolvedLeadIds ??= [];
     this.state.resolvedNarrativeEventIds ??= [];
     this.state.narrativeThreads ??= [];
+    this.state.completedObjectiveIds ??= campaign.objectives
+      .filter((objective) => objectiveSatisfied(campaign, this.state, objective))
+      .map((objective) => objective.id);
     this.state.investigation ??= {
       pressure: 0,
       locationHeat: Object.fromEntries(campaign.locations.map((location) => [location.id, 0])),
@@ -166,6 +179,7 @@ export class CampaignEngine {
     this.state.investigation.surveillanceLocationIds ??= [];
     this.state.investigation.locationHeat ??= {};
     for (const location of campaign.locations) this.state.investigation.locationHeat[location.id] ??= 0;
+    this.state.interrogation ??= null;
     this.state.network.tasks ??= [];
     this.state.cover ??= createInitialCoverState();
     this.state.cover.completedWorkDates ??= [];
@@ -227,6 +241,14 @@ export class CampaignEngine {
       });
     };
 
+    if (next.interrogation?.status === "pending" && Date.parse(next.currentTime) >= Date.parse(next.interrogation.dueAt)) {
+      next.interrogation.status = "active";
+      append("interrogation.started", { interrogationId: next.interrogation.id, interrogatorCharacterId: next.interrogation.interrogatorCharacterId });
+    }
+    if (next.interrogation?.status === "active" && action.type !== "interrogation_answer") {
+      throw new Error("敌方盘问正在进行，必须先完成回答");
+    }
+
     let narration = "";
     let npcReply: string | undefined;
     let elapsedDuration = action.durationMinutes;
@@ -259,12 +281,18 @@ export class CampaignEngine {
         if (action.playerText.length > textLimit) throw new Error(`“${session.goal}”每轮发言最多 ${textLimit} 个字符`);
         const definition = this.campaign.characters.find((item) => item.id === session.characterId);
         if (!definition) throw new Error("Unknown character");
-        const legacyAction = { type: "dialogue" as const, targetCharacterId: session.characterId, goal: session.goal, tone: session.tone, targetIntelId: session.targetIntelId ?? undefined, playerText: action.playerText, durationMinutes: 10, idempotencyKey: action.idempotencyKey };
-        const discovery = resolveDialogue(this.campaign, next, definition, legacyAction, (session.discoveredFields?.length ?? 0) === 0, 0.25);
+        const legacyAction = { type: "dialogue" as const, targetCharacterId: session.characterId, goal: session.goal, tone: session.tone, targetIntelId: session.targetIntelId ?? undefined, playerText: action.playerText, durationMinutes: 10, idempotencyKey: action.idempotencyKey, agentOutcome: action.agentOutcome };
+        const groundedAgentReply = !action.agentOutcome || Boolean(
+          action.agentOutcome.evidenceQuote
+          && action.agentOutcome.visibleSpeech.includes(action.agentOutcome.evidenceQuote),
+        );
+        const earnedDiscoverySlots = session.turnCount < 2 ? 0 : Math.floor((session.turnCount - 2) / 5) + 1;
+        const allowDiscovery = groundedAgentReply && (session.discoveredFields?.length ?? 0) < earnedDiscoverySlots;
+        const discovery = resolveDialogue(this.campaign, next, definition, legacyAction, allowDiscovery, 0.25);
         const memory = next.dialogueMemories[definition.id];
         if (!memory) throw new Error("Dialogue memory is unavailable");
         memory.turns.push({ speaker: "player", text: action.playerText.trim(), at: next.currentTime });
-        npcReply = action.agentOutcome?.visibleSpeech ?? generateNpcReply(definition, next, legacyAction, memory, discovery !== null);
+        npcReply = action.agentOutcome?.visibleSpeech ?? generateNpcReply(this.campaign, definition, next, legacyAction, memory, discovery);
         memory.turns.push({ speaker: "npc", text: npcReply, at: next.currentTime });
         if (action.agentOutcome?.privateIntent) memory.lastPrivateIntent = action.agentOutcome.privateIntent;
         memory.turns = memory.turns.slice(-8); memory.interactionCount += 1; memory.lastGoal = session.goal; memory.summary = summarizeMemory(memory, definition);
@@ -328,6 +356,7 @@ export class CampaignEngine {
         const intel = next.intel[action.intelId];
         const definition = this.campaign.intel.find((item) => item.id === action.intelId);
         if (!intel || !definition) throw new Error("Unknown intelligence item");
+        if (!isIntelUnlocked(this.campaign, next, action.intelId)) throw new Error("该情报所属的后续任务尚未解锁");
         const acceptedFields = action.fields.filter((field) => definition.requiredFields.includes(field));
         intel.knownFields = [...new Set([...intel.knownFields, ...acceptedFields])];
         for (const field of acceptedFields) addIntelEvidence(this.campaign, next, definition, field, "player-record", "个人记录", "document", `${action.idempotencyKey}:${field}`, false);
@@ -357,7 +386,7 @@ export class CampaignEngine {
       case "send_radio_message": {
         if (action.durationMinutes !== 0) throw new Error("电文耗时由服务端计算");
         if (action.locationId !== next.currentLocationId) throw new Error("必须先抵达选定的发报地点");
-        const siteRisk = radioSiteRisk(action.locationId);
+        const siteRisk = radioSiteRisk(this.campaign, next, action.locationId);
         if (siteRisk === null) throw new Error("当前地点无法安全架设电台");
         const items = normalizeRadioItems(this.campaign, next, action.items);
         const fieldCount = items.reduce((total, item) => total + item.fields.length, 0);
@@ -413,11 +442,15 @@ export class CampaignEngine {
         if (action.playerText.length > textLimit) throw new Error(`“${action.goal}”每轮发言最多 ${textLimit} 个字符`);
         const minimumDialogueDuration = action.goal === "small_talk" ? 10 : action.goal === "build_trust" || action.goal === "probe_attitude" || action.goal === "verify_intel" ? 20 : 30;
         if (action.durationMinutes < minimumDialogueDuration) throw new Error("Dialogue duration is too short for this goal");
-        const discovery = resolveDialogue(this.campaign, next, definition, action);
+        const groundedAgentReply = !action.agentOutcome || Boolean(
+          action.agentOutcome.evidenceQuote
+          && action.agentOutcome.visibleSpeech.includes(action.agentOutcome.evidenceQuote),
+        );
+        const discovery = resolveDialogue(this.campaign, next, definition, action, groundedAgentReply);
         const memory = next.dialogueMemories[definition.id];
         if (memory) {
           memory.turns.push({ speaker: "player", text: action.playerText.trim(), at: next.currentTime });
-          npcReply = action.agentOutcome?.visibleSpeech ?? generateNpcReply(definition, next, action, memory, discovery !== null);
+          npcReply = action.agentOutcome?.visibleSpeech ?? generateNpcReply(this.campaign, definition, next, action, memory, discovery);
           memory.turns.push({ speaker: "npc", text: npcReply, at: next.currentTime });
           if (action.agentOutcome?.privateIntent) memory.lastPrivateIntent = action.agentOutcome.privateIntent;
           memory.turns = memory.turns.slice(-8);
@@ -594,6 +627,39 @@ export class CampaignEngine {
         narration = `你收起了当天的行动安排，休息了 ${formatRestDuration(rest.minutes)}。`;
         break;
       }
+      case "interrogation_answer": {
+        const interrogation = next.interrogation;
+        if (!interrogation || interrogation.status !== "active" || interrogation.id !== action.interrogationId) throw new Error("当前没有对应的盘问");
+        if (action.durationMinutes !== 10) throw new Error("每次盘问回答耗时 10 分钟");
+        const text = action.playerText.trim();
+        if (text.length < 4 || text.length > 300) throw new Error("盘问回答应为 4 至 300 个字符");
+        const question = interrogation.questions[interrogation.answers.length];
+        if (!question) throw new Error("盘问问题已经回答完毕");
+        interrogation.consistency = clamp(interrogation.consistency + interrogationAnswerScore(next, action.strategy, text), 0, 100);
+        interrogation.answers.push({ question, text, strategy: action.strategy, at: next.currentTime });
+        append("interrogation.answer_recorded", { interrogationId: interrogation.id, questionNumber: interrogation.answers.length, strategy: action.strategy, consistency: interrogation.consistency });
+        if (interrogation.answers.length >= interrogation.questions.length) {
+          interrogation.status = "resolved";
+          interrogation.outcome = interrogation.consistency >= 62 ? "cleared" : interrogation.consistency >= 42 ? "watched" : "compromised";
+          if (interrogation.outcome === "cleared") {
+            next.personalSuspicion = clamp(next.personalSuspicion - 8);
+            next.investigation.pressure = clamp(next.investigation.pressure - 10);
+            narration = "你的说法与公开记录基本吻合。韩世杰暂时放下笔，但仍提醒你不要离城。";
+          } else if (interrogation.outcome === "watched") {
+            next.personalSuspicion = clamp(next.personalSuspicion + 5 * next.difficulty.enemyResponseSpeed);
+            narration = "韩世杰没有抓住明确破绽，却将你的名字留在了继续观察的名单上。";
+          } else {
+            next.personalSuspicion = clamp(next.personalSuspicion + 15 * next.difficulty.enemyResponseSpeed);
+            next.cover.supervisorSuspicion = clamp(next.cover.supervisorSuspicion + 12);
+            next.investigation.pressure = clamp(next.investigation.pressure + 10);
+            narration = "前后说法出现明显漏洞。韩世杰要求补查你的考勤、来往和近期出入记录。";
+          }
+          append("interrogation.resolved", { interrogationId: interrogation.id, outcome: interrogation.outcome, consistency: interrogation.consistency });
+        } else {
+          narration = `韩世杰没有评价，只翻到下一页：“${interrogation.questions[interrogation.answers.length]}”`;
+        }
+        break;
+      }
     }
 
     const previousTime = next.currentTime;
@@ -608,12 +674,21 @@ export class CampaignEngine {
       const tickNotices = [
         ...advanceComradeTasks(this.campaign, next, append),
         ...advanceRadioReceipts(next, append),
+        ...advanceMissionObjectives(this.campaign, next, append),
         ...advanceCoverIdentity(next, append),
-        ...advanceEnemyInvestigation(next, append),
+        ...advanceInterrogation(next, append),
+        ...advanceEnemyInvestigation(next, append, action),
       ];
       notices.push(...tickNotices);
       if (next.activeDialogue && tickNotices.length > 0) {
         next.activeDialogue.transcript.push(...tickNotices.map((text) => ({ speaker: "system" as const, text, at: next.currentTime })));
+      }
+      if (next.activeDialogue?.status === "active" && next.interrogation?.status === "active") {
+        next.activeDialogue.status = "completed";
+        const notice = "警备处的传唤打断了交谈，你必须立即去接受盘问。";
+        next.activeDialogue.transcript.push({ speaker: "system", text: notice, at: next.currentTime });
+        append("dialogue.interrupted", { characterId: next.activeDialogue.characterId, reason: "interrogation" });
+        notices.push(notice);
       }
       if (next.activeDialogue?.status === "active") {
         const speaker = this.campaign.characters.find((character) => character.id === next.activeDialogue?.characterId);
@@ -627,7 +702,9 @@ export class CampaignEngine {
       }
     }
     next.currentTime = finalTime;
+    notices.push(...advanceMissionObjectives(this.campaign, next, append));
     notices.push(...advanceNarrativeEvents(this.campaign, next, append));
+    resolveCompletedNarrativeThreads(this.campaign, next, append);
     next.playerEnergy = action.type === "rest"
       ? clamp(next.playerEnergy + energyRecovery)
       : clamp(next.playerEnergy - actionEnergyCost(action, elapsedDuration, previousTime));
@@ -648,11 +725,12 @@ export class CampaignEngine {
 }
 
 function generateNpcReply(
+  campaign: CampaignDefinition,
   definition: CampaignDefinition["characters"][number],
   state: WorldState,
   action: Extract<GameAction, { type: "dialogue" }>,
   memory: NonNullable<WorldState["dialogueMemories"][string]>,
-  discovered: boolean,
+  discovery: { intelId: string; field: string; verified: boolean; assessment: string } | null,
 ): string {
   const personality = definition.personality ?? { traits: [], speechStyle: "克制", values: [], fears: [], verbalHabits: ["嗯"], sensitiveTopics: [] };
   const habits = personality.verbalHabits;
@@ -684,14 +762,11 @@ function generateNpcReply(
     return smallTalk[memory.interactionCount % smallTalk.length];
   }
   if (action.goal === "apply_pressure") return `${habit}。你问得太直接了，我们最好换个话题。`;
-  if (discovered) return `${habit}，这件事我可以透露一点，细节等确认后再说。`;
+  if (discovery) {
+    return groundedFallbackDisclosure(campaign, definition, discovery, state);
+  }
   if (action.goal === "request_information") {
-    const prompts = [
-      "\u7a3f\u4ef6\u53ef\u4ee5\u8c08\uff0c\u4f46\u6211\u8981\u5148\u77e5\u9053\u4f60\u7684\u4fe1\u6e90\u662f\u4eb2\u89c1\u3001\u6587\u4ef6\uff0c\u8fd8\u662f\u542c\u6765\u7684\u3002",
-      "\u5982\u679c\u771f\u6709\u4fe1\u6e90\uff0c\u7ed9\u6211\u4e00\u4e2a\u53ef\u4ee5\u72ec\u7acb\u6838\u5bf9\u7684\u7ec6\u8282\uff0c\u4e0d\u8981\u53ea\u8bf4\u6709\u4eba\u8bf4\u3002",
-      "\u6211\u4e0d\u53ea\u770b\u6d88\u606f\u7684\u5927\u5c0f\uff0c\u8fd8\u8981\u770b\u5b83\u4f1a\u4e0d\u4f1a\u8fde\u7d2f\u5230\u5199\u7a3f\u7684\u4eba\u3002",
-      "\u4ef7\u94b1\u53ef\u4ee5\u7b49\uff0c\u5148\u8ba9\u6211\u5224\u65ad\u5185\u5bb9\u503c\u4e0d\u503c\u5f97\u5199\u8fdb\u665a\u62a5\u3002",
-    ];
+    const prompts = fallbackInformationPrompts(definition.id);
     return prompts[memory.interactionCount % prompts.length];
   }
   if (action.goal === "recruit_probe") return `${habit}，信任不是一句话能换来的，先从一件小事开始吧。`;
@@ -747,6 +822,33 @@ function resolveCampaignLeads(
     hints.push(`线索：${lead.hint}`);
   }
   return hints;
+}
+
+function fallbackInformationPrompts(characterId: string): string[] {
+  const prompts: Record<string, string[]> = {
+    "chen-jingwen": ["档案上的事，先说清楚调阅事由和经手科室。", "没有档号和签章，我不能凭一句话替你翻底册。"],
+    "zhou-qiming": ["设备的事要看编号和检修日期，光凭传闻判断不了。", "把参数说具体些，我才能判断是哪一批机器。"],
+    "zhao-fusheng": ["码头的底账不认人情，只认回执日期、货主和班次。", "你先说是哪一班货，我再看看手里的收货记录。"],
+    "lin-ruolan": ["稿件可以谈，但信源和公开记录至少要能对上一处。", "先把消息的来路说清楚，我才知道它能不能见报。"],
+  };
+  return prompts[characterId] ?? ["把日期、编号和经手人说清楚，我才能替你核对。", "这件事不能只凭传闻，先给我一个可核对的细节。"];
+}
+
+function groundedFallbackDisclosure(
+  campaign: CampaignDefinition,
+  character: CampaignDefinition["characters"][number],
+  discovery: { intelId: string; field: string; verified: boolean },
+  state: WorldState,
+): string {
+  const definition = campaign.intel.find((item) => item.id === discovery.intelId);
+  const fieldLabel = definition?.fieldLabels?.[discovery.field] ?? discovery.field;
+  const fieldValue = definition?.fieldValues?.[discovery.field];
+  const evidence = state.intel[discovery.intelId]?.evidence
+    .find((item) => item.field === discovery.field && item.sourceId === character.id);
+  const detail = fieldValue
+    ? `${fieldLabel}记的是“${fieldValue}”。`
+    : evidence?.summary ?? "这条记录我只见过一次，还需要你另找来源核对。";
+  return discovery.verified ? `我重新核过了。${detail}` : `我只说我亲眼见到的：${detail}`;
 }
 
 function advanceNarrativeEvents(
@@ -813,6 +915,126 @@ function advanceNarrativeEvents(
   return notices;
 }
 
+function resolveCompletedNarrativeThreads(
+  campaign: CampaignDefinition,
+  state: WorldState,
+  append: (type: string, payload: unknown) => void,
+) {
+  const required = campaign.objectives.filter((objective) => objective.required);
+  if (required.length === 0 || !required.every((objective) => objectiveSatisfied(campaign, state, objective))) return;
+  for (const thread of state.narrativeThreads ?? []) {
+    if (thread.status === "resolved") continue;
+    thread.status = "resolved";
+    thread.updatedAt = state.currentTime;
+    append("narrative.thread_updated", { ...thread, resolution: "核心目标已经完成并得到组织确认" });
+  }
+}
+
+function advanceMissionObjectives(
+  campaign: CampaignDefinition,
+  state: WorldState,
+  append: (type: string, payload: unknown) => void,
+): string[] {
+  const completedIds = state.completedObjectiveIds ?? (state.completedObjectiveIds = []);
+  const notices: string[] = [];
+  for (const objective of campaign.objectives
+    .filter((item) => item.required)
+    .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))) {
+    if (completedIds.includes(objective.id) || !isObjectiveUnlocked(state, objective)) continue;
+    if (!objectiveSatisfied(campaign, state, objective)) continue;
+    completedIds.push(objective.id);
+    const effects = objective.completionEffects;
+    if (effects) {
+      state.investigation.pressure = clamp(state.investigation.pressure + (effects.investigationPressure ?? 0));
+      state.personalSuspicion = clamp(state.personalSuspicion + (effects.personalSuspicion ?? 0));
+      state.network.exposure = clamp(state.network.exposure + (effects.networkExposure ?? 0));
+      for (const characterId of effects.introduceCharacterIds ?? []) {
+        if (state.characters[characterId] && !state.knownCharacterIds.includes(characterId)) {
+          state.knownCharacterIds.push(characterId);
+          append("character.introduced", { characterId, objectiveId: objective.id, hint: effects.notice });
+        }
+      }
+      for (const locationId of effects.unlockLocationIds ?? []) {
+        if (!campaign.locations.some((location) => location.id === locationId)) continue;
+        if (!state.discoveredLocationIds.includes(locationId)) state.discoveredLocationIds.push(locationId);
+        state.locationKnowledge ??= {};
+        state.locationKnowledge[locationId] = { stage: "accessible", sourceEventId: objective.id, hint: effects.notice, updatedAt: state.currentTime };
+        append("location.stage_changed", { locationId, stage: "accessible", objectiveId: objective.id, hint: effects.notice });
+      }
+      if (effects.interrogation && (!state.interrogation || state.interrogation.status === "resolved")) {
+        const interrogator = campaign.characters.find((character) => character.id === effects.interrogation?.interrogatorCharacterId);
+        if (interrogator && !state.knownCharacterIds.includes(interrogator.id)) {
+          state.knownCharacterIds.push(interrogator.id);
+          append("character.introduced", { characterId: interrogator.id, objectiveId: objective.id, hint: "敌方以公开调查名义安排盘问" });
+        }
+        state.interrogation = {
+          id: `${objective.id}:interrogation`, triggerObjectiveId: objective.id,
+          interrogatorCharacterId: effects.interrogation.interrogatorCharacterId,
+          status: "pending", dueAt: addMinutes(state.currentTime, effects.interrogation.delayMinutes),
+          questions: buildInterrogationQuestions(state.cover.profileId), answers: [], consistency: 50, outcome: null,
+        };
+        append("interrogation.scheduled", { interrogationId: state.interrogation.id, dueAt: state.interrogation.dueAt, interrogatorCharacterId: state.interrogation.interrogatorCharacterId });
+      }
+      notices.push(effects.notice);
+    }
+    append("mission.objective_completed", { objectiveId: objective.id, title: objective.title ?? objective.id, effects });
+    for (const unlocked of campaign.objectives.filter((candidate) =>
+      !completedIds.includes(candidate.id)
+      && (candidate.unlockAfterObjectiveIds ?? []).includes(objective.id)
+      && isObjectiveUnlocked(state, candidate))) {
+      append("mission.objective_unlocked", { objectiveId: unlocked.id, title: unlocked.title ?? unlocked.id, deadline: unlocked.deadline });
+      notices.push(`组织下达后续任务：${unlocked.title ?? unlocked.id}`);
+    }
+  }
+  return notices;
+}
+
+export function isObjectiveUnlocked(state: WorldState, objective: MissionObjective): boolean {
+  return (objective.unlockAfterObjectiveIds ?? []).every((id) => state.completedObjectiveIds?.includes(id));
+}
+
+export function isIntelUnlocked(campaign: CampaignDefinition, state: WorldState, intelId: string): boolean {
+  const owners = campaign.objectives.filter((objective) => objective.requiredIntelIds.includes(intelId));
+  return owners.length === 0 || owners.some((objective) => isObjectiveUnlocked(state, objective));
+}
+
+function advanceInterrogation(state: WorldState, append: (type: string, payload: unknown) => void): string[] {
+  const interrogation = state.interrogation;
+  if (!interrogation || interrogation.status !== "pending" || Date.parse(state.currentTime) < Date.parse(interrogation.dueAt)) return [];
+  interrogation.status = "active";
+  append("interrogation.started", { interrogationId: interrogation.id, interrogatorCharacterId: interrogation.interrogatorCharacterId });
+  return [`警备处的传唤已经送到。韩世杰在临时问讯室等你回答：“${interrogation.questions[0]}”`];
+}
+
+function buildInterrogationQuestions(profileId: WorldState["cover"]["profileId"]): string[] {
+  const workQuestion = profileId === "archive_clerk"
+    ? "设备运输出事前后，你调阅过哪些档案，谁能证明？"
+    : profileId === "travelling_merchant"
+      ? "设备运输出事前后，你去了哪些商号和码头，账目在哪里？"
+      : "设备运输出事前后，你采访过哪些人，稿件和笔记在哪里？";
+  return [
+    workQuestion,
+    "你的行踪为什么多次与被查地点重合？给我一个能核对的公开理由。",
+    "如果我们现在去核对你的同事、客户或编辑，他们会怎样描述你这几天的行动？",
+  ];
+}
+
+function interrogationAnswerScore(state: WorldState, strategy: InterrogationStrategy, text: string): number {
+  const profileTerms: Record<WorldState["cover"]["profileId"], RegExp> = {
+    archive_clerk: /档案|调阅|值班|科长|签字|登记|同事|公文/,
+    travelling_merchant: /货账|客户|商号|收据|仓库|送货|生意|行会/,
+    freelance_writer: /稿件|编辑|采访|校样|报社|笔记|采风|刊发/,
+  };
+  let score = text.length >= 12 && text.length <= 160 ? 2 : text.length < 8 ? -3 : -1;
+  if (profileTerms[state.cover.profileId].test(text)) score += 3;
+  if (strategy === "calm") score += 1;
+  if (strategy === "formal") score += state.cover.credibility >= 55 ? 3 : -1;
+  if (strategy === "deflect") score -= 2;
+  if (strategy === "counter_question") score -= state.personalSuspicion >= 50 ? 3 : 1;
+  if (state.interrogation?.answers.some((answer) => answer.text === text)) score -= 5;
+  return score;
+}
+
 function chooseLocationKnowledgeStage(
   current: LocationKnowledgeStage,
   proposed: Exclude<LocationKnowledgeStage, "unknown">,
@@ -844,16 +1066,33 @@ function validateComradeTaskTarget(
   const intel = state.intel[targetId];
   const definition = campaign.intel.find((item) => item.id === targetId);
   if (!intel || !definition) throw new Error("Unknown task intelligence item");
+  if (!isIntelUnlocked(campaign, state, targetId)) throw new Error("Intelligence belongs to a locked mission");
   if (intel.deliveredAt) throw new Error("Delivered intelligence cannot receive another task");
   if (kind === "verify_intel" && intel.knownFields.length === 0) throw new Error("Intelligence must be discovered before it can be verified");
   if (kind === "gather_intel" && definition.requiredFields.every((field) => intel.knownFields.includes(field))) throw new Error("All intelligence fields are already known");
 }
 
-function radioSiteRisk(locationId: string): number | null {
+function radioSiteRisk(campaign: CampaignDefinition, state: WorldState, locationId: string): number | null {
+  const location = campaign.locations.find((item) => item.id === locationId);
+  const site = location?.radioSite;
+  if (site) {
+    const recruited = !site.requiresRecruitedCharacterId || state.network.activeMemberIds.includes(site.requiresRecruitedCharacterId);
+    const accessible = state.discoveredLocationIds.includes(locationId) && state.locationKnowledge?.[locationId]?.stage !== "compromised";
+    return recruited && accessible ? site.baseRisk : null;
+  }
+  // Compatibility for content packages created before radio sites became data-driven.
   if (locationId === "wu-clock-shop") return 4;
   if (locationId === "jianghai-hotel") return 10;
   if (locationId === "radio-office") return 18;
   return null;
+}
+
+export function getRadioSites(campaign: CampaignDefinition, state: WorldState) {
+  return campaign.locations.filter((location) => location.radioSite).map((location) => {
+    const requirement = location.radioSite?.requiresRecruitedCharacterId;
+    const available = Boolean(location.radioSite?.initiallyAvailable || (requirement && state.network.activeMemberIds.includes(requirement)));
+    return { id: location.id, name: location.name, baseRisk: location.radioSite!.baseRisk, available, requiresRecruitedCharacterId: requirement ?? null };
+  });
 }
 
 function normalizeRadioItems(
@@ -1042,43 +1281,64 @@ function recordInvestigationEvidence(
   append("investigation.evidence_recorded", { type, locationId, weight });
 }
 
-function advanceEnemyInvestigation(state: WorldState, append: (type: string, payload: unknown) => void): string[] {
+function advanceEnemyInvestigation(
+  state: WorldState,
+  append: (type: string, payload: unknown) => void,
+  sourceAction: GameAction,
+): string[] {
   const investigation = state.investigation;
   const fresh = investigation.evidence.filter((evidence) => !evidence.processed);
-  if (fresh.length === 0) return [];
   for (const evidence of fresh) evidence.processed = true;
 
   const newWeight = fresh.reduce((total, evidence) => total + evidence.weight, 0);
-  investigation.pressure = clamp(investigation.pressure + newWeight * 0.8 * state.difficulty.enemyResponseSpeed);
+  const allowance = state.difficulty.recoveryAllowance;
+  const recovery = sourceAction.type === "rest"
+    ? 0.5 * allowance
+    : sourceAction.type === "cover_work"
+      ? 0.35 * allowance
+      : sourceAction.type === "wait" || sourceAction.type === "move"
+        ? 0.1 * allowance
+        : 0;
+  investigation.pressure = clamp(investigation.pressure + newWeight * 0.8 * state.difficulty.enemyResponseSpeed - recovery);
   const radioEvidence = fresh.find((evidence) => evidence.type === "radio_signal");
   const hottest = Object.entries(investigation.locationHeat).sort((a, b) => b[1] - a[1])[0];
-  let action: string | null = null;
+  let responseAction: string | null = null;
   let notice: string | null = null;
+  const escalationReady = !investigation.lastActionAt
+    || Date.parse(state.currentTime) - Date.parse(investigation.lastActionAt) >= 30 * 60_000;
 
   if (radioEvidence) {
     state.network.exposure = clamp(state.network.exposure + 3 * state.difficulty.enemyResponseSpeed);
-    action = "radio_sweep";
+    responseAction = "radio_sweep";
     notice = "远处传来短促的干扰声。有人正在这一带排查异常无线电信号。";
-  } else if (hottest && hottest[1] >= 12 && !investigation.surveillanceLocationIds.includes(hottest[0])) {
+  } else if (fresh.length > 0 && hottest && hottest[1] >= 12 && !investigation.surveillanceLocationIds.includes(hottest[0])) {
     investigation.surveillanceLocationIds.push(hottest[0]);
-    action = "surveillance_started";
+    responseAction = "surveillance_started";
     notice = "街角多了一个停留过久的陌生人。这里可能已经受到监视。";
-  } else if (investigation.surveillanceLocationIds.includes(state.currentLocationId) && fresh.some((evidence) => evidence.locationId === state.currentLocationId)) {
+  } else if (fresh.length > 0 && investigation.surveillanceLocationIds.includes(state.currentLocationId) && fresh.some((evidence) => evidence.locationId === state.currentLocationId)) {
     state.personalSuspicion = clamp(state.personalSuspicion + 3 * state.difficulty.enemyResponseSpeed);
-    action = "subject_followed";
+    responseAction = "subject_followed";
     notice = "窗外同一道人影再次出现。你意识到自己的停留可能被人记下了。";
-  } else if (investigation.pressure >= 30) {
+  } else if (investigation.pressure >= 80 && escalationReady) {
+    state.personalSuspicion = clamp(state.personalSuspicion + 5 * state.difficulty.enemyResponseSpeed);
+    state.cover.supervisorSuspicion = clamp(state.cover.supervisorSuspicion + 6 * state.difficulty.enemyResponseSpeed);
+    state.network.exposure = clamp(state.network.exposure + 2 * state.difficulty.enemyResponseSpeed);
+    responseAction = "coordinated_review";
+    notice = "敌方把零散记录并案审查，公开身份、近期出入和无线电异常开始被交叉核对。";
+  } else if (fresh.length > 0 && investigation.pressure >= 30) {
     state.personalSuspicion = clamp(state.personalSuspicion + 1 * state.difficulty.enemyResponseSpeed);
-    action = "records_reviewed";
+    responseAction = "records_reviewed";
     notice = "机关里开始核对近期出入和调阅记录，几个人被叫去补填说明。";
   }
 
   for (const locationId of Object.keys(investigation.locationHeat)) {
-    investigation.locationHeat[locationId] = clamp(investigation.locationHeat[locationId] - 0.5);
+    investigation.locationHeat[locationId] = clamp(investigation.locationHeat[locationId] - 0.75 - recovery * 0.25);
   }
-  if (!action || !notice) return [];
+  investigation.surveillanceLocationIds = investigation.surveillanceLocationIds
+    .filter((locationId) => (investigation.locationHeat[locationId] ?? 0) >= 5);
+  if (!responseAction || !notice) return [];
   investigation.lastActionAt = state.currentTime;
-  append("investigation.action_taken", { action, locationId: radioEvidence?.locationId ?? hottest?.[0], notice });
+  append("investigation.action_taken", { action: responseAction, locationId: radioEvidence?.locationId ?? hottest?.[0], notice });
   return [notice];
 }
 
@@ -1186,11 +1446,11 @@ function coverWorkBenefit(kind: Extract<GameAction, { type: "cover_work" }>["wor
 
 function coverWorkSummary(kind: Extract<GameAction, { type: "cover_work" }>["workKind"]) {
   if (kind === "settle_accounts") return "你核对了发票与存货账册，留下了一条可信的经营记录。";
-  if (kind === "visit_clients") return "You made a round of customer visits, making your business movements easy to account for.";
-  if (kind === "stock_check") return "You checked stock and delivery notes, giving today's route a plausible public purpose.";
-  if (kind === "submit_column") return "You submitted a signed column; the editorial desk now has a record of your work.";
-  if (kind === "street_research") return "You completed street research, with notes and witnesses to account for your movements.";
-  if (kind === "proofread_copy") return "You proofread a batch of copy under the editorial lamps, leaving a visible work record.";
+  if (kind === "visit_clients") return "你拜访了固定客户，公开的业务行程经得起核对。";
+  if (kind === "stock_check") return "你核对了库存和送货单，让今天的路线有了合理的公开目的。";
+  if (kind === "submit_column") return "你提交了一篇署名稿件，编辑部留下了明确的工作记录。";
+  if (kind === "street_research") return "你完成了街头采风，笔记和目击者足以说明你的公开行踪。";
+  if (kind === "proofread_copy") return "你在编辑部校对了一批稿件，留下了清楚的工作记录。";
   if (kind === "file_sorting") return "你按公开流程整理了档案，留下了一整段可被核对的工作记录。";
   if (kind === "duty_shift") return "你完成了值班，几位同事都看见你按时留在岗位上。";
   return "你提交了例行报告，上级对你的工作记录暂时没有新的追问。";
@@ -1291,10 +1551,11 @@ function resolveDialogue(
   const canShare = character.familiarity >= 8 && character.privateTrust >= 5 && action.goal === "request_information";
   if (!canShare && action.goal !== "verify_intel") return null;
   const candidate = action.goal === "verify_intel"
-    ? campaign.intel.find((item) => (!action.targetIntelId || item.id === action.targetIntelId)
+    ? campaign.intel.find((item) => isIntelUnlocked(campaign, state, item.id)
+      && (!action.targetIntelId || item.id === action.targetIntelId)
       && item.sourceCharacterIds.includes(definition.id)
       && state.intel[item.id].knownFields.some((field) => !state.intel[item.id].evidence.some((evidence) => evidence.field === field && evidence.sourceId === definition.id)))
-    : campaign.intel.find((item) => item.sourceCharacterIds.includes(definition.id) && state.intel[item.id].knownFields.length < item.requiredFields.length);
+    : campaign.intel.find((item) => isIntelUnlocked(campaign, state, item.id) && item.sourceCharacterIds.includes(definition.id) && state.intel[item.id].knownFields.length < item.requiredFields.length);
   if (!candidate) return null;
   const requirement = candidate.sourceRequirements?.[definition.id];
   if (!allowDiscovery || (requirement && (character.familiarity < requirement.familiarity || character.privateTrust < requirement.privateTrust))) return null;
@@ -1339,13 +1600,15 @@ function addIntelEvidence(
         ? "corroborates" as const
         : "unverified" as const;
   const fieldLabel = definition.fieldLabels?.[field] ?? field;
+  const fieldValue = definition.fieldValues?.[field];
+  const fieldDescription = fieldValue ? `“${fieldLabel}：${fieldValue}”` : `“${fieldLabel}”`;
   const summary = assessment === "corroborates"
-    ? `${sourceLabel}从独立来源印证了“${fieldLabel}”。`
+    ? `${sourceLabel}从独立来源印证了${fieldDescription}。`
     : assessment === "contradicts"
-      ? `${sourceLabel}对“${fieldLabel}”给出了与现有记录不一致的说法。`
+      ? `${sourceLabel}对${fieldDescription}给出了与现有记录不一致的说法。`
       : assessment === "dependent"
-        ? `${sourceLabel}提到“${fieldLabel}”，但线索与已有记录来自同一上游。`
-        : `${sourceLabel}提供了关于“${fieldLabel}”的线索，尚缺独立来源核验。`;
+        ? `${sourceLabel}提到${fieldDescription}，但线索与已有记录来自同一上游。`
+        : `${sourceLabel}提供了${fieldDescription}，尚缺独立来源核验。`;
   const evidence = { id: evidenceId, field, sourceId, sourceLabel, sourceType, upstreamSourceId, assessment, summary, collectedAt: state.currentTime };
   intel.evidence.push(evidence);
   intel.evidence = intel.evidence.slice(-80);
@@ -1445,8 +1708,9 @@ export function calculateScore(campaign: CampaignDefinition, state: WorldState):
   const confidenceValues = Object.values(state.intel).filter((item) => item.knownFields.length > 0).map((item) => item.confidence);
   const intelligence = confidenceValues.length ? Math.round(confidenceValues.reduce((a, b) => a + b, 0) / confidenceValues.length * 15) : 0;
   const network = Math.round((1 - state.network.exposure / 100) * 20);
-  const cover = Math.round((((1 - state.personalSuspicion / 100) * 0.45) + (state.cover.credibility / 100 * 0.35) + ((1 - state.cover.supervisorSuspicion / 100) * 0.2)) * 15);
-  const efficiency = Math.round((state.playerEnergy / 100) * 10);
+  const pressureFactor = 1 - state.investigation.pressure / 100;
+  const cover = Math.round((((1 - state.personalSuspicion / 100) * 0.35) + (state.cover.credibility / 100 * 0.3) + ((1 - state.cover.supervisorSuspicion / 100) * 0.2) + (pressureFactor * 0.15)) * 15);
+  const efficiency = Math.round(((state.playerEnergy / 100) * 0.7 + pressureFactor * 0.3) * 10);
   const total = clamp(mission + intelligence + network + cover + efficiency);
   const grade = total >= 90 ? "S" : total >= 80 ? "A" : total >= 70 ? "B" : total >= 60 ? "C" : total >= 40 ? "D" : "E";
   return { mission, intelligence, network, cover, efficiency, total, grade };
@@ -1455,13 +1719,17 @@ export function calculateScore(campaign: CampaignDefinition, state: WorldState):
 export function evaluateEnding(campaign: CampaignDefinition, state: WorldState): CampaignEnding | null {
   const score = calculateScore(campaign, state);
   if (state.network.exposure >= 80) return { type: "network_collapse", title: "网络崩溃", reasons: ["组织网络已低于最低运行能力"], score };
-  const deadline = Math.min(...campaign.objectives.filter((item) => item.required).map((item) => new Date(item.deadline).getTime()));
   const requiredObjectives = campaign.objectives.filter((item) => item.required);
   const completed = requiredObjectives.filter((objective) => objectiveSatisfied(campaign, state, objective));
   if (requiredObjectives.length > 0 && completed.length === requiredObjectives.length) {
-    const costly = state.personalSuspicion >= 60 || state.network.exposure >= 50 || state.network.compromisedMemberIds.length > 0;
-    return { type: costly ? "costly_success" : "complete_success", title: costly ? "代价成功" : "完整成功", reasons: ["核心情报已按要求送达"], score };
+    const costly = state.personalSuspicion >= 60 || state.network.exposure >= 50 || state.investigation.pressure >= 80 || state.network.compromisedMemberIds.length > 0;
+    const reasons = ["核心情报已按要求送达"];
+    if (state.investigation.pressure >= 80) reasons.push("敌方调查压力过高，行动网络留下了重大风险");
+    return { type: costly ? "costly_success" : "complete_success", title: costly ? "代价成功" : "完整成功", reasons, score };
   }
+  const activeObjectives = requiredObjectives.filter((objective) => isObjectiveUnlocked(state, objective) && !objectiveSatisfied(campaign, state, objective));
+  if (activeObjectives.length === 0) return null;
+  const deadline = Math.min(...activeObjectives.map((item) => new Date(item.deadline).getTime()));
   if (Date.parse(state.currentTime) >= deadline) {
     const pendingBeforeDeadline = state.radio.transmissions.some((transmission) =>
       transmission.receiptStatus === "pending" && Date.parse(transmission.completedAt) <= deadline,

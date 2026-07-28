@@ -19,15 +19,7 @@ import { MissionObjectives } from "@/components/game/mission-objectives";
 import { ActionTimeline } from "@/components/game/action-timeline";
 import { CoverIdentityPanel } from "@/components/game/cover-identity-panel";
 import { SaveSlotsPanel } from "@/components/game/save-slots-panel";
-
-const travelMinutes: Record<string, Record<string, number>> = {
-  "archive-office": { "radio-office": 10, "linjiang-news": 20, "jianghai-hotel": 20, "third-dock": 40, "wu-clock-shop": 30 },
-  "radio-office": { "archive-office": 10, "linjiang-news": 20, "jianghai-hotel": 20, "third-dock": 40, "wu-clock-shop": 30 },
-  "linjiang-news": { "archive-office": 20, "radio-office": 20, "jianghai-hotel": 20, "third-dock": 30, "wu-clock-shop": 20 },
-  "jianghai-hotel": { "archive-office": 20, "radio-office": 20, "linjiang-news": 20, "third-dock": 30, "wu-clock-shop": 20 },
-  "third-dock": { "archive-office": 40, "radio-office": 40, "linjiang-news": 30, "jianghai-hotel": 30, "wu-clock-shop": 30 },
-  "wu-clock-shop": { "archive-office": 30, "radio-office": 30, "linjiang-news": 20, "jianghai-hotel": 20, "third-dock": 30 },
-};
+import { InterrogationPanel } from "@/components/game/interrogation-panel";
 
 const goals: Array<{ id: DialogueGoal; label: string; description: string; duration: 10 | 20 | 30 | 60 }> = [
   { id: "small_talk", label: "寒暄观察", description: "从日常话题观察反应", duration: 10 },
@@ -121,6 +113,10 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
 
   if (state.status === "finished") return <SettlementReport gameInstanceId={gameInstanceId} />;
 
+  if (state.interrogation?.status === "active") {
+    return <InterrogationPanel state={state} busy={busy} error={error} onAction={(action) => void act(action)} />;
+  }
+
   if (state.activeDialogue) {
     const activeNpc = context.characters.find((item) => item.id === state.activeDialogue?.characterId);
     return <DialoguePanel
@@ -163,7 +159,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
       <aside className="border-b border-line p-4 lg:min-h-[calc(100vh-4rem)] lg:border-b-0 lg:border-r lg:p-5">
         <SectionLabel icon={<MapPin size={14} />} text="行动地点" />
         <div className="mt-3"><CityMap locations={context.locations} currentLocationId={state.currentLocationId}
-          travelMinutes={travelMinutes[state.currentLocationId] ?? {}} disabled={busy || state.status !== "active"}
+          travelMinutes={context.locations.find((location) => location.id === state.currentLocationId)?.travelMinutes ?? {}} disabled={busy || state.status !== "active"}
           onTravel={(locationId, minutes) => void act({ type: "move", destinationId: locationId, durationMinutes: minutes, idempotencyKey: crypto.randomUUID() })} /></div>
         <div className="mt-5 border-t border-line pt-4">
           <Button variant="outline" className="w-full" disabled={busy || state.status !== "active"}
@@ -191,6 +187,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
         </div>
 
         {error && <div className="mt-4 border-l-2 border-alert bg-alert/10 px-4 py-3 text-sm text-[#efaaa4]">{error}</div>}
+        {state.interrogation?.status === "pending" && <div className="mt-4 border-l-2 border-alert bg-alert/10 px-4 py-3 text-sm text-[#efaaa4]">警备处已经发出传唤。盘问将在近期开始，请先整理好公开身份能够解释的行踪和记录。</div>}
 
         <div className="mt-6">
           <SectionLabel icon={<UsersRound size={15} />} text="现场人物" />
