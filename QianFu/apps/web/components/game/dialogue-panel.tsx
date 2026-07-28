@@ -39,6 +39,7 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
   const textLimit = DIALOGUE_TEXT_LIMITS[activeGoal];
   const remainingTurns = Math.max(0, session.maxTurns - session.turnCount);
   const remainingMinutes = Math.max(0, session.allocatedMinutes - session.elapsedMinutes);
+  const npcInitiated = session.initiatedBy === "npc";
   const currentMinute = new Date(state.currentTime).getUTCMinutes();
   const untilWorldTick = 10 - (currentMinute % 10 || 10);
   const showPendingTurn = pendingTurn !== null && session.transcript.length === pendingTurn.transcriptLength;
@@ -63,9 +64,9 @@ export function DialoguePanel({ state, npcName, npcIdentity, goal, tone, busy, e
     </header>
 
     <div className="border-b border-line bg-ink">
-      <div className="mx-auto grid w-full max-w-5xl grid-cols-2 gap-px bg-line sm:grid-cols-4">
-        <StatusItem label="交谈目标" value={goalLabels[activeGoal]} />
-        <StatusItem label="表达方式" value={toneLabels[activeTone]} />
+      <div className={`mx-auto grid w-full max-w-5xl grid-cols-2 gap-px bg-line ${npcInitiated ? "" : "sm:grid-cols-4"}`}>
+        {!npcInitiated && <StatusItem label="交谈目标" value={goalLabels[activeGoal]} />}
+        {!npcInitiated && <StatusItem label="表达方式" value={toneLabels[activeTone]} />}
         <StatusItem label="剩余时间" value={`${remainingMinutes} 分钟`} />
         <StatusItem label="剩余轮次" value={`${remainingTurns} 轮`} />
       </div>

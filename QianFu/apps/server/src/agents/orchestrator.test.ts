@@ -122,6 +122,39 @@ describe("CampaignOrchestrator", () => {
     expect(prepared.agentOutcome?.provider).toBe("model");
   });
 
+  it("asks the NPC to answer again when semantic validation rejects a repeated line", async () => {
+    const state = createInitialWorld(LINJIANG_1942, "retry-game", "retry-user", "story");
+    const sessionId = "retry-session-0001";
+    state.activeDialogue = {
+      id: sessionId, characterId: "chen-jingwen", initiatedBy: "npc", goal: "build_trust", tone: "formal",
+      targetIntelId: null, allocatedMinutes: 20, elapsedMinutes: 6, maxTurns: 10, turnCount: 3,
+      status: "active", transcript: [],
+    };
+    state.dialogueMemories["chen-jingwen"].turns = [
+      { speaker: "player", text: "我只是普通人。", at: state.currentTime },
+      { speaker: "npc", text: "那就当我没说过。", at: state.currentTime },
+    ];
+    const users: string[] = [];
+    const provider: AgentProvider = {
+      name: "test",
+      async complete(_system, user) {
+        users.push(user);
+        return users.length === 1
+          ? { visibleSpeech: "那就当我没说过。", privateIntent: "继续观察", evidenceQuote: "", requestedEffects: [] }
+          : { visibleSpeech: "我指的是把经手的事情说清楚，不是要你答应什么。", privateIntent: "收回试探", evidenceQuote: "", requestedEffects: [] };
+      },
+    };
+
+    const prepared = await new CampaignOrchestrator(provider).prepareTurn(state, {
+      type: "dialogue_turn", sessionId, playerText: "我不明白你说的合作是什么意思。", durationMinutes: 2, idempotencyKey: "retry-turn-0001",
+    });
+
+    expect(users).toHaveLength(2);
+    expect(JSON.parse(users[1]).correction.reason).toContain("repeated");
+    expect(prepared.agentOutcome?.visibleSpeech).toContain("不是要你答应什么");
+    expect(prepared.agentOutcome?.provider).toBe("model");
+  });
+
   it("resolves NPC context from the state's campaign id and version", async () => {
     const customCampaign: CampaignDefinition = {
       ...LINJIANG_1942,

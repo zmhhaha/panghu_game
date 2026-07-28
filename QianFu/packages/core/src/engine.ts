@@ -152,6 +152,7 @@ export class CampaignEngine {
     if (this.state.activeDialogue) {
       this.state.activeDialogue.targetIntelId ??= null;
       this.state.activeDialogue.discoveredFields ??= [];
+      this.state.activeDialogue.initiatedBy ??= this.state.activeDialogue.transcript[0]?.speaker === "npc" ? "npc" : "player";
     }
     this.state.discoveredLocationIds ??= [this.state.currentLocationId];
     for (const location of campaign.locations.filter((item) => item.radioSite?.initiallyAvailable)) {
@@ -285,7 +286,7 @@ export class CampaignEngine {
           if (!intelDefinition?.sourceCharacterIds.includes(action.targetCharacterId) || !next.intel[action.targetIntelId]?.knownFields.length) throw new Error("该人物无法核验所选情报");
         }
         const minTurns = action.allocatedMinutes / 2;
-        next.activeDialogue = { id: action.idempotencyKey, characterId: action.targetCharacterId, goal: action.goal, tone: action.tone, targetIntelId: action.targetIntelId ?? null, allocatedMinutes: action.allocatedMinutes, elapsedMinutes: 0, maxTurns: minTurns, turnCount: 0, status: "active", discoveredFields: [], transcript: [] };
+        next.activeDialogue = { id: action.idempotencyKey, characterId: action.targetCharacterId, initiatedBy: "player", goal: action.goal, tone: action.tone, targetIntelId: action.targetIntelId ?? null, allocatedMinutes: action.allocatedMinutes, elapsedMinutes: 0, maxTurns: minTurns, turnCount: 0, status: "active", discoveredFields: [], transcript: [] };
         append("dialogue.started", { characterId: action.targetCharacterId, goal: action.goal, targetIntelId: action.targetIntelId, allocatedMinutes: action.allocatedMinutes, maxTurns: minTurns });
         narration = "你坐下来，开始观察对方的反应。";
         break;
@@ -373,7 +374,7 @@ export class CampaignEngine {
         if (character.locationId !== next.currentLocationId || !isCharacterAvailableAt(definition, next.currentTime)) throw new Error("对方此刻已经不在现场");
         const maxTurns = contact.allocatedMinutes / 2;
         next.activeDialogue = {
-          id: action.idempotencyKey, characterId: contact.characterId, goal: contact.goal, tone: contact.tone,
+          id: action.idempotencyKey, characterId: contact.characterId, initiatedBy: "npc", goal: contact.goal, tone: contact.tone,
           targetIntelId: null, allocatedMinutes: contact.allocatedMinutes, elapsedMinutes: 0, maxTurns, turnCount: 0,
           status: "active", discoveredFields: [], transcript: [{ speaker: "npc", text: contact.openingLine, at: next.currentTime }],
         };
@@ -907,21 +908,78 @@ function generateNpcReply(
       `这件事我未必有答案。你要是不介意，可以把刚才的话说具体些。`,
       `比起街上的传闻，我更愿意听你亲眼见到的事。`,
     ];
-    return smallTalk[memory.interactionCount % smallTalk.length];
+    return selectFallbackReply(memory, smallTalk, action.idempotencyKey);
   }
-  if (action.goal === "apply_pressure") return `${habit}。你问得太直接了，我们最好换个话题。`;
+  if (action.goal === "apply_pressure") return selectFallbackReply(memory, [
+    "你问得太直接了。这里不是说这种话的地方。",
+    "声音放低些。你要的是回答，还是只想看我慌不慌？",
+    "逼我现在表态，对你我都没有好处。换个能说清楚的问题。",
+  ], action.idempotencyKey);
   if (discovery) {
     return groundedFallbackDisclosure(campaign, definition, discovery, state);
   }
   if (action.goal === "request_information") {
     const prompts = fallbackInformationPrompts(definition.id);
-    return prompts[memory.interactionCount % prompts.length];
+    return selectFallbackReply(memory, prompts, action.idempotencyKey);
   }
-  if (action.goal === "recruit_probe") return `${habit}，信任不是一句话能换来的，先从一件小事开始吧。`;
-  if (action.goal === "build_trust") return `${habit}，你的态度比上次稳重。只要守口如瓶，合作并非没有可能。`;
-  if (action.goal === "probe_attitude") return `${habit}，立场很危险。我只关心身边人的安全和事情能否做好。`;
-  if (action.goal === "verify_intel") return `${habit}，方向大致没错，但还缺一个能核对的细节。`;
+  if (action.goal === "recruit_probe") return selectFallbackReply(memory, [
+    "这种话不能靠一时热心。先看你遇到麻烦时会不会守住分寸。",
+    "别急着把关系说得太近。真想帮忙，就先把一件不惹眼的小事做好。",
+    "我听懂了，但现在还不到答应的时候。日子久了，自然看得出彼此是什么人。",
+  ], action.idempotencyKey);
+  if (action.goal === "build_trust") {
+    const replies = /合作|什么意思|不明白|普通人/.test(playerText)
+      ? [
+        "我说的是往后办事时彼此把话说明白，不是要你答应什么。你若觉得不妥，就当这话没说。",
+        "你不用多想。我只是希望经手事情时少些含糊，免得最后谁也说不清。",
+      ]
+      : /笔迹|仿照|没写过|封面/.test(playerText)
+        ? [
+          "既然你不认这笔迹，先别急着下结论。想想最后一次见到这份东西是什么时候，还有谁碰过它。",
+          "仿得像反而麻烦。先把经手时间和见过封面的人记下来，别当场惊动旁人。",
+        ]
+        : /准确|档案|查|核对|职责|工作/.test(playerText)
+          ? [
+            "按职责核对没有错。我只是要确认你查到异常时会先找谁，免得一份记录惊动太多人。",
+            "这理由说得通。那就照你的规矩来，但碰到前后对不上的地方，先把原件留在桌上。",
+          ]
+          : /去看|查看|看看|查一下/.test(playerText)
+            ? [
+              "你先去看也好。回来只告诉我页码和经手栏有没有改动，别先问旁人。",
+              "可以，但先记住现在的样子。真有出入，贸然追问只会让经手人有准备。",
+            ]
+            : [
+              "我不是要你立刻表态。先把眼前这件事说清楚，往后才知道彼此能不能放心。",
+              "话说得漂亮没有用。我更在意出了差错以后，你会先遮掩还是先把来龙去脉查明白。",
+              "先按你认为稳妥的办法做。结果如何，比现在说什么都更能说明问题。",
+            ];
+    return selectFallbackReply(memory, replies, action.idempotencyKey);
+  }
+  if (action.goal === "probe_attitude") return selectFallbackReply(memory, [
+    "立场两个字太大了。我只看一件事：出了麻烦，你先保自己，还是先想会牵连谁。",
+    "你若想听一句痛快话，恐怕要失望。人在这里做事，先得知道什么话会害人。",
+    "我不替任何口号作保证。你可以看我怎么做，再决定还要不要问。",
+  ], action.idempotencyKey);
+  if (action.goal === "verify_intel") return selectFallbackReply(memory, [
+    "方向大致没错，但还缺一个能和记录对上的细节。",
+    "先别把它当成定论。日期、经手人和原始出处，至少还要再对上一项。",
+    "我只能确认这件事有迹可查，不能替你保证听来的每句话都是真的。",
+  ], action.idempotencyKey);
   return `${habit}，我听见了。关于这件事，我现在只能说到这里。`;
+}
+
+function selectFallbackReply(
+  memory: NonNullable<WorldState["dialogueMemories"][string]>,
+  candidates: string[],
+  seed: string,
+): string {
+  const recent = new Set(memory.turns.filter((turn) => turn.speaker === "npc").slice(-3).map((turn) => turn.text.trim()));
+  const start = stableRoll(`${seed}:${memory.interactionCount}`) % candidates.length;
+  for (let offset = 0; offset < candidates.length; offset += 1) {
+    const candidate = candidates[(start + offset) % candidates.length];
+    if (!recent.has(candidate.trim())) return candidate;
+  }
+  return candidates[start];
 }
 
 function summarizeMemory(memory: NonNullable<WorldState["dialogueMemories"][string]>, definition: CampaignDefinition["characters"][number]): string {

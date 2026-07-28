@@ -100,7 +100,7 @@ export class CampaignOrchestrator {
       "Output JSON fields: visibleSpeech, privateIntent, evidenceQuote, requestedEffects.",
     ].join("\n");
 
-    const user = JSON.stringify({
+    const userPayload = {
       scene,
       sceneBoundary: dialogueBoundary(action.goal),
       immutableScene: { localTime, playerPublicIdentity: cover.title, npcPublicIdentity: character.publicIdentity },
@@ -120,16 +120,24 @@ export class CampaignOrchestrator {
       recentDialogue,
       interactionCount: memory.interactionCount,
       permittedEvidence,
-    });
-    const response = parseNpcResponse(await provider.complete(system, user));
+    };
+    let response = parseNpcResponse(await provider.complete(system, JSON.stringify(userPayload)));
     const previousNpc = memory.turns.filter((turn) => turn.speaker === "npc").at(-1)?.text?.trim();
-    if (previousNpc && response.visibleSpeech.trim() === previousNpc) throw new Error("NPC response repeated the previous turn");
-    if (response.visibleSpeech.trim() === action.playerText.trim()) throw new Error("NPC response echoed the player");
-    if (response.evidenceQuote && !response.visibleSpeech.includes(response.evidenceQuote)) throw new Error("NPC evidence quote is not visible to the player");
-    if (response.evidenceQuote && !permittedEvidence.some((evidence) => response.evidenceQuote.includes(evidence.value))) {
-      throw new Error("NPC evidence quote did not contain an authorized fact");
+    try {
+      validateNpcResponse(response, previousNpc, action.playerText, permittedEvidence, character.id, localTime);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "NPC response failed validation";
+      console.warn(`[QianFu Agent] npc=${character.id} provider=${provider.name} status=retry reason=${reason}`);
+      response = parseNpcResponse(await provider.complete(system, JSON.stringify({
+        ...userPayload,
+        correction: {
+          rejectedVisibleSpeech: response.visibleSpeech,
+          reason,
+          instruction: "重新扮演并回答玩家最后一句。换一种内容和句式，不复述被拒绝的回复或近期台词；permittedEvidence为空时不得声称具体情报，evidenceQuote必须为空。只输出规定JSON。",
+        },
+      })));
+      validateNpcResponse(response, previousNpc, action.playerText, permittedEvidence, character.id, localTime);
     }
-    validateSceneConsistency(character.id, response.visibleSpeech, action.playerText, localTime);
     return response;
   }
 
@@ -176,6 +184,23 @@ export class CampaignOrchestrator {
     const target = targetIntel ? `；核验对象：${targetIntel.title}（玩家已知字段：${state.intel[targetIntel.id]?.knownFields.map((field) => targetIntel.fieldLabels?.[field] ?? field).join("、") || "无"}）` : "";
     return `时间：${state.currentTime}；地点：${location?.name ?? "未知"}；交谈目标：${action.goal}${target}；本次会话已进行${session?.elapsedMinutes ?? 0}分钟，共${session?.allocatedMinutes ?? action.durationMinutes}分钟。世界规则和情报判定由主控系统负责。`;
   }
+}
+
+function validateNpcResponse(
+  response: NpcAgentResponse,
+  previousNpc: string | undefined,
+  playerText: string,
+  permittedEvidence: Array<{ value: string }>,
+  characterId: string,
+  localTime: string,
+) {
+  if (previousNpc && response.visibleSpeech.trim() === previousNpc) throw new Error("NPC response repeated the previous turn");
+  if (response.visibleSpeech.trim() === playerText.trim()) throw new Error("NPC response echoed the player");
+  if (response.evidenceQuote && !response.visibleSpeech.includes(response.evidenceQuote)) throw new Error("NPC evidence quote is not visible to the player");
+  if (response.evidenceQuote && !permittedEvidence.some((evidence) => response.evidenceQuote.includes(evidence.value))) {
+    throw new Error("NPC evidence quote did not contain an authorized fact");
+  }
+  validateSceneConsistency(characterId, response.visibleSpeech, playerText, localTime);
 }
 
 function formatLocalSceneTime(currentTime: string): string {

@@ -137,6 +137,7 @@ export interface DialogueMemory {
 export interface DialogueSession {
   id: string;
   characterId: string;
+  initiatedBy?: "player" | "npc";
   goal: DialogueGoal;
   tone: DialogueTone;
   targetIntelId: string | null;

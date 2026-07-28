@@ -121,6 +121,39 @@ describe("CampaignEngine", () => {
     expect(result.state.activeDialogue?.turnCount).toBe(1);
   });
 
+  it("keeps fallback trust dialogue contextual and avoids repeating its previous line", () => {
+    const dialogueCampaign: CampaignDefinition = {
+      ...campaign,
+      characters: [{
+        id: "contact", name: "Contact", publicIdentity: "Clerk", hiddenAlignment: "neutral",
+        initialLocationId: "office", recruitable: false,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
+        reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 },
+        personality: { traits: ["谨慎"], speechStyle: "克制", values: ["秩序"], fears: ["牵连"], verbalHabits: ["按规矩说"], sensitiveTopics: [] },
+      }],
+    };
+    const engine = new CampaignEngine(dialogueCampaign, createInitialWorld(dialogueCampaign, "fallback-dialogue", "user-1"));
+    engine.execute({ type: "dialogue_start", targetCharacterId: "contact", goal: "build_trust", tone: "formal", allocatedMinutes: 20, durationMinutes: 0, idempotencyKey: "fallback-start" });
+    const first = engine.execute({ type: "dialogue_turn", sessionId: "fallback-start", playerText: "我只是普通人，不明白你说的合作是什么意思。", durationMinutes: 2, idempotencyKey: "fallback-turn-1" });
+    const second = engine.execute({ type: "dialogue_turn", sessionId: "fallback-start", playerText: "我确实没有听懂。", durationMinutes: 2, idempotencyKey: "fallback-turn-2" });
+    const npcLines = second.state.activeDialogue?.transcript.filter((turn) => turn.speaker === "npc").map((turn) => turn.text) ?? [];
+
+    expect(first.npcReply).not.toContain("合作并非没有可能");
+    expect(npcLines).toHaveLength(2);
+    expect(npcLines[1]).not.toBe(npcLines[0]);
+  });
+
+  it("infers an old active dialogue as NPC-initiated when its first turn is an NPC opening", () => {
+    const state = createInitialWorld(campaign, "legacy-proactive-dialogue", "user-1");
+    state.activeDialogue = {
+      id: "legacy-session", characterId: "contact", goal: "build_trust", tone: "formal", targetIntelId: null,
+      allocatedMinutes: 20, elapsedMinutes: 8, maxTurns: 10, turnCount: 4, status: "active", discoveredFields: [],
+      transcript: [{ speaker: "npc", text: "我正好有件事想问你。", at: state.currentTime }],
+    };
+
+    expect(toPublicWorldState(state).activeDialogue?.initiatedBy).toBe("npc");
+  });
+
   it("shares a controlled intelligence fragment only after rapport is built", () => {
     const conversational: CampaignDefinition = {
       ...campaign,
@@ -965,7 +998,7 @@ describe("director contacts and counterintelligence", () => {
     const contactId = offered.state.pendingContact!.id;
     const accepted = engine.execute({ type: "respond_to_contact", contactId, decision: "accept", durationMinutes: 0, idempotencyKey: "director-accept" });
     expect(accepted.state.pendingContact).toBeNull();
-    expect(accepted.state.activeDialogue).toMatchObject({ characterId: "visitor", goal: "probe_attitude", allocatedMinutes: 20 });
+    expect(accepted.state.activeDialogue).toMatchObject({ characterId: "visitor", initiatedBy: "npc", goal: "probe_attitude", allocatedMinutes: 20 });
     expect(accepted.state.activeDialogue?.transcript[0]?.text).toBe("Can you explain this missing record?");
   });
 

@@ -49,6 +49,9 @@ export function toPublicWorldState(state: WorldState): PublicWorldState {
   clonedState.cover.leaveUntil ??= null;
   clonedState.cover.leaveReason ??= null;
   clonedState.cover.lastWorkAt ??= null;
+  if (clonedState.activeDialogue) {
+    clonedState.activeDialogue.initiatedBy ??= clonedState.activeDialogue.transcript[0]?.speaker === "npc" ? "npc" : "player";
+  }
   clonedState.network.tasks ??= [];
   clonedState.radio ??= {
     codebooks: [
