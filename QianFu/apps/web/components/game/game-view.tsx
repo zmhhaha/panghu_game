@@ -20,6 +20,7 @@ import { ActionTimeline } from "@/components/game/action-timeline";
 import { CoverIdentityPanel } from "@/components/game/cover-identity-panel";
 import { SaveSlotsPanel } from "@/components/game/save-slots-panel";
 import { InterrogationPanel } from "@/components/game/interrogation-panel";
+import { CounterintelligencePanel } from "@/components/game/counterintelligence-panel";
 
 const goals: Array<{ id: DialogueGoal; label: string; description: string; duration: 10 | 20 | 30 | 60 }> = [
   { id: "small_talk", label: "寒暄观察", description: "从日常话题观察反应", duration: 10 },
@@ -198,6 +199,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
 
         {error && <div className="mt-4 border-l-2 border-alert bg-alert/10 px-4 py-3 text-sm text-[#efaaa4]">{error}</div>}
         {state.interrogation?.status === "pending" && <div className="mt-4 border-l-2 border-alert bg-alert/10 px-4 py-3 text-sm text-[#efaaa4]">警备处已经发出传唤。盘问将在近期开始，请先整理好公开身份能够解释的行踪和记录。</div>}
+        {state.pendingContact?.deferredUntil && Date.parse(state.currentTime) < Date.parse(state.pendingContact.deferredUntil) && <div className="mt-4 border-l-2 border-copper bg-copper/[0.06] px-4 py-3 text-sm text-muted">你已请对方稍后再谈。约定时间到达后，对方会再次询问；继续行动也可能错过回应窗口。</div>}
 
         <div className="mt-6">
           <SectionLabel icon={<UsersRound size={15} />} text="现场人物" />
@@ -254,13 +256,38 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
         <div className="mt-4 space-y-4"><Meter label="个人怀疑" value={state.personalSuspicion} color="bg-alert" /><Meter label="调查压力" value={state.investigation.pressure} color="bg-alert" /><Meter label="网络暴露" value={state.network.exposure} color="bg-copper" /><Meter label="行动精力" value={state.playerEnergy} color="bg-safe" /></div>
         {state.investigation.surveillanceLocationIds.length > 0 && <div className="mt-4 border-l-2 border-alert bg-alert/10 px-3 py-2"><p className="text-[10px] text-muted">疑似监视区域</p><p className="mt-1 text-xs leading-5 text-[#efaaa4]">{state.investigation.surveillanceLocationIds.map((id) => context.locations.find((location) => location.id === id)?.name ?? "未知地点").join("、")}</p></div>}
 
+        <CounterintelligencePanel state={state} context={context} busy={busy} onAction={(action) => void act(action)} />
+
         <IntelligenceBoard gameInstanceId={gameInstanceId} state={state} context={context} busy={busy} onAction={act} />
 
         <MissionObjectives state={state} context={context} />
       </aside>
     </div>
     <DiscoveryModal notice={discoveryNotice} onClose={() => setDiscoveryNotice(null)} />
+    <ProactiveContactModal state={state} context={context} busy={busy} onAction={(action) => void act(action)} />
   </main>;
+}
+
+function ProactiveContactModal({ state, context, busy, onAction }: {
+  state: PublicWorldState;
+  context: GameContext;
+  busy: boolean;
+  onAction: (action: Parameters<typeof api.act>[1]) => void;
+}) {
+  const contact = state.pendingContact;
+  if (!contact || (contact.deferredUntil && Date.parse(state.currentTime) < Date.parse(contact.deferredUntil))) return null;
+  const character = context.characters.find((item) => item.id === contact.characterId);
+  const remainingMinutes = Math.max(0, Math.ceil((Date.parse(contact.expiresAt) - Date.parse(state.currentTime)) / 60_000));
+  const respond = (decision: "accept" | "defer" | "refuse") => onAction({
+    type: "respond_to_contact", contactId: contact.id, decision, durationMinutes: 0, idempotencyKey: crypto.randomUUID(),
+  });
+  return <div className="fixed inset-0 z-[85] grid place-items-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="contact-title">
+    <section className="my-6 w-full max-w-xl border border-line bg-ink shadow-2xl">
+      <header className="border-b border-line bg-panel px-5 py-4"><p className="text-xs text-copper">主控事件 · NPC 主动接触</p><h2 id="contact-title" className="mt-1 font-serif text-xl">{character?.name ?? "有人"}主动找你谈话</h2><p className="mt-1 text-xs text-muted">{character?.publicIdentity ?? "身份待确认"} · 回应窗口剩余约 {remainingMinutes} 分钟</p></header>
+      <div className="p-5"><p className="text-xs leading-6 text-muted">{contact.reason}</p><blockquote className="mt-4 border-l-2 border-copper bg-copper/[0.06] px-4 py-3 text-sm leading-7 text-paper/90">“{contact.openingLine}”</blockquote><p className="mt-3 text-[10px] text-muted">接受后进入 {contact.allocatedMinutes} 分钟对话；推迟不会停住世界时间，且只能使用一次。</p></div>
+      <footer className="flex flex-wrap justify-end gap-2 border-t border-line bg-panel px-5 py-4"><Button variant="ghost" disabled={busy} onClick={() => respond("refuse")}>拒绝接触</Button><Button variant="outline" disabled={busy || contact.deferrals >= 1} onClick={() => respond("defer")}>半小时后再谈</Button><Button disabled={busy} onClick={() => respond("accept")}><MessageSquare size={15} />接受谈话</Button></footer>
+    </section>
+  </div>;
 }
 
 function DiscoveryModal({ notice, onClose }: { notice: DiscoveryNotice | null; onClose: () => void }) {

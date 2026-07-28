@@ -108,6 +108,7 @@ export function createInitialWorld(
     characters,
     dialogueMemories,
     activeDialogue: null,
+    pendingContact: null,
     intel,
     network: { exposure: 0, activeMemberIds: [], compromisedMemberIds: [], availableChannels: ["radio", "courier"], tasks: [] },
     radio: {
@@ -145,6 +146,7 @@ export class CampaignEngine {
       characterId: character.id, summary: "尚未与玩家交谈。", lastPrivateIntent: null, turns: [], lastGoal: null, interactionCount: 0,
     }]));
     this.state.activeDialogue ??= null;
+    this.state.pendingContact ??= null;
     this.state.cover ??= createInitialCoverState();
     this.state.cover.profileId ??= "archive_clerk";
     if (this.state.activeDialogue) {
@@ -340,6 +342,94 @@ export class CampaignEngine {
         append("dialogue.ended", { characterId: endedSession.characterId, turnCount: endedSession.turnCount });
         next.activeDialogue = null;
         narration = "你结束了这次交谈，重新回到街上的时间线。";
+        break;
+      }
+      case "respond_to_contact": {
+        const contact = next.pendingContact;
+        if (!contact || contact.id !== action.contactId) throw new Error("主动接触已经失效");
+        if (Date.parse(next.currentTime) >= Date.parse(contact.expiresAt)) throw new Error("对方已经离开，无法再回应这次接触");
+        const definition = this.campaign.characters.find((item) => item.id === contact.characterId);
+        const character = next.characters[contact.characterId];
+        if (!definition || !character) throw new Error("主动接触人物不存在");
+        if (action.durationMinutes !== 0) throw new Error("回应主动接触不直接消耗时间");
+        if (action.decision === "defer") {
+          if (contact.deferrals >= 1) throw new Error("这次接触已经推迟过，必须作出决定");
+          contact.deferrals += 1;
+          contact.deferredUntil = addMinutes(next.currentTime, 30);
+          append("director.contact_deferred", { contactId: contact.id, characterId: contact.characterId, deferredUntil: contact.deferredUntil });
+          narration = `${definition.name}点点头，表示半小时后再来找你。`;
+          break;
+        }
+        if (action.decision === "refuse") {
+          character.privateTrust = clamp(character.privateTrust - 2, -100, 100);
+          character.suspicionOfPlayer = clamp(character.suspicionOfPlayer + 2);
+          next.pendingContact = null;
+          append("director.contact_refused", { contactId: contact.id, characterId: contact.characterId, reason: contact.reason });
+          narration = `${definition.name}没有继续追问，但显然记住了你的回避。`;
+          break;
+        }
+        if (contact.deferredUntil && Date.parse(next.currentTime) < Date.parse(contact.deferredUntil)) throw new Error("约定的时间还没到");
+        if (next.activeDialogue?.status === "active") throw new Error("Another dialogue is already active");
+        if (character.locationId !== next.currentLocationId || !isCharacterAvailableAt(definition, next.currentTime)) throw new Error("对方此刻已经不在现场");
+        const maxTurns = contact.allocatedMinutes / 2;
+        next.activeDialogue = {
+          id: action.idempotencyKey, characterId: contact.characterId, goal: contact.goal, tone: contact.tone,
+          targetIntelId: null, allocatedMinutes: contact.allocatedMinutes, elapsedMinutes: 0, maxTurns, turnCount: 0,
+          status: "active", discoveredFields: [], transcript: [{ speaker: "npc", text: contact.openingLine, at: next.currentTime }],
+        };
+        const memory = next.dialogueMemories[contact.characterId];
+        if (memory) {
+          memory.turns.push({ speaker: "npc", text: contact.openingLine, at: next.currentTime });
+          memory.turns = memory.turns.slice(-8);
+        }
+        next.pendingContact = null;
+        append("director.contact_accepted", { contactId: contact.id, characterId: contact.characterId, reason: contact.reason });
+        append("dialogue.started", { characterId: contact.characterId, goal: contact.goal, allocatedMinutes: contact.allocatedMinutes, maxTurns, proactive: true });
+        narration = contact.openingLine;
+        break;
+      }
+      case "countermeasure": {
+        const requiredDuration = countermeasureDuration(action.kind);
+        if (action.durationMinutes !== requiredDuration) throw new Error("反侦察行动耗时不符合规则");
+        const availability = getCountermeasureOptions(this.campaign, next).find((item) => item.kind === action.kind);
+        if (!availability?.available) throw new Error(availability?.reason ?? "当前无法执行这项反侦察行动");
+        const currentHeat = next.investigation.locationHeat[next.currentLocationId] ?? 0;
+        if (action.kind === "check_tail") {
+          const wasWatched = next.investigation.surveillanceLocationIds.includes(next.currentLocationId) || currentHeat >= 6;
+          next.investigation.locationHeat[next.currentLocationId] = clamp(currentHeat - (wasWatched ? 10 : 4));
+          next.investigation.surveillanceLocationIds = next.investigation.surveillanceLocationIds.filter((id) => id !== next.currentLocationId);
+          next.investigation.pressure = clamp(next.investigation.pressure - (wasWatched ? 6 : 2));
+          next.playerStress = clamp(next.playerStress + 2);
+          narration = wasWatched ? "你借橱窗反光和两次折返确认了尾巴，并在人群换向时甩开对方。" : "你绕行核对了几处视线，没有发现稳定跟踪者，但这段路耗费了时间。";
+        } else if (action.kind === "reinforce_cover") {
+          next.cover.credibility = clamp(next.cover.credibility + 6);
+          next.cover.supervisorSuspicion = clamp(next.cover.supervisorSuspicion - 8);
+          next.personalSuspicion = clamp(next.personalSuspicion - 4);
+          next.investigation.pressure = clamp(next.investigation.pressure - 4);
+          const summary = "你补齐了公开工作记录、往来凭据和可供同事复核的时间线。";
+          addCoverObservation(next, "work_completed", summary);
+          narration = summary;
+        } else if (action.kind === "plant_decoy") {
+          const targetId = action.targetLocationId;
+          if (!targetId || targetId === next.currentLocationId || !next.discoveredLocationIds.includes(targetId)) throw new Error("必须选择另一个已解锁地点布置假线索");
+          next.investigation.locationHeat[next.currentLocationId] = clamp(currentHeat - 7);
+          next.investigation.locationHeat[targetId] = clamp((next.investigation.locationHeat[targetId] ?? 0) + 5);
+          next.investigation.surveillanceLocationIds = next.investigation.surveillanceLocationIds.filter((id) => id !== next.currentLocationId);
+          next.investigation.pressure = clamp(next.investigation.pressure - 3);
+          next.network.exposure = clamp(next.network.exposure + 2 * next.difficulty.enemyResponseSpeed);
+          narration = "你留下了一条能够被敌方发现、却无法直接指向组织成员的假行程。注意力暂时被引向别处。";
+        } else {
+          next.investigation.locationHeat[next.currentLocationId] = clamp(currentHeat - 12);
+          next.investigation.pressure = clamp(next.investigation.pressure - 3);
+          next.network.exposure = clamp(next.network.exposure - 4);
+          next.playerStress = clamp(next.playerStress + 3);
+          narration = "你分批转移了敏感纸张、密码材料和联络痕迹，没有把所有东西带在同一路线上。";
+        }
+        append("counterintelligence.completed", {
+          kind: action.kind, locationId: next.currentLocationId, targetLocationId: action.targetLocationId,
+          pressure: next.investigation.pressure, personalSuspicion: next.personalSuspicion, networkExposure: next.network.exposure,
+          notice: narration,
+        });
         break;
       }
       case "move": {
@@ -728,12 +818,14 @@ export class CampaignEngine {
       next.currentTime = new Date(bucket * 600_000).toISOString();
       advanceSchedules(this.campaign, next, append);
       const tickNotices = [
+        ...advancePendingContact(this.campaign, next, append),
         ...advanceComradeTasks(this.campaign, next, append),
         ...advanceRadioReceipts(next, append),
         ...advanceMissionObjectives(this.campaign, next, append),
         ...advanceCoverIdentity(next, append),
         ...advanceInterrogation(next, append),
         ...advanceEnemyInvestigation(next, append, action),
+        ...advanceNarrativeEvents(this.campaign, next, append, true),
       ];
       notices.push(...tickNotices);
       if (next.activeDialogue && tickNotices.length > 0) {
@@ -759,7 +851,7 @@ export class CampaignEngine {
     }
     next.currentTime = finalTime;
     notices.push(...advanceMissionObjectives(this.campaign, next, append));
-    notices.push(...advanceNarrativeEvents(this.campaign, next, append));
+    notices.push(...advanceNarrativeEvents(this.campaign, next, append, false));
     resolveCompletedNarrativeThreads(this.campaign, next, append);
     next.playerEnergy = action.type === "rest"
       ? clamp(next.playerEnergy + energyRecovery)
@@ -913,6 +1005,7 @@ function advanceNarrativeEvents(
   campaign: CampaignDefinition,
   state: WorldState,
   append: (type: string, payload: unknown) => void,
+  allowContact: boolean,
 ): string[] {
   const resolved = state.resolvedNarrativeEventIds ?? (state.resolvedNarrativeEventIds = []);
   const notices: string[] = [];
@@ -922,6 +1015,9 @@ function advanceNarrativeEvents(
     const trigger = event.trigger;
     if (trigger.notBefore && new Date(state.currentTime) < new Date(trigger.notBefore)) continue;
     if (!(trigger.requiredEventIds ?? []).every((id) => resolved.includes(id))) continue;
+    if (!(trigger.requiredCompletedObjectiveIds ?? []).every((id) => state.completedObjectiveIds?.includes(id))) continue;
+    if (state.investigation.pressure < (trigger.minInvestigationPressure ?? 0)) continue;
+    if (state.investigation.pressure > (trigger.maxInvestigationPressure ?? 100)) continue;
     if (trigger.type === "relationship") {
       if (!trigger.characterId) continue;
       const character = state.characters[trigger.characterId];
@@ -930,6 +1026,14 @@ function advanceNarrativeEvents(
       if (character.familiarity < (trigger.minFamiliarity ?? 0)) continue;
       if (character.privateTrust < (trigger.minPrivateTrust ?? -100)) continue;
       if (memory.interactionCount < (trigger.minInteractionCount ?? 0)) continue;
+    }
+    const contact = event.effects.contact;
+    if (contact) {
+      const definition = campaign.characters.find((item) => item.id === contact.characterId);
+      const character = state.characters[contact.characterId];
+      if (!allowContact || state.pendingContact || state.activeDialogue?.status === "active" || state.interrogation?.status === "active") continue;
+      if (!definition || !character || !state.knownCharacterIds.includes(contact.characterId)) continue;
+      if (character.locationId !== state.currentLocationId || !isCharacterAvailableAt(definition, state.currentTime)) continue;
     }
 
     state.locationKnowledge ??= {};
@@ -968,11 +1072,49 @@ function advanceNarrativeEvents(
       else state.narrativeThreads.push(thread);
       append("narrative.thread_updated", thread);
     }
+    if (contact) {
+      const definition = campaign.characters.find((item) => item.id === contact.characterId)!;
+      state.pendingContact = {
+        id: `${event.id}:${state.lastEventSeq + 1}`,
+        eventId: event.id,
+        characterId: contact.characterId,
+        reason: contact.reason,
+        openingLine: contact.openingLine,
+        goal: contact.goal,
+        tone: contact.tone,
+        allocatedMinutes: contact.allocatedMinutes,
+        createdAt: state.currentTime,
+        expiresAt: addMinutes(state.currentTime, contact.responseWindowMinutes),
+        deferredUntil: null,
+        deferrals: 0,
+      };
+      append("director.contact_offered", {
+        contactId: state.pendingContact.id, eventId: event.id, characterId: contact.characterId,
+        characterName: definition.name, publicIdentity: definition.publicIdentity, reason: contact.reason,
+        openingLine: contact.openingLine, expiresAt: state.pendingContact.expiresAt,
+      });
+    }
     resolved.push(event.id);
     append("narrative.event_resolved", { eventId: event.id, title: event.title, summary: event.visibleSummary });
     notices.push(event.visibleSummary);
   }
   return notices;
+}
+
+function advancePendingContact(
+  campaign: CampaignDefinition,
+  state: WorldState,
+  append: (type: string, payload: unknown) => void,
+): string[] {
+  const contact = state.pendingContact;
+  if (!contact || Date.parse(state.currentTime) < Date.parse(contact.expiresAt)) return [];
+  const character = state.characters[contact.characterId];
+  if (character) character.privateTrust = clamp(character.privateTrust - 1, -100, 100);
+  const name = campaign.characters.find((item) => item.id === contact.characterId)?.name ?? "来访者";
+  state.pendingContact = null;
+  const notice = `${name}没有等到你的答复，主动接触的机会已经过去。`;
+  append("director.contact_expired", { contactId: contact.id, characterId: contact.characterId, notice });
+  return [notice];
 }
 
 function resolveCompletedNarrativeThreads(
@@ -1178,6 +1320,49 @@ export function getRestAvailability(campaign: CampaignDefinition, state: WorldSt
     return { available: false, reason: "这里尚未建立可供过夜的安全条件。" };
   }
   return { available: true, reason: "当前地点具备安全过夜条件。" };
+}
+
+export function getCountermeasureOptions(campaign: CampaignDefinition, state: WorldState) {
+  const profile = getCoverProfile(state.cover.profileId);
+  const heat = state.investigation.locationHeat[state.currentLocationId] ?? 0;
+  const watched = state.investigation.surveillanceLocationIds.includes(state.currentLocationId);
+  const pressure = state.investigation.pressure;
+  const rest = getRestAvailability(campaign, state);
+  const enoughEnergy = state.playerEnergy >= 8;
+  return [
+    {
+      kind: "check_tail" as const, label: "检查并甩开跟踪", durationMinutes: 20,
+      description: "用折返、橱窗反光和换向确认尾巴；可降低当前地点热度并解除监视。",
+      available: enoughEnergy && (watched || heat >= 4 || pressure >= 10),
+      reason: !enoughEnergy ? "精力不足" : watched || heat >= 4 || pressure >= 10 ? "当前可以执行" : "目前没有足够的跟踪迹象",
+      requiresTarget: false,
+    },
+    {
+      kind: "reinforce_cover" as const, label: "补强公开行踪", durationMinutes: 60,
+      description: "补齐工作凭据和可核对的时间线，降低个人与上级怀疑。",
+      available: enoughEnergy && profile.workLocationIds.includes(state.currentLocationId) && isCoverWorkHours(state.currentTime, state.cover.profileId),
+      reason: !enoughEnergy ? "精力不足" : !profile.workLocationIds.includes(state.currentLocationId) ? "需要回到公开身份的工作地点" : !isCoverWorkHours(state.currentTime, state.cover.profileId) ? "当前不在公开工作时段" : "当前可以执行",
+      requiresTarget: false,
+    },
+    {
+      kind: "plant_decoy" as const, label: "布置假行程", durationMinutes: 30,
+      description: "把敌方注意力引向另一个已知地点；降低当前热度，但会略增网络暴露。",
+      available: enoughEnergy && pressure >= 15 && state.discoveredLocationIds.filter((id) => id !== state.currentLocationId).length > 0,
+      reason: !enoughEnergy ? "精力不足" : pressure < 15 ? "调查压力尚不足以掩护假线索" : state.discoveredLocationIds.length < 2 ? "还没有可用于误导的其他地点" : "当前可以执行",
+      requiresTarget: true,
+    },
+    {
+      kind: "relocate_materials" as const, label: "转移敏感材料", durationMinutes: 30,
+      description: "分批转移密码材料与联络痕迹，降低据点热度和网络暴露。",
+      available: enoughEnergy && rest.available && !watched && (heat >= 4 || state.network.exposure >= 8),
+      reason: !enoughEnergy ? "精力不足" : !rest.available ? "只能在安全住处或同志据点整理材料" : watched ? "当前正受监视，先设法甩开尾巴" : heat < 4 && state.network.exposure < 8 ? "目前没有需要转移的敏感痕迹" : "当前可以执行",
+      requiresTarget: false,
+    },
+  ];
+}
+
+function countermeasureDuration(kind: Extract<GameAction, { type: "countermeasure" }>["kind"]) {
+  return kind === "check_tail" ? 20 : kind === "reinforce_cover" ? 60 : 30;
 }
 
 function normalizeRadioItems(

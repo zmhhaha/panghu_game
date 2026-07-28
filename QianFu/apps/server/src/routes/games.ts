@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { CampaignEngine, COVER_PROFILES, getDifficultyVisibility, getRadioMinigameConfig, getRadioSites, getRestAvailability, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction, type RadioMessageItem } from "@qianfu/core";
+import { CampaignEngine, COVER_PROFILES, getCountermeasureOptions, getDifficultyVisibility, getRadioMinigameConfig, getRadioSites, getRestAvailability, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction, type RadioMessageItem } from "@qianfu/core";
 import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
 import { getCampaignDefinition } from "@qianfu/content";
@@ -24,6 +24,8 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("dialogue_start"), targetCharacterId: z.string().min(1), goal: z.enum(["small_talk", "build_trust", "probe_attitude", "request_information", "verify_intel", "apply_pressure", "recruit_probe", "long_talk"]), tone: z.enum(["neutral", "friendly", "formal", "urgent", "threatening"]), targetIntelId: z.string().min(1).optional(), allocatedMinutes: z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(60)]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("dialogue_turn"), sessionId: z.string().min(8), playerText: z.string().trim().min(1).max(DIALOGUE_MAX_TEXT_LENGTH), durationMinutes: z.literal(2), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("dialogue_end"), sessionId: z.string().min(8), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("respond_to_contact"), contactId: z.string().min(3).max(160), decision: z.enum(["accept", "defer", "refuse"]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("countermeasure"), kind: z.enum(["check_tail", "reinforce_cover", "plant_decoy", "relocate_materials"]), targetLocationId: z.string().min(1).optional(), durationMinutes: z.union([z.literal(20), z.literal(30), z.literal(60)]), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("interrogation_answer"), interrogationId: z.string().min(8), strategy: z.enum(["calm", "formal", "deflect", "counter_question"]), playerText: z.string().trim().min(4).max(300), durationMinutes: z.literal(10), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("move"), destinationId: z.string().min(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("observe"), targetCharacterId: z.string().min(1), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
@@ -132,6 +134,7 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
       }),
       narrativeThreads: state.narrativeThreads ?? [],
       rest: getRestAvailability(campaign, state),
+      countermeasures: getCountermeasureOptions(campaign, state),
       radioSites: getRadioSites(campaign, state).map((site) => ({
         ...site,
         discovered: state.discoveredLocationIds.includes(site.id),

@@ -37,6 +37,8 @@ function eventCategory(type: string): EventFilter {
   if (type === "player.moved" || type === "player.waited" || type === "player.rested" || type.startsWith("character.schedule")) return "movement";
   if (type.startsWith("comrade") || type.startsWith("character.recruitment")) return "network";
   if (type.startsWith("investigation") || type.startsWith("interrogation")) return "threat";
+  if (type.startsWith("director.contact")) return "dialogue";
+  if (type.startsWith("counterintelligence")) return "threat";
   return "movement";
 }
 
@@ -57,6 +59,8 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
     "interrogation.scheduled": "收到传唤", "interrogation.started": "盘问开始", "interrogation.resolved": "盘问结束",
     "narrative.event_resolved": "剧情事件", "narrative.thread_updated": "调查线程更新", "location.discovered": "解锁地点", "location.stage_changed": "地点认知变化",
     "cover.work_completed": "完成公开工作", "cover.activity_credited": "形成在岗记录", "cover.leave_approved": "请假登记", "cover.absence_recorded": "异常缺勤", "cover.supervisor_check": "上级核查",
+    "director.contact_offered": "人物主动接触", "director.contact_accepted": "接受主动接触", "director.contact_deferred": "推迟主动接触", "director.contact_refused": "拒绝主动接触", "director.contact_expired": "错过接触",
+    "counterintelligence.completed": "反侦察行动",
   };
   const title = labels[event.type] ?? "行动记录";
   const text = event.type === "player.moved" ? `你前往了${location ?? "未知地点"}。`
@@ -78,6 +82,8 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
     const identity = typeof payload.publicIdentity === "string" ? `（${payload.publicIdentity}）` : "";
     return { title, text: `已认识人物：${name}${identity}。${hintText(payload)}` };
   }
+  if (event.type === "director.contact_offered") return { title, text: `${String(payload.characterName ?? character ?? "有人")}主动找你接触：${String(payload.reason ?? "来意不明")}。` };
+  if (event.type === "counterintelligence.completed") return { title, text: String(payload.notice ?? "你完成了一次反侦察行动。") };
   if (event.type === "interrogation.scheduled") return { title, text: "警备处发来传唤，要求核对你的公开身份与近期行踪。" };
   if (event.type === "interrogation.started") return { title, text: "敌方盘问正式开始，其他行动暂时中止。" };
   if (event.type === "interrogation.resolved") {

@@ -134,6 +134,7 @@ function buildTimeline(campaign: CampaignDefinition, events: GameEvent[]): Campa
     "radio.message_sent", "radio.receipt_received", "investigation.surveillance_started", "player.moved",
     "player.rested", "mission.objective_completed", "mission.objective_unlocked", "interrogation.scheduled",
     "interrogation.started", "interrogation.resolved",
+    "director.contact_offered", "director.contact_accepted", "director.contact_refused", "counterintelligence.completed",
   ].includes(event.type));
   return important.slice(-40).map((event) => describeEvent(campaign, event));
 }
@@ -169,6 +170,10 @@ function describeEvent(campaign: CampaignDefinition, event: GameEvent): Campaign
     "interrogation.scheduled": ["敌方传唤", "警备处要求核对公开身份与近期行踪"],
     "interrogation.started": ["接受盘问", "敌方正式开始交叉核对公开记录"],
     "interrogation.resolved": ["盘问结果", payload.outcome === "cleared" ? "暂时洗清嫌疑" : payload.outcome === "watched" ? "被列入继续观察名单" : "公开身份出现明显破绽"],
+    "director.contact_offered": ["人物主动接触", `${character?.name ?? "一名人物"}因“${String(payload.reason ?? "临时事务")}”主动找来`],
+    "director.contact_accepted": ["回应接触", `接受了${character?.name ?? "来访者"}发起的谈话`],
+    "director.contact_refused": ["拒绝接触", `拒绝了${character?.name ?? "来访者"}发起的谈话`],
+    "counterintelligence.completed": ["反侦察行动", String(payload.notice ?? "完成了一次反侦察处置")],
     "player.moved": ["转移地点", `抵达${location?.name ?? "新的地点"}`],
     "player.rested": ["夜间休息", `休息 ${formatRestDuration(Number(payload.durationMinutes ?? 0))}，恢复了 ${Number(payload.recovery ?? 0)} 点精力`],
   };

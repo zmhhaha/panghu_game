@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CampaignEngine, calculateScore, createInitialWorld, getRadioSites, toPublicGameEvents, toPublicWorldState, type CampaignDefinition, type WorldState } from "../src/index.js";
+import { CampaignEngine, calculateScore, createInitialWorld, getCountermeasureOptions, getRadioSites, toPublicGameEvents, toPublicWorldState, type CampaignDefinition, type WorldState } from "../src/index.js";
 
 const campaign: CampaignDefinition = {
   id: "test", version: "1.0.0", engineVersion: "1.0.0", name: "Test",
@@ -936,5 +936,84 @@ describe("autonomous comrade tasks", () => {
     expect(cancelled.state.currentTime).toBe(taskCampaign.startTime);
     expect(cancelled.state.network.tasks[0]?.status).toBe("cancelled");
     expect(cancelled.state.characters.member.agentTier).toBe("background");
+  });
+});
+
+describe("director contacts and counterintelligence", () => {
+  const directorCampaign: CampaignDefinition = {
+    ...campaign,
+    characters: [{
+      id: "visitor", name: "Visitor", publicIdentity: "Editor", hiddenAlignment: "neutral", initialLocationId: "office", recruitable: false,
+      schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
+      reliability: { loyalty: 50, discipline: 60, pressureResistance: 60, courage: 50, competence: 70 },
+    }],
+    narrativeEvents: [{
+      id: "visitor-asks", title: "Visitor asks", visibleSummary: "Visitor approaches the player.",
+      trigger: { type: "time", notBefore: "1942-05-12T00:10:00.000Z" },
+      effects: { contact: {
+        characterId: "visitor", reason: "A missing public record needs explanation.", openingLine: "Can you explain this missing record?",
+        goal: "probe_attitude", tone: "formal", allocatedMinutes: 20, responseWindowMinutes: 60,
+      } },
+    }],
+  };
+
+  it("offers a proactive NPC contact on a ten-minute boundary and opens dialogue when accepted", () => {
+    const engine = new CampaignEngine(directorCampaign, createInitialWorld(directorCampaign, "director-contact", "user-1"));
+    const offered = engine.execute({ type: "wait", durationMinutes: 10, idempotencyKey: "director-wait" });
+    expect(offered.state.pendingContact).toMatchObject({ characterId: "visitor", openingLine: "Can you explain this missing record?" });
+    expect(offered.events.some((event) => event.type === "director.contact_offered")).toBe(true);
+    const contactId = offered.state.pendingContact!.id;
+    const accepted = engine.execute({ type: "respond_to_contact", contactId, decision: "accept", durationMinutes: 0, idempotencyKey: "director-accept" });
+    expect(accepted.state.pendingContact).toBeNull();
+    expect(accepted.state.activeDialogue).toMatchObject({ characterId: "visitor", goal: "probe_attitude", allocatedMinutes: 20 });
+    expect(accepted.state.activeDialogue?.transcript[0]?.text).toBe("Can you explain this missing record?");
+  });
+
+  it("allows one deferral and expires an unanswered contact on the world clock", () => {
+    const engine = new CampaignEngine(directorCampaign, createInitialWorld(directorCampaign, "director-expiry", "user-1"));
+    const offered = engine.execute({ type: "wait", durationMinutes: 10, idempotencyKey: "expiry-wait" });
+    const contactId = offered.state.pendingContact!.id;
+    const deferred = engine.execute({ type: "respond_to_contact", contactId, decision: "defer", durationMinutes: 0, idempotencyKey: "director-defer" });
+    expect(deferred.state.pendingContact?.deferrals).toBe(1);
+    expect(() => engine.execute({ type: "respond_to_contact", contactId, decision: "defer", durationMinutes: 0, idempotencyKey: "director-defer-again" })).toThrow("已经推迟过");
+    const expired = engine.execute({ type: "wait", durationMinutes: 60, idempotencyKey: "expiry-finish" });
+    expect(expired.state.pendingContact).toBeNull();
+    expect(expired.events.some((event) => event.type === "director.contact_expired")).toBe(true);
+  });
+
+  const counterCampaign: CampaignDefinition = {
+    ...campaign,
+    locations: [
+      { id: "archive-office", name: "Archive", district: "A", travelMinutes: { "safe-flat": 20 } },
+      { id: "safe-flat", name: "Safe", district: "B", travelMinutes: { "archive-office": 20 }, radioSite: { baseRisk: 5, initiallyAvailable: true } },
+    ],
+  };
+
+  it("lets the player shake surveillance, reinforce cover, plant a decoy, and relocate materials", () => {
+    const watched = createInitialWorld(counterCampaign, "counter-watch", "user-1");
+    watched.investigation.pressure = 30; watched.investigation.locationHeat["archive-office"] = 14; watched.investigation.surveillanceLocationIds = ["archive-office"];
+    const watchEngine = new CampaignEngine(counterCampaign, watched);
+    expect(getCountermeasureOptions(counterCampaign, watched).find((item) => item.kind === "check_tail")?.available).toBe(true);
+    const shaken = watchEngine.execute({ type: "countermeasure", kind: "check_tail", durationMinutes: 20, idempotencyKey: "counter-tail" });
+    expect(shaken.state.investigation.surveillanceLocationIds).not.toContain("archive-office");
+    expect(shaken.state.investigation.locationHeat["archive-office"]).toBeLessThan(14);
+
+    const cover = createInitialWorld(counterCampaign, "counter-cover", "user-1");
+    cover.personalSuspicion = 20; cover.cover.supervisorSuspicion = 20; cover.investigation.pressure = 20;
+    const covered = new CampaignEngine(counterCampaign, cover).execute({ type: "countermeasure", kind: "reinforce_cover", durationMinutes: 60, idempotencyKey: "counter-cover-work" });
+    expect(covered.state.personalSuspicion).toBeLessThan(20);
+    expect(covered.state.cover.supervisorSuspicion).toBeLessThan(20);
+
+    const decoy = createInitialWorld(counterCampaign, "counter-decoy", "user-1");
+    decoy.investigation.pressure = 30; decoy.investigation.locationHeat["archive-office"] = 10;
+    const diverted = new CampaignEngine(counterCampaign, decoy).execute({ type: "countermeasure", kind: "plant_decoy", targetLocationId: "safe-flat", durationMinutes: 30, idempotencyKey: "counter-decoy-action" });
+    expect(diverted.state.investigation.locationHeat["safe-flat"]).toBeGreaterThan(0);
+    expect(diverted.state.network.exposure).toBeGreaterThan(0);
+
+    const materials = createInitialWorld(counterCampaign, "counter-materials", "user-1");
+    materials.currentLocationId = "safe-flat"; materials.network.exposure = 20; materials.investigation.locationHeat["safe-flat"] = 10;
+    const relocated = new CampaignEngine(counterCampaign, materials).execute({ type: "countermeasure", kind: "relocate_materials", durationMinutes: 30, idempotencyKey: "counter-relocate" });
+    expect(relocated.state.network.exposure).toBeLessThan(20);
+    expect(relocated.state.investigation.locationHeat["safe-flat"]).toBeLessThan(10);
   });
 });

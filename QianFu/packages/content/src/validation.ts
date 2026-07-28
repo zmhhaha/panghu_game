@@ -108,12 +108,21 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
     for (const requiredEventId of trigger.requiredEventIds ?? []) {
       if (!narrativeEvents.has(requiredEventId)) errors.push(`narrative event ${event.id} requires unknown event ${requiredEventId}`);
     }
+    for (const objectiveId of trigger.requiredCompletedObjectiveIds ?? []) {
+      if (!objectives.has(objectiveId)) errors.push(`narrative event ${event.id} requires unknown objective ${objectiveId}`);
+    }
+    if ((trigger.minInvestigationPressure ?? 0) < 0 || (trigger.maxInvestigationPressure ?? 100) > 100 || (trigger.minInvestigationPressure ?? 0) > (trigger.maxInvestigationPressure ?? 100)) {
+      errors.push(`narrative event ${event.id} has invalid investigation pressure range`);
+    }
     for (const effect of event.effects.locations ?? []) {
       if (!locations.has(effect.locationId)) errors.push(`narrative event ${event.id} references unknown location ${effect.locationId}`);
     }
     for (const characterId of event.effects.introduceCharacterIds ?? []) {
       if (!characters.has(characterId)) errors.push(`narrative event ${event.id} introduces unknown character ${characterId}`);
     }
+    const contact = event.effects.contact;
+    if (contact && !characters.has(contact.characterId)) errors.push(`narrative event ${event.id} contacts unknown character ${contact.characterId}`);
+    if (contact && (contact.responseWindowMinutes < 10 || contact.responseWindowMinutes % 10 !== 0)) errors.push(`narrative event ${event.id} has invalid contact response window`);
   }
   return { valid: errors.length === 0, errors };
 }

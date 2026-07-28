@@ -225,11 +225,23 @@ export interface CampaignNarrativeEvent {
     minInteractionCount?: number;
     notBefore?: string;
     requiredEventIds?: string[];
+    requiredCompletedObjectiveIds?: string[];
+    minInvestigationPressure?: number;
+    maxInvestigationPressure?: number;
   };
   effects: {
     locations?: Array<{ locationId: string; stage: Exclude<LocationKnowledgeStage, "unknown">; hint: string }>;
     introduceCharacterIds?: string[];
     thread?: { id: string; title: string; summary: string; status?: NarrativeThreadState["status"] };
+    contact?: {
+      characterId: string;
+      reason: string;
+      openingLine: string;
+      goal: DialogueGoal;
+      tone: DialogueTone;
+      allocatedMinutes: 10 | 20 | 30;
+      responseWindowMinutes: number;
+    };
   };
 }
 
@@ -427,6 +439,21 @@ export interface EnemyInvestigationState {
   lastActionAt: string | null;
 }
 
+export interface PendingContactState {
+  id: string;
+  eventId: string;
+  characterId: string;
+  reason: string;
+  openingLine: string;
+  goal: DialogueGoal;
+  tone: DialogueTone;
+  allocatedMinutes: 10 | 20 | 30;
+  createdAt: string;
+  expiresAt: string;
+  deferredUntil: string | null;
+  deferrals: number;
+}
+
 export type InterrogationStrategy = "calm" | "formal" | "deflect" | "counter_question";
 
 export interface InterrogationState {
@@ -579,6 +606,7 @@ export interface WorldState {
   characters: Record<string, CharacterState>;
   dialogueMemories: Record<string, DialogueMemory>;
   activeDialogue: DialogueSession | null;
+  pendingContact?: PendingContactState | null;
   intel: Record<string, IntelState>;
   network: NetworkState;
   radio: RadioState;
@@ -694,6 +722,20 @@ export interface DialogueEndAction extends ActionBase {
   sessionId: string;
 }
 
+export interface RespondToContactAction extends ActionBase {
+  type: "respond_to_contact";
+  contactId: string;
+  decision: "accept" | "defer" | "refuse";
+}
+
+export type CountermeasureKind = "check_tail" | "reinforce_cover" | "plant_decoy" | "relocate_materials";
+
+export interface CountermeasureAction extends ActionBase {
+  type: "countermeasure";
+  kind: CountermeasureKind;
+  targetLocationId?: string;
+}
+
 export interface InterrogationAnswerAction extends ActionBase {
   type: "interrogation_answer";
   interrogationId: string;
@@ -756,7 +798,7 @@ export interface RecruitCandidateAction extends ActionBase {
   targetCharacterId: string;
 }
 
-export type GameAction = MoveAction | ObserveAction | WaitAction | RestAction | RecordIntelAction | TransmitIntelAction | CoverWorkAction | RequestLeaveAction | SendRadioMessageAction | AbortRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | InterrogationAnswerAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
+export type GameAction = MoveAction | ObserveAction | WaitAction | RestAction | RecordIntelAction | TransmitIntelAction | CoverWorkAction | RequestLeaveAction | SendRadioMessageAction | AbortRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | RespondToContactAction | CountermeasureAction | InterrogationAnswerAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
 
 export interface ActionResult {
   state: WorldState;

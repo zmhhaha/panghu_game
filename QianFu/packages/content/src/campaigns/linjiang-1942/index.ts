@@ -212,6 +212,72 @@ const draft: CampaignDefinition = {
         },
       },
     },
+    {
+      id: "director-chen-missing-register",
+      title: "陈敬文主动核对登记",
+      visibleSummary: "陈敬文注意到你正在处理设备档案，主动来确认一页缺失的登记。",
+      trigger: { type: "time", notBefore: "1942-05-12T01:00:00.000Z", maxInvestigationPressure: 30 },
+      effects: { contact: {
+        characterId: "chen-jingwen", reason: "设备档案缺少经办签字，他想判断你是否发现了异常。",
+        openingLine: "先停一下。你手里那本设备登记，最后一页是谁交给你的？我记得那里原本有个经办签字。",
+        goal: "build_trust", tone: "formal", allocatedMinutes: 20, responseWindowMinutes: 90,
+      } },
+    },
+    {
+      id: "director-lin-source-check",
+      title: "林若岚追问稿件来源",
+      visibleSummary: "林若岚放下手里的校样，主动询问你最近采写的一条消息。",
+      trigger: { type: "time", notBefore: "1942-05-12T01:10:00.000Z", maxInvestigationPressure: 35 },
+      effects: { contact: {
+        characterId: "lin-ruolan", reason: "一条公开消息的出处含糊，她想确认你是否尊重信源规则。",
+        openingLine: "你先别走。我看了你留下的那几行材料，消息写得像真的，可出处太干净了。你是亲眼看见的，还是有人希望你这样写？",
+        goal: "probe_attitude", tone: "neutral", allocatedMinutes: 20, responseWindowMinutes: 90,
+      } },
+    },
+    {
+      id: "director-luo-account-question",
+      title: "罗伯安试探账目来意",
+      visibleSummary: "罗伯安结束一场商会会面后，主动问起你今天核对货账的目的。",
+      trigger: { type: "time", notBefore: "1942-05-12T03:10:00.000Z", maxInvestigationPressure: 35 },
+      effects: { contact: {
+        characterId: "luo-boan", reason: "商会账目出现缺口，他想弄清你代表自己还是某个靠山。",
+        openingLine: "刚才听柜上说，你在问一笔迟到的货款。生意上的差错总有缘故，只是不知道你想找的是钱，还是经手的人？",
+        goal: "probe_attitude", tone: "friendly", allocatedMinutes: 20, responseWindowMinutes: 90,
+      } },
+    },
+    {
+      id: "director-zhao-return-question",
+      title: "赵福生回头探问",
+      visibleSummary: "赵福生处理完一批货单后又折回来，主动试探你追查回执的真正目的。",
+      trigger: { type: "relationship", characterId: "zhao-fusheng", minFamiliarity: 5, minInteractionCount: 3, maxInvestigationPressure: 65 },
+      effects: { contact: {
+        characterId: "zhao-fusheng", reason: "你对运输回执的关注超过普通办事人员，他要判断风险和交换条件。",
+        openingLine: "我想了想，还是得问一句。码头每天缺的单子多了，你怎么偏偏盯着这一张？这事要是替别人办的，咱们最好先把话说明白。",
+        goal: "probe_attitude", tone: "neutral", allocatedMinutes: 20, responseWindowMinutes: 60,
+      } },
+    },
+    {
+      id: "director-han-corridor-probe",
+      title: "韩世杰走廊试探",
+      visibleSummary: "调查压力升高后，韩世杰在走廊里主动拦住你，进行一次没有笔录的试探。",
+      trigger: { type: "time", notBefore: "1942-05-15T00:00:00.000Z", requiredCompletedObjectiveIds: ["confirm-radio-shipment"], minInvestigationPressure: 20 },
+      effects: { contact: {
+        characterId: "han-shijie", reason: "正式盘问之外的临时试探，用于观察你没有准备时如何解释近期行踪。",
+        openingLine: "别紧张，不做笔录。我只想知道，最近几天你为什么总能在需要核对材料的时候，恰好出现在附近？",
+        goal: "probe_attitude", tone: "formal", allocatedMinutes: 10, responseWindowMinutes: 30,
+      } },
+    },
+    {
+      id: "director-wu-network-warning",
+      title: "老吴主动示警",
+      visibleSummary: "交通线受到搜索后，老吴主动提醒你观察钟表店外反复出现的脚步。",
+      trigger: { type: "time", notBefore: "1942-05-18T00:00:00.000Z", requiredCompletedObjectiveIds: ["trace-security-crackdown"], minInvestigationPressure: 25 },
+      effects: { contact: {
+        characterId: "old-wu", reason: "交通线附近出现重复脚步，他需要你判断是便衣监视还是偶然路人。",
+        openingLine: "先别看门外。今天有双鞋从这里经过了三次，每次都慢半拍。你坐下喝口水，说说你一路上有没有换过方向。",
+        goal: "long_talk", tone: "urgent", allocatedMinutes: 30, responseWindowMinutes: 60,
+      } },
+    },
   ],
   intel: [
     { id: "shipment-time", title: "运输时间", truth: "true", requiredFields: ["date", "hour"], fieldValues: { date: "5月15日", hour: "凌晨2时40分" }, sourceCharacterIds: ["chen-jingwen", "zhao-fusheng"], sourceRequirements: { "chen-jingwen": { familiarity: 12, privateTrust: 10 }, "zhao-fusheng": { familiarity: 10, privateTrust: 7 } }, expiresAt: "1942-05-15T14:00:00.000Z" },

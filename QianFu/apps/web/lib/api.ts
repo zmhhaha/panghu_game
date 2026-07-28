@@ -14,6 +14,15 @@ export interface GameContext {
   locations: { id: string; name: string; district: string; travelMinutes: Record<string, number>; discovered: boolean; stage: "unknown" | "rumored" | "located" | "accessible" | "compromised"; hint: string | null }[];
   narrativeThreads: Array<{ id: string; title: string; summary: string; status: "active" | "resolved"; sourceEventId: string; updatedAt: string }>;
   rest: { available: boolean; reason: string };
+  countermeasures: Array<{
+    kind: "check_tail" | "reinforce_cover" | "plant_decoy" | "relocate_materials";
+    label: string;
+    durationMinutes: 20 | 30 | 60;
+    description: string;
+    available: boolean;
+    reason: string;
+    requiresTarget: boolean;
+  }>;
   radioSites: Array<{ id: string; name: string; baseRisk: number; available: boolean; discovered: boolean; currentHeat: number; requiresRecruitedCharacterId: string | null }>;
   characters: { id: string; name: string; publicIdentity: string; recruitable: boolean; known: boolean; verifiableIntelIds: string[] }[];
   networkMembers: { id: string; name: string; publicIdentity: string }[];
