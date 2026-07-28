@@ -237,7 +237,10 @@ describe("CampaignEngine", () => {
 describe("public cover identity", () => {
   const coverCampaign: CampaignDefinition = {
     ...campaign,
-    locations: [{ id: "archive-office", name: "Archive", district: "A", travelMinutes: {} }],
+    locations: [
+      { id: "archive-office", name: "Archive", district: "A", travelMinutes: {} },
+      { id: "safe-flat", name: "Safe Flat", district: "B", travelMinutes: {}, radioSite: { baseRisk: 5, initiallyAvailable: true } },
+    ],
     objectives: [{ ...campaign.objectives[0], deadline: "1942-05-20T20:00:00.000Z" }],
   };
 
@@ -277,6 +280,7 @@ describe("public cover identity", () => {
   it("allows a night rest to advance the world and recover energy without charging action fatigue", () => {
     const state = createInitialWorld(coverCampaign, "night-rest", "user-1");
     state.currentTime = "1942-05-12T20:00:00.000Z";
+    state.currentLocationId = "safe-flat";
     state.playerEnergy = 24;
     const engine = new CampaignEngine(coverCampaign, state);
     const result = engine.execute({ type: "rest", sleepMinutes: 8 * 60, durationMinutes: 0, idempotencyKey: "night-rest-action" });
@@ -285,17 +289,20 @@ describe("public cover identity", () => {
     expect(result.events.some((event) => event.type === "player.rested")).toBe(true);
     const shortRestState = createInitialWorld(coverCampaign, "short-night-rest", "user-1");
     shortRestState.currentTime = "1942-05-12T20:00:00.000Z";
+    shortRestState.currentLocationId = "safe-flat";
     shortRestState.playerEnergy = 24;
     const shortRest = new CampaignEngine(coverCampaign, shortRestState).execute({ type: "rest", sleepMinutes: 3 * 60, durationMinutes: 0, idempotencyKey: "short-rest-action" });
     expect(shortRest.state.playerEnergy).toBe(39);
     const dayState = createInitialWorld(coverCampaign, "day-rest", "user-1");
     dayState.currentTime = "1942-05-12T10:00:00.000Z";
+    dayState.currentLocationId = "safe-flat";
     expect(() => new CampaignEngine(coverCampaign, dayState).execute({ type: "rest", sleepMinutes: 8 * 60, durationMinutes: 0, idempotencyKey: "day-rest-action" })).toThrow("只能在夜间");
   });
 
   it("lets rest reduce investigation pressure according to difficulty", () => {
     const state = createInitialWorld(coverCampaign, "pressure-rest", "user-1", "undercover");
     state.currentTime = "1942-05-12T20:00:00.000Z";
+    state.currentLocationId = "safe-flat";
     state.investigation.pressure = 60;
     const result = new CampaignEngine(coverCampaign, state).execute({ type: "rest", sleepMinutes: 6 * 60, durationMinutes: 0, idempotencyKey: "pressure-rest-action" });
     expect(result.state.investigation.pressure).toBeLessThan(60);

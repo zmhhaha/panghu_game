@@ -47,8 +47,6 @@ export function CityMap({ locations, currentLocationId, travelMinutes, disabled,
 }) {
   return <div className="relative aspect-[4/5] min-h-[320px] overflow-hidden border border-line bg-panel">
     <div className="absolute inset-0 opacity-30" style={{ backgroundImage: "linear-gradient(#343b38 1px, transparent 1px), linear-gradient(90deg, #343b38 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
-    <div className="absolute left-3 top-3 text-[10px] text-muted">临江市行动图</div>
-    <div className="absolute bottom-3 right-3 text-[9px] text-muted">每格约十分钟步程</div>
     {roads.map(([from, to]) => {
       const a = positions[from]; const b = positions[to];
       const dx = b.x - a.x; const dy = b.y - a.y;
