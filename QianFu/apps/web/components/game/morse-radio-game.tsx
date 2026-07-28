@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Backspace, CircleStop, Radio, Send, Volume2, VolumeX } from "lucide-react";
+import { ArrowLeft, CircleStop, Radio, Send, Undo2, Volume2, VolumeX } from "lucide-react";
 import type { GameAction } from "@qianfu/core";
 import type { RadioChallenge, RadioChallengeRequest } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -108,7 +108,7 @@ export function MorseRadioGame({ challenge, selection, busy, onCancel, onSend }:
             <button disabled={complete} onClick={() => inputSymbol(".")} className="h-28 border border-line bg-panel text-center hover:border-copper active:bg-copper/10 disabled:opacity-40"><span className="block font-mono text-4xl">·</span><span className="mt-2 block text-xs text-muted">点 · J</span></button>
             <button disabled={complete} onClick={() => inputSymbol("-")} className="h-28 border border-line bg-panel text-center hover:border-copper active:bg-copper/10 disabled:opacity-40"><span className="block font-mono text-4xl">−</span><span className="mt-2 block text-xs text-muted">划 · K</span></button>
           </div>}
-          {startedAt !== null && <div className="mt-4 flex justify-center"><button disabled={inputs.length === 0} onClick={undo} className="flex h-9 items-center gap-2 px-3 text-xs text-muted hover:text-paper disabled:opacity-30"><Backspace size={14} />撤回上一键</button></div>}
+          {startedAt !== null && <div className="mt-4 flex justify-center"><button disabled={inputs.length === 0} onClick={undo} className="flex h-9 items-center gap-2 px-3 text-xs text-muted hover:text-paper disabled:opacity-30"><Undo2 size={14} />撤回上一键</button></div>}
         </section>
 
         <aside className="border-l-2 border-copper bg-copper/[0.06] p-4">
