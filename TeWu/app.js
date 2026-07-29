@@ -899,10 +899,11 @@ function render() {
 }
 
 function renderHeader(showStats = false) {
+  const headerCampaign = controller.status === "briefing" ? cloneCampaign(selectedCampaignId) : controller.campaign;
   const officerMetric = controller.status === "complete" ? `<span>准确率 <strong>${Math.round(controller.accuracy())}%</strong></span>` : controller.status === "selection" ? `<span>已选 <strong>${controller.selectedTargets.length}</strong> 人</span>` : `<span>已盘问 <strong>${controller.currentIndex} / 10</strong></span>`;
   const metric = controller.mode === "infiltrator" ? `<span>可疑度 <strong>${controller.suspicion()}%</strong></span>` : officerMetric;
   const exit = controller.status === "active" ? `<button class="header-exit" data-action="exit">退出当前局</button>` : "";
-  return `<header class="topbar"><div class="brand"><span class="brand-mark">特</span><div><p class="brand-title">特务</p><p class="brand-subtitle">机构档案 · ${escapeHtml(controller.campaign.name)}</p></div></div><div class="top-meta"><span><i class="lock-dot"></i>通讯加密</span><span>机构 <strong>${escapeHtml(controller.campaign.name)}</strong></span>${showStats ? metric : ""}${exit}</div></header>`;
+  return `<header class="topbar"><div class="brand"><span class="brand-mark">特</span><div><p class="brand-title">特务</p><p class="brand-subtitle">机构档案 · ${escapeHtml(headerCampaign.name)}</p></div></div><div class="top-meta"><span><i class="lock-dot"></i>通讯加密</span><span>机构 <strong>${escapeHtml(headerCampaign.name)}</strong></span>${showStats ? metric : ""}${exit}</div></header>`;
 }
 
 function renderBriefing() {
