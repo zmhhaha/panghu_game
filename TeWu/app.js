@@ -91,6 +91,42 @@ const CAMPAIGNS = [
   },
 ];
 
+const LOCAL_KNOWLEDGE = {
+  gestapo: ["旧检查棚夜班在 22:00 换岗，交接簿会留下车次与临时改线记录。", "外环主路与东线货运支线的口头叫法不同；长期跑线的人通常分得清。", "铁路警察档案室可核对通行证编号、岗位交接和封签登记。"],
+  kgb: ["封闭城市的许可分为人员、货运与夜间换乘三类，编号格式不同。", "第七边境铁路在凌晨会有一次固定的登记交接，错过者必须说明原因。", "当地人把西侧岗亭称作旧站房，而官方文件仍使用边检哨位。"],
+  juntong: ["嘉陵江水陆联运线的夜渡按船次登记，陆路通行证不能替代渡口记录。", "南岸检查站附近有旧码头、临时仓和汽车站三条常用路线。", "交通站档案室可对照货单、交接人和当天的船车时刻。"],
+  zhongtong: ["城北入口的介绍信会同时写明引介人、所属关系和有效日期。", "机关附近有北门正路、邮政巷和旧会馆三处常见等候点。", "党务登记处能核对公开职务与担保关系，但不会记录私人交往。"],
+  cia: ["西柏林联络站夜间访客要经过值班台，安全许可与普通通行证编号不同。", "联络站附近的公开入口、货运入口和旧电车站使用的人群不同。", "国内安全审查处可查公开履历与许可记录，但街头称呼往往不出现在正式文件中。"],
+};
+
+const INSTITUTIONAL_AXES = {
+  gestapo: {
+    title: "政治忠诚与组织关系",
+    brief: "盘查会关注候选人对纳粹统治、官方组织与占领秩序的公开态度；历史语境用于识别政治迫害机制，不将其立场视为正当。",
+    prompts: ["你如何看待元首和当前国家秩序？", "你所属的组织或工会最近由谁负责？", "你对占领区来的人员有什么看法？", "若发现同事散发非法传单，你会怎么处理？"],
+  },
+  kgb: {
+    title: "安全观念与外部接触",
+    brief: "盘查会围绕冷战对手、涉外接触、出入许可与国家安全叙事展开，重点是回答能否与行程和关系记录相互印证。",
+    prompts: ["你怎么看待西方广播和冷战对手？", "你最近是否接触过外国人或外来信件？", "为什么需要夜间进入封闭城市？", "若有人请你带一件未登记物品过境，你会如何回应？"],
+  },
+  juntong: {
+    title: "战时立场与交通关系",
+    brief: "盘查会关注战时交通线、日伪渗透风险、军政联络和个人来历。立场回答必须能被实际工作、路线或介绍人佐证。",
+    prompts: ["你如何看待日伪占领区的消息？", "谁为你的战时通行作担保？", "你在交通线上接触过哪些单位？", "若有人要求你绕过登记运送物品，你会怎么做？"],
+  },
+  zhongtong: {
+    title: "组织关系与介绍来源",
+    brief: "盘查会围绕介绍信、公开职务、组织关系与政治立场进行；关键不是口头表态，而是引介人与履历是否能对上。",
+    prompts: ["你的介绍信由谁开具，和你是什么关系？", "你如何看待组织纪律和公开政治立场？", "最近是谁向你介绍这份工作？", "如果原介绍人不在城内，你会找谁核对？"],
+  },
+  cia: {
+    title: "忠诚审查与政治关联",
+    brief: "本作架空设定下，盘查会关注共产主义组织关联、安全许可与公开政治活动；避免把政治观点本身当作定罪证据，应追查具体关系和记录。",
+    prompts: ["你怎么看待美国的共产主义组织活动？", "你是否参加过政治集会、读书会或工会活动？", "谁能为你的安全许可或履历作证明？", "你最近是否与被调查人员有过工作往来？"],
+  },
+};
+
 const NPC_BLUEPRINTS = [
   { id: "printer", role: "印刷厂校样员", origin: "西站货运线", target: true, public: "携带一只装满校样纸的旧公文包", signature: "把机关公文里的新称呼说得过分自然", tell: "时间线和证件上的岗位交接对不上" },
   { id: "nurse", role: "临时护士", origin: "南郊疗养院", target: false, public: "手提药箱，袖口有消毒水气味", signature: "会因为担心药品保存而打断盘查", tell: "能对上值班交接和药箱封签" },
@@ -134,6 +170,32 @@ const CHARACTER_MODELS = {
   archivist: { temperament: "谨慎、怀旧、对分类秩序有近乎偏执的执念", immediateGoal: "将空白文件夹送入指定地点并确认无人跟踪", privateBurden: "曾在旧档案中发现不该看到的名单，因此熟悉多个机关旧称", socialStance: "对档案人员有亲近感，对现场检查人员不耐烦", memoryAnchors: ["入库章", "旧分类号", "东郊档案库"], stressResponse: "会给出丰富的制度知识，却难以解释当天最普通的行程", disclosureArc: "前段专业可信，中段关系与物品来源逐步暴露破绽" },
   botanist: { temperament: "好奇、散漫、容易被感兴趣的事带走", immediateGoal: "带回一批湿润标本并赶上下一班车", privateBurden: "采集时越过过一次封闭地带，只是不想被没收样本", socialStance: "认为检查站不理解野外工作的麻烦", memoryAnchors: ["叶片编号", "雨后土壤", "林场岔路"], stressResponse: "遇到植物问题异常流畅，遇到路线问题会先讲环境再回答", disclosureArc: "行为有违规感但证据链最终能自洽" },
 };
+
+const SOCIAL_ENVIRONMENTS = {
+  gestapo: { pressure: "战时征用、配给制度与政治迫害让公开表态和私人关系都带有风险", expectation: "人们会谨慎区分能公开说的忠诚表态与不能留下纸面的私人看法" },
+  kgb: { pressure: "封闭城市、国家分配与涉外限制使出入许可和外来接触格外敏感", expectation: "人们熟悉官方安全语言，却会对外国广播、短波设备和非登记往来保持戒备" },
+  juntong: { pressure: "战时流动、物资紧缺和多方势力交错使交通关系常常比正式证件更有分量", expectation: "人们会用抗战、家计、避难或单位交接解释行动，但这些说法需要和实际路线对上" },
+  zhongtong: { pressure: "党务关系、介绍来源和机关门禁交织，公开履历与私人交往并不总是一致", expectation: "人们重视谁引介、谁担保和是否守组织程序，也会回避过度追问私人政治关系" },
+  cia: { pressure: "冷战忠诚审查会影响就业、许可和社交关系，政治活动容易被重新解释", expectation: "人们可能公开反共却担心工会、读书会或旧友关系被扩大解读，因而既辩解又保留" },
+};
+
+const OCCUPATION_LENSES = {
+  printer: "印刷与文字工作让他接触到文件版本、审查痕迹和传播渠道；他会特别在意哪些话被记录下来。",
+  nurse: "照护工作让她优先考虑病人、药品和交接；她可能反感政治盘问侵入专业职责。",
+  mechanic: "交通设备和维修记录使他熟悉制度漏洞与实际运行差异；他更信任机器痕迹而非口头表态。",
+  courier: "无线电与修理工作让他既能解释技术细节，也必须小心外来接触会被怎样理解。",
+  teacher: "教育工作使他与家庭、儿童和地方舆论相连；他会把政治表态与保护学生的责任拉扯在一起。",
+  merchant: "账本、税票和物资流通让他承受制度与生计的双重压力；他会区分合法手续、灰色操作与真正的政治风险。",
+  actor: "剧团生活让他熟悉临场应对和人情网络，但也让他的履历、同伴和公开形象容易被核查。",
+  surveyor: "野外巡测让他更依赖实地数据、天气和路线；私人交往未必等同于政治立场。",
+  archivist: "档案分类让他明白制度如何定义人；他会对旧称、缺页和未盖章文件异常敏感。",
+  botanist: "采集工作与林场、土地和季节相连；他会将越界行为理解为工作必要，未必意识到它的政治含义。",
+};
+
+function socialContextFor(campaign, blueprint) {
+  const environment = SOCIAL_ENVIRONMENTS[campaign.id] || {};
+  return `${environment.pressure || "当地制度和社会关系会影响每一次盘查。"} ${environment.expectation || "公开表态需要与实际记录对照。"} ${OCCUPATION_LENSES[blueprint.id] || "职业经历会影响他的语言和风险判断。"}`;
+}
 
 const INSTITUTION_TOOLS = {
   gestapo: { label: "档案比对", description: "调取铁路警察档案室的岗位、证件和交接记录。" },
@@ -199,7 +261,7 @@ async function requestNpcReply(controller, question, answer) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      campaign: { name: controller.campaign.name, era: controller.campaign.era, setting: controller.campaign.setting },
+      campaign: { name: controller.campaign.name, era: controller.campaign.era, setting: controller.campaign.setting, localKnowledge: LOCAL_KNOWLEDGE[controller.campaign.id] || [], institutionalAxes: INSTITUTIONAL_AXES[controller.campaign.id] || {} },
       dossier: { name: controller.dossier.name, role: controller.dossier.role, origin: controller.dossier.origin, public: controller.dossier.public, signature: controller.dossier.signature, tell: controller.dossier.tell, network: controller.dossier.network, personality: controller.dossier.personality, isTarget: controller.dossier.isTarget },
       round: answer.round,
       question,
@@ -237,7 +299,7 @@ async function requestInterrogationReply(campaign, dossier, history, question, r
   const response = await fetch("/api/npc/respond", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ campaign: { name: campaign.name, era: campaign.era, setting: campaign.setting }, dossier, history, question, round, interrogationMode, fallback }),
+    body: JSON.stringify({ campaign: { name: campaign.name, era: campaign.era, setting: campaign.setting, localKnowledge: LOCAL_KNOWLEDGE[campaign.id] || [], institutionalAxes: INSTITUTIONAL_AXES[campaign.id] || {} }, dossier, history, question, round, interrogationMode, fallback }),
   });
   if (!response.ok) throw new Error(`Interrogation API ${response.status}`);
   const payload = await response.json();
@@ -258,7 +320,7 @@ async function requestInterrogationEvaluation(mode, priorHistory, history, caseC
 function makeDossier(campaign, blueprint, index) {
   const persona = { ...blueprint, name: campaign.names[index] };
   const network = NETWORKS[blueprint.id] || {};
-  const personality = CHARACTER_MODELS[blueprint.id] || {};
+  const personality = { ...(CHARACTER_MODELS[blueprint.id] || {}), socialContext: socialContextFor(campaign, blueprint) };
   const lines = (blueprint.target ? targetLines : ordinaryLines).map((line) => line(persona, campaign));
   const cautionRounds = blueprint.target ? [1, 2, 4, 5, 7, 9] : [2, 4, 6, 8];
   const observations = lines.map((_, roundIndex) => {
@@ -332,21 +394,21 @@ function makeDossier(campaign, blueprint, index) {
     general: lines,
   };
   const topicObservations = blueprint.target ? {
-    identity: { topic: "identity", label: "身份表述偏硬", level: "neutral" },
-    route: { topic: "route", label: "路线细节待复核", level: "caution" },
-    document: { topic: "document", label: "证件核验受阻", level: "caution" },
-    contact: { topic: "contact", label: "关系信息回避", level: "caution" },
-    local: { topic: "local", label: "本地知识有限", level: "neutral" },
-    purpose: { topic: "purpose", label: "目的表述抽象", level: "neutral" },
-    pressure: { topic: "pressure", label: "压力反应升高", level: "caution" },
+    identity: { topic: "identity", label: "回答已存档", level: "neutral" },
+    route: { topic: "route", label: "回答已存档", level: "neutral" },
+    document: { topic: "document", label: "回答已存档", level: "neutral" },
+    contact: { topic: "contact", label: "回答已存档", level: "neutral" },
+    local: { topic: "local", label: "回答已存档", level: "neutral" },
+    purpose: { topic: "purpose", label: "回答已存档", level: "neutral" },
+    pressure: { topic: "pressure", label: "回答已存档", level: "neutral" },
   } : {
-    identity: { topic: "identity", label: "身份细节清楚", level: "good" },
-    route: { topic: "route", label: "路线可以复核", level: "good" },
-    document: { topic: "document", label: "证件愿意核对", level: "good" },
-    contact: { topic: "contact", label: "关系链公开", level: "good" },
-    local: { topic: "local", label: "本地细节自然", level: "neutral" },
-    purpose: { topic: "purpose", label: "目的符合身份", level: "good" },
-    pressure: { topic: "pressure", label: "配合复核", level: "neutral" },
+    identity: { topic: "identity", label: "回答已存档", level: "neutral" },
+    route: { topic: "route", label: "回答已存档", level: "neutral" },
+    document: { topic: "document", label: "回答已存档", level: "neutral" },
+    contact: { topic: "contact", label: "回答已存档", level: "neutral" },
+    local: { topic: "local", label: "回答已存档", level: "neutral" },
+    purpose: { topic: "purpose", label: "回答已存档", level: "neutral" },
+    pressure: { topic: "pressure", label: "回答已存档", level: "neutral" },
   };
   return {
     id: `${campaign.id}-${blueprint.id}-${index + 1}`,
@@ -870,13 +932,15 @@ function renderQueue() {
 
 function renderLeftRail() {
   const c = controller.campaign;
-  return `<aside><div class="panel"><div class="panel-title">任务简报</div><ul class="brief-list"><li><b>01</b><span>完成十名来客的身份初筛。</span></li><li><b>02</b><span>每名候选人至少完成两轮问答。</span></li><li><b>03</b><span>证据足够时可提前放行或扣留，也可继续追问至十轮。</span></li><li><b>04</b><span>错误处置会记录为误捕或漏网。</span></li></ul></div>${renderQueue()}</aside>`;
+  const knowledge = LOCAL_KNOWLEDGE[c.id] || [];
+  const axis = INSTITUTIONAL_AXES[c.id] || {};
+  return `<aside><div class="panel"><div class="panel-title">任务简报</div><ul class="brief-list"><li><b>01</b><span>完成十名来客的身份初筛。</span></li><li><b>02</b><span>每名候选人至少完成两轮问答。</span></li><li><b>03</b><span>证据足够时可提前放行或扣留，也可继续追问至十轮。</span></li><li><b>04</b><span>错误处置会记录为误捕或漏网。</span></li></ul></div><div class="panel"><div class="panel-title">机构审查侧重</div><div class="facts"><div class="fact"><div class="fact-head"><span>${escapeHtml(axis.title || "身份核验")}</span></div><p>${escapeHtml(axis.brief || "将口头陈述与可核验记录交叉比对。")}</p></div></div></div><div class="panel"><div class="panel-title">本地知识</div><div class="facts">${knowledge.map((item, index) => `<div class="fact"><div class="fact-head"><span>记录 ${String(index + 1).padStart(2, "0")}</span></div><p>${escapeHtml(item)}</p></div>`).join("")}</div></div>${renderQueue()}</aside>`;
 }
 
 function renderFacts() {
   const observations = controller.observations;
   const topics = ["route", "document", "contact", "local"];
-  return `<div class="facts">${topics.map((topic) => { const found = [...observations].reverse().find((item) => item.topic === topic); return `<div class="fact"><div class="fact-head"><span>${topicLabel(topic)}</span><strong><i class="signal-dot ${found?.level || ""}"></i>${found ? escapeHtml(found.label) : "未核对"}</strong></div><p>${found ? "主控已将这条回答写入事实账本，仍需与其他轮次交叉验证。" : "还没有足够的公开回答建立证据链。"}</p></div>`; }).join("")}</div>`;
+  return `<div class="facts">${topics.map((topic) => { const found = [...observations].reverse().find((item) => item.topic === topic); return `<div class="fact"><div class="fact-head"><span>${topicLabel(topic)}</span><strong>${found ? "已记入" : "未记录"}</strong></div><p>${found ? "该主题已有回答。请用本地知识、其他候选人的陈述和机构记录交叉判断。" : "尚未就该主题取得候选人的陈述。"}</p></div>`; }).join("")}</div>`;
 }
 
 function renderRightRail() {
@@ -886,7 +950,7 @@ function renderRightRail() {
   const tool = controller.campaignTool;
   const clues = controller.caseClues.slice(-5);
   const verified = controller.caseClues.some((item) => item.key === `${controller.dossier.id}:verify`);
-  return `<aside><div class="panel"><div class="panel-title">案件状态</div><div class="meter-wrap"><div class="meter-row"><span>本轮警戒</span><strong>${alert}%</strong></div><div class="meter"><div class="alert" style="width:${alert}%"></div></div><div class="meter-row" style="margin-top:13px"><span>行动准确率</span><strong>${accuracy}%</strong></div><div class="meter"><div class="${accuracy >= 70 ? "teal" : "amber"}" style="width:${accuracy}%"></div></div><div class="meter-row" style="margin-top:13px"><span>已完成候选人</span><strong>${controller.decisions.length} / 10</strong></div><div class="meter"><div class="teal" style="width:${controller.decisions.length * 10}%"></div></div></div></div><div class="panel"><div class="panel-title">机构核验</div><div class="facts"><div class="fact"><div class="fact-head"><span>${escapeHtml(tool.label)}</span><strong>当前对象</strong></div><p>${escapeHtml(tool.description)}</p><button class="prompt-chip" data-action="verify-current" ${verified ? "disabled" : ""}>${verified ? "核验已归档" : "执行核验"}</button></div></div></div><div class="panel"><div class="panel-title">案件线索板</div><div class="facts">${clues.length ? clues.map((clue) => `<div class="fact"><div class="fact-head"><span>${escapeHtml(clue.label)}</span><strong>${escapeHtml(clue.source)}</strong></div><p>${escapeHtml(clue.text)}</p></div>`).join("") : `<div class="fact"><p>从路线、关系、物品和本地细节中寻找可以串联的人与地点。</p></div>`}</div></div><div class="panel"><div class="panel-title">对话线索</div>${renderFacts()}</div><div class="panel"><div class="panel-title">历史资料</div><div class="facts"><div class="fact"><div class="fact-head"><span>当前地点</span><strong>${escapeHtml(controller.campaign.setting)}</strong></div><p>${escapeHtml(controller.campaign.historical)}</p></div><div class="fact"><div class="fact-head"><span>关键词</span></div><p>${controller.campaign.terms.map((term) => `#${escapeHtml(term)}`).join(" ")}</p></div></div></div></aside>`;
+  return `<aside><div class="panel"><div class="panel-title">案件状态</div><div class="meter-wrap"><div class="meter-row"><span>本轮警戒</span><strong>${alert}%</strong></div><div class="meter"><div class="alert" style="width:${alert}%"></div></div><div class="meter-row" style="margin-top:13px"><span>行动准确率</span><strong>${accuracy}%</strong></div><div class="meter"><div class="${accuracy >= 70 ? "teal" : "amber"}" style="width:${accuracy}%"></div></div><div class="meter-row" style="margin-top:13px"><span>已完成候选人</span><strong>${controller.decisions.length} / 10</strong></div><div class="meter"><div class="teal" style="width:${controller.decisions.length * 10}%"></div></div></div></div><div class="panel"><div class="panel-title">机构核验</div><div class="facts"><div class="fact"><div class="fact-head"><span>${escapeHtml(tool.label)}</span><strong>当前对象</strong></div><p>${escapeHtml(tool.description)}</p><button class="prompt-chip" data-action="verify-current" ${verified ? "disabled" : ""}>${verified ? "核验已归档" : "执行核验"}</button></div></div></div><div class="panel"><div class="panel-title">案件线索板</div><div class="facts">${clues.length ? clues.map((clue) => `<div class="fact"><div class="fact-head"><span>${escapeHtml(clue.label)}</span><strong>${escapeHtml(clue.source)}</strong></div><p>${escapeHtml(clue.text)}</p></div>`).join("") : `<div class="fact"><p>从路线、关系、物品和本地细节中寻找可以串联的人与地点。</p></div>`}</div></div><div class="panel"><div class="panel-title">已记录陈述</div>${renderFacts()}</div><div class="panel"><div class="panel-title">历史资料</div><div class="facts"><div class="fact"><div class="fact-head"><span>当前地点</span><strong>${escapeHtml(controller.campaign.setting)}</strong></div><p>${escapeHtml(controller.campaign.historical)}</p></div><div class="fact"><div class="fact-head"><span>关键词</span></div><p>${controller.campaign.terms.map((term) => `#${escapeHtml(term)}`).join(" ")}</p></div></div></div></aside>`;
 }
 
 function renderDialogueLog() {
@@ -905,7 +969,7 @@ function agentSourceLabel(provider) {
 function renderObservationRow() {
   if (!controller.observations.length) return "";
   const recent = controller.observations.slice(-4);
-  return `<div class="observation-row">${recent.map((item) => `<span class="observation ${item.level}">${escapeHtml(topicLabel(item.topic))} · ${escapeHtml(item.label)}</span>`).join("")}</div>`;
+  return `<div class="observation-row">${recent.map((item) => `<span class="observation neutral">${escapeHtml(topicLabel(item.topic))} · 已记入记录</span>`).join("")}</div>`;
 }
 
 function renderQuestionArea() {
@@ -914,7 +978,7 @@ function renderQuestionArea() {
   if (controller.pending) return `<div class="question-area waiting-area"><div class="question-head"><strong>候选人正在回应</strong><span>模型正在整理本轮回答</span></div><div class="response-status"><i></i><i></i><i></i><span>请稍候，对话记录已保存。</span></div></div>`;
   const decision = round >= 2 ? `<div class="decision-area"><p class="decision-unlock">${round >= 10 ? "十轮回答已完成。" : `已完成 ${round} 轮问答，可根据现有证据提前处置，也可以继续追问。`}请选择放行或扣留。</p><div class="decision-grid"><button class="decision-button release" data-decision="release">放行 · 让他通过</button><button class="decision-button detain" data-decision="detain">扣留 · 交由复核</button></div></div>` : "";
   if (round >= 10) return decision;
-  const hints = ["证件和编号怎么核对？", "你从哪里来，几点出发？", "进城后准备和谁见面？", "你对这里的地名熟悉吗？"];
+  const hints = [...(INSTITUTIONAL_AXES[controller.campaign.id]?.prompts || []), "证件和编号怎么核对？", "你从哪里来，几点出发？"].slice(0, 5);
   return `<div class="question-area"><div class="question-head"><strong>与候选人对话</strong><span>已完成 ${round} / 10 轮</span></div><form class="question-form" data-question-form><input class="question-input" name="question" autocomplete="off" placeholder="直接输入你要问的问题……" maxlength="180" /><button class="send-button" type="submit">发送问题</button></form><div class="prompt-chips">${hints.map((hint) => `<button type="button" class="prompt-chip" data-prompt="${escapeHtml(hint)}">${escapeHtml(hint)}</button>`).join("")}</div></div>${decision}`;
 }
 
