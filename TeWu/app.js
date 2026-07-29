@@ -818,8 +818,9 @@ const JUDGE_QUESTIONS = [
 ];
 
 function makeInfiltratorProfile(campaign) {
-  const blueprint = NPC_BLUEPRINTS.find((item) => item.target) || NPC_BLUEPRINTS[0];
-  const dossier = makeDossier(campaign, blueprint, 0);
+  const blueprint = { ...(NPC_BLUEPRINTS[Math.floor(Math.random() * NPC_BLUEPRINTS.length)] || NPC_BLUEPRINTS[0]), target: true };
+  const nameIndex = Math.floor(Math.random() * campaign.names.length);
+  const dossier = makeDossier(campaign, blueprint, nameIndex);
   return {
     name: dossier.name,
     role: dossier.role,
@@ -888,10 +889,10 @@ class JudgeAgent {
 }
 
 class InfiltratorController {
-  constructor(campaignId = CAMPAIGNS[0].id) {
+  constructor(campaignId = CAMPAIGNS[0].id, profile = null) {
     this.mode = "infiltrator";
     this.campaign = cloneCampaign(campaignId);
-    this.profile = makeInfiltratorProfile(this.campaign);
+    this.profile = profile || makeInfiltratorProfile(this.campaign);
     this.judge = new JudgeAgent(this.campaign, this.profile);
     this.status = "briefing";
     this.logs = [];
@@ -980,7 +981,15 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => 
 const app = document.querySelector("#app");
 let selectedCampaignId = CAMPAIGNS[0].id;
 let selectedMode = "officer";
+let pendingInfiltratorProfile = null;
 let controller = restoreController();
+
+function getPendingInfiltratorProfile(campaignId) {
+  if (!pendingInfiltratorProfile || pendingInfiltratorProfile.campaignId !== campaignId) {
+    pendingInfiltratorProfile = { campaignId, profile: makeInfiltratorProfile(cloneCampaign(campaignId)) };
+  }
+  return pendingInfiltratorProfile.profile;
+}
 
 function restoreController() {
   try {
@@ -1052,9 +1061,11 @@ function renderHeader(showStats = false) {
 
 function renderBriefing() {
   const campaign = cloneCampaign(selectedCampaignId);
-  const body = `<main class="page"><section class="briefing-grid"><div><p class="eyebrow">主控档案 · 机构选择</p><h1>十个人里，谁不该出现在这里？</h1><p class="briefing-copy">选择一个真实历史机构，进入它的目标群体、审查方式和历史参考。五个机构可以在混合时空设定中共存，十名候选人由相互隔离的角色程序连续扮演。完成十人的盘问后，你将统一提交一份扣留名单。</p></div><div class="brief-note"><strong>混合时空设定</strong>主控允许不同机构的历史参考同场出现，但会明确标记哪些内容是史实参考、哪些内容是本作的玩法设定。刷新页面会保留当前机构。</div></section><div class="section-label"><h2>选择机构</h2><span>五个机构 · 目标各不相同</span></div><section class="campaign-grid">${CAMPAIGNS.map((item) => `<button class="campaign-card ${item.id === selectedCampaignId ? "selected" : ""}" data-campaign="${item.id}"><span class="campaign-code">${item.code}</span><h3>${item.name}</h3><span class="campaign-era">${item.era}</span><p>${item.description}</p><span class="campaign-tagline">${item.setting}</span></button>`).join("")}</section><div class="section-label"><h2>选择玩法</h2><span>两种角色视角</span></div><section class="mode-grid"><button class="mode-card ${selectedMode === "officer" ? "selected" : ""}" data-mode="officer"><strong>执行官模式</strong><span>盘问十名候选人，再从十人中选出需要扣留的对象。</span></button><button class="mode-card ${selectedMode === "infiltrator" ? "selected" : ""}" data-mode="infiltrator"><strong>潜伏者模式</strong><span>你接受十轮审查，由审查官程序判定是否放行。</span></button></section><section class="historical-preview"><div class="history-box"><h3>${escapeHtml(campaign.name)} · 主控简报</h3><p>${escapeHtml(campaign.briefing)}</p></div><div class="history-box"><h3>历史边界</h3><p>${escapeHtml(campaign.historical)}</p></div></section><div class="brief-footer"><p>${selectedMode === "infiltrator" ? "你会拿到一份掩护身份，回答十轮追问；审查官会依据回答的一致性、细节和回避程度自动判定。" : "每名候选人至少盘问两轮、最多十轮。十人全部盘问后统一提交扣留名单，名单可以为空或包含多人。"}</p><button class="primary-button" data-action="start">进入 ${escapeHtml(campaign.name)}</button></div><div class="section-label" style="margin-top:17px"><h2>当时会听见的词</h2><span>${escapeHtml(campaign.setting)}</span></div><div class="term-row">${campaign.terms.map((term) => `<span class="term-chip">${escapeHtml(term)}</span>`).join("")}</div></main>`;
+  const infiltratorProfile = selectedMode === "infiltrator" ? getPendingInfiltratorProfile(selectedCampaignId) : null;
+  const modeBriefing = infiltratorProfile ? `你将以${infiltratorProfile.role}的掩护身份进入${campaign.setting}。审查官会从机构的安全视角核对你的身份、路线、物品、关系和时间线；你需要让陈述能够经受十轮连续追问。` : campaign.briefing;
+  const body = `<main class="page"><section class="briefing-grid"><div><p class="eyebrow">主控档案 · 机构选择</p><h1>十个人里，谁不该出现在这里？</h1><p class="briefing-copy">选择一个真实历史机构，进入它的目标群体、审查方式和历史参考。五个机构可以在混合时空设定中共存，十名候选人由相互隔离的角色程序连续扮演。完成十人的盘问后，你将统一提交一份扣留名单。</p></div><div class="brief-note"><strong>混合时空设定</strong>主控允许不同机构的历史参考同场出现，但会明确标记哪些内容是史实参考、哪些内容是本作的玩法设定。刷新页面会保留当前机构。</div></section><div class="section-label"><h2>选择机构</h2><span>五个机构 · 目标各不相同</span></div><section class="campaign-grid">${CAMPAIGNS.map((item) => `<button class="campaign-card ${item.id === selectedCampaignId ? "selected" : ""}" data-campaign="${item.id}"><span class="campaign-code">${item.code}</span><h3>${item.name}</h3><span class="campaign-era">${item.era}</span><p>${item.description}</p><span class="campaign-tagline">${item.setting}</span></button>`).join("")}</section><div class="section-label"><h2>选择玩法</h2><span>两种角色视角</span></div><section class="mode-grid"><button class="mode-card ${selectedMode === "officer" ? "selected" : ""}" data-mode="officer"><strong>执行官模式</strong><span>盘问十名候选人，再从十人中选出需要扣留的对象。</span></button><button class="mode-card ${selectedMode === "infiltrator" ? "selected" : ""}" data-mode="infiltrator"><strong>潜伏者模式</strong><span>你接受十轮审查，由审查官程序判定是否放行。</span></button></section><section class="historical-preview"><div class="history-box"><h3>${escapeHtml(campaign.name)} · ${infiltratorProfile ? "潜伏者简报" : "主控简报"}</h3><p>${escapeHtml(modeBriefing)}</p></div><div class="history-box"><h3>历史边界</h3><p>${escapeHtml(campaign.historical)}</p></div></section><div class="brief-footer"><p>${infiltratorProfile ? "上方掩护档案会原样带入审查。请在十轮回答中保持身份、路线和物品细节一致。" : "每名候选人至少盘问两轮、最多十轮。十人全部盘问后统一提交扣留名单，名单可以为空或包含多人。"}</p><button class="primary-button" data-action="start">进入 ${escapeHtml(campaign.name)}</button></div><div class="section-label" style="margin-top:17px"><h2>当时会听见的词</h2><span>${escapeHtml(campaign.setting)}</span></div><div class="term-row">${campaign.terms.map((term) => `<span class="term-chip">${escapeHtml(term)}</span>`).join("")}</div></main>`;
   const briefingBody = body;
-  const infiltratorBrief = selectedMode === "infiltrator" ? `<section class="infiltrator-brief"><div><p class="eyebrow">进入前资料 · 潜伏者</p><h2>你要守住的身份</h2><p>${escapeHtml(campaign.briefing)}</p></div><div class="infiltrator-brief-facts"><div><span>机构目标</span><strong>${escapeHtml(campaign.targetLabel || "被审查对象")}</strong></div><div><span>你的处境</span><strong>身份已被注意</strong></div><div><span>审查重点</span><strong>身份、路线、物品、关系与时间</strong></div></div><p class="infiltrator-brief-note">你会以一名普通来客的掩护身份进入检查站。审查官不会提前公布判定标准，回答越具体且前后一致，越有机会获得放行。</p></section>` : "";
+  const infiltratorBrief = infiltratorProfile ? `<section class="infiltrator-brief"><div><p class="eyebrow">进入前资料 · 潜伏者</p><h2>你要守住的身份</h2><p>你不是执行官，也不负责筛查十名来客。你将以这份掩护身份进入${escapeHtml(campaign.setting)}，接受${escapeHtml(campaign.name)}审查官的连续盘问。</p></div><div class="infiltrator-brief-facts"><div><span>姓名</span><strong>${escapeHtml(infiltratorProfile.name)}</strong></div><div><span>职业</span><strong>${escapeHtml(infiltratorProfile.role)}</strong></div><div><span>来处</span><strong>${escapeHtml(infiltratorProfile.origin)}</strong></div><div><span>携带物</span><strong>${escapeHtml(infiltratorProfile.public)}</strong></div><div><span>审查重点</span><strong>${escapeHtml(INSTITUTIONAL_AXES[campaign.id]?.title || "身份与关系")}</strong></div><div><span>你的目标</span><strong>通过十轮审查</strong></div></div><p class="infiltrator-brief-note">审查官会围绕身份、路线、物品、关系和时间线追问。回答越具体且前后一致，越有机会获得放行；这份掩护档案会原样带入下一页。</p></section>` : "";
   const finalBriefingBody = briefingBody.replace('<section class="historical-preview">', `${infiltratorBrief}<section class="historical-preview">`);
   return `<div class="app-shell">${renderHeader()}${finalBriefingBody}</div>`;
 }
@@ -1227,10 +1238,12 @@ function renderOfficerComplete() {
 }
 
 function bindEvents() {
-  document.querySelectorAll("[data-campaign]").forEach((button) => button.addEventListener("click", () => { selectedCampaignId = button.dataset.campaign; render(); }));
+  document.querySelectorAll("[data-campaign]").forEach((button) => button.addEventListener("click", () => { selectedCampaignId = button.dataset.campaign; pendingInfiltratorProfile = null; render(); }));
   document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => { selectedMode = button.dataset.mode; render(); }));
   document.querySelector("[data-action=\"start\"]")?.addEventListener("click", () => {
-    controller = selectedMode === "infiltrator" ? new InfiltratorController(selectedCampaignId) : new WorldController(selectedCampaignId);
+    const profile = selectedMode === "infiltrator" ? getPendingInfiltratorProfile(selectedCampaignId) : null;
+    controller = selectedMode === "infiltrator" ? new InfiltratorController(selectedCampaignId, profile) : new WorldController(selectedCampaignId);
+    pendingInfiltratorProfile = null;
     controller.start();
     render();
   });
@@ -1257,8 +1270,8 @@ function bindEvents() {
   document.querySelector('[data-action="verify-current"]')?.addEventListener("click", () => { if (controller.verifyCurrent()) render(); });
   document.querySelector("[data-action=\"next\"]")?.addEventListener("click", () => { controller.next(); render(); });
   document.querySelector("[data-action=\"restart\"]")?.addEventListener("click", () => { controller = controller.mode === "infiltrator" ? new InfiltratorController(controller.campaign.id) : new WorldController(controller.campaign.id); selectedMode = controller.mode; controller.start(); render(); });
-  document.querySelector("[data-action=\"exit\"]")?.addEventListener("click", () => { clearPersistedSession(); controller = new WorldController(); selectedMode = "officer"; selectedCampaignId = CAMPAIGNS[0].id; render(); });
-  document.querySelector("[data-action=\"back\"]")?.addEventListener("click", () => { clearPersistedSession(); controller = new WorldController(); selectedMode = "officer"; selectedCampaignId = CAMPAIGNS[0].id; render(); });
+  document.querySelector("[data-action=\"exit\"]")?.addEventListener("click", () => { clearPersistedSession(); pendingInfiltratorProfile = null; controller = new WorldController(); selectedMode = "officer"; selectedCampaignId = CAMPAIGNS[0].id; render(); });
+  document.querySelector("[data-action=\"back\"]")?.addEventListener("click", () => { clearPersistedSession(); pendingInfiltratorProfile = null; controller = new WorldController(); selectedMode = "officer"; selectedCampaignId = CAMPAIGNS[0].id; render(); });
 }
 
 render();
