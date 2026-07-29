@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { DIALOGUE_TEXT_LIMITS } from "./dialogue.js";
+import { DIALOGUE_TEXT_LIMITS, getContextualDialogueGoals } from "./dialogue.js";
 import type {
   ActionResult, CampaignDefinition, CampaignEnding, CharacterState, GameAction,
-  GameEvent, IntelEvidenceSourceType, IntelState, InterrogationStrategy, LocationKnowledgeStage, MissionObjective, NarrativeThreadState, RadioMessageFormat, RecruitmentEvidenceResult, RecruitmentTestType, ScoreBreakdown, WorldState,
+  GameEvent, IntelEvidenceSourceType, IntelState, InterrogationStrategy, LocationKnowledgeStage, MissionObjective, NarrativeThreadState, RadioMessageFormat, RecruitmentEvidenceResult, RecruitmentExecutionReport, RecruitmentTestType, ScoreBreakdown, WorldState,
 } from "./types.js";
 import { DIFFICULTIES } from "./difficulties.js";
 import { getCoverProfile } from "./cover-profiles.js";
@@ -282,6 +282,9 @@ export class CampaignEngine {
         if (!isCharacterAvailableAt(targetDefinition, next.currentTime)) throw new Error("该人物当前不在公开作息中，无法安排会面");
         if (!next.knownCharacterIds.includes(action.targetCharacterId)) throw new Error("尚未获得此人的引介或公开身份线索，不能直接攀谈");
         if (next.activeDialogue?.status === "active") throw new Error("Another dialogue is already active");
+        const hasVerifiableIntel = this.campaign.intel.some((intel) => intel.sourceCharacterIds.includes(action.targetCharacterId) && (next.intel[intel.id]?.knownFields.length ?? 0) > 0);
+        const availableGoals = getContextualDialogueGoals(target, { recruitable: targetDefinition.recruitable, hasVerifiableIntel });
+        if (!availableGoals.includes(action.goal)) throw new Error("当前关系和已知信息不足以采用这个交谈目标");
         if (action.goal === "verify_intel") {
           if (!action.targetIntelId) throw new Error("核验对话必须选择具体情报");
           const intelDefinition = this.campaign.intel.find((item) => item.id === action.targetIntelId);
@@ -325,6 +328,8 @@ export class CampaignEngine {
           characterId: definition.id, goal: session.goal, playerText: action.playerText, npcReply,
           turnCount: session.turnCount, maxTurns: session.maxTurns,
           privateIntent: action.agentOutcome?.privateIntent,
+          relationshipReaction: action.agentOutcome?.relationshipReaction ?? inferFallbackRelationshipReaction(definition, legacyAction),
+          reactionReason: action.agentOutcome?.reactionReason,
           requestedEffects: action.agentOutcome?.requestedEffects ?? [],
         });
         recordCoverConversationCredit(next, action.durationMinutes, append);
@@ -593,6 +598,8 @@ export class CampaignEngine {
         if (target.locationId !== next.currentLocationId) throw new Error("Target is not at the current location");
         if (!isCharacterAvailableAt(definition, next.currentTime)) throw new Error("该人物当前不在公开作息中，无法安排会面");
         if (!next.knownCharacterIds.includes(action.targetCharacterId)) throw new Error("尚未获得此人的引介或公开身份线索，不能直接攀谈");
+        const hasVerifiableIntel = this.campaign.intel.some((intel) => intel.sourceCharacterIds.includes(action.targetCharacterId) && (next.intel[intel.id]?.knownFields.length ?? 0) > 0);
+        if (!getContextualDialogueGoals(target, { recruitable: definition.recruitable, hasVerifiableIntel }).includes(action.goal)) throw new Error("当前关系和已知信息不足以采用这个交谈目标");
         const textLimit = DIALOGUE_TEXT_LIMITS[action.goal];
         if (action.playerText.trim().length === 0) throw new Error("对话内容不能为空");
         if (action.playerText.length > textLimit) throw new Error(`“${action.goal}”每轮发言最多 ${textLimit} 个字符`);
@@ -623,6 +630,8 @@ export class CampaignEngine {
           memorySummary: memory?.summary,
           agentProvider: action.agentOutcome?.provider ?? "fallback",
           privateIntent: action.agentOutcome?.privateIntent,
+          relationshipReaction: action.agentOutcome?.relationshipReaction ?? inferFallbackRelationshipReaction(definition, action),
+          reactionReason: action.agentOutcome?.reactionReason,
           requestedEffects: action.agentOutcome?.requestedEffects ?? [],
         });
         if (discovery) {
@@ -708,13 +717,17 @@ export class CampaignEngine {
 
         validateRecruitmentPlan(action.plan);
         const result = evaluateRecruitmentTest(definition, action.testType, action.plan);
+        const executionReport = action.agentReport ?? buildRecruitmentExecutionReport(
+          definition, action.testType, result, action.plan, action.durationMinutes, next.investigation.pressure,
+        );
         const evidence = {
           id: action.idempotencyKey,
           testType: action.testType,
           result,
-          summary: `${recruitmentEvidenceSummary(action.testType, result)}${action.agentObservation ? ` ${action.agentObservation.slice(0, 400)}` : ""}`,
+          summary: recruitmentEvidenceSummary(action.testType, result),
           observedAt: next.currentTime,
           plan: action.plan,
+          executionReport,
         };
         character.recruitmentCase.completedTestTypes.push(action.testType);
         character.recruitmentCase.evidence.push(evidence);
@@ -724,7 +737,7 @@ export class CampaignEngine {
         recordInvestigationEvidence(next, action.testType === "background_check" ? "covert_observation" : "sensitive_notes", next.currentLocationId, riskWeight, append);
         if (action.testType === "controlled_leak") next.network.exposure = clamp(next.network.exposure + 3 * next.difficulty.enemyResponseSpeed);
         append("recruitment.test_completed", { characterId: character.id, evidence });
-        narration = evidence.summary;
+        narration = `${evidence.summary} 详细执行记录已经归入候选人档案。`;
         break;
       }
       case "recruit_candidate": {
@@ -2013,17 +2026,28 @@ function resolveDialogue(
   relationshipScale = 1,
 ): { intelId: string; field: string; verified: boolean; assessment: string } | null {
   const character = state.characters[definition.id];
-  const toneTrust = (action.tone === "friendly" ? 3 : action.tone === "threatening" ? -4 : action.tone === "formal" ? 1 : 0) * relationshipScale;
+  const reaction = action.agentOutcome?.relationshipReaction ?? inferFallbackRelationshipReaction(definition, action);
+  const trustDelta = ({
+    resonated: 2,
+    respected_boundary: 1,
+    neutral: 0,
+    misaligned: -1,
+    boundary_violation: -3,
+    inconsistent: -2,
+  } as const)[reaction] * relationshipScale;
   const pressure = action.goal === "apply_pressure" ? 7 : action.tone === "threatening" ? 5 : 0;
-  character.familiarity = clamp(character.familiarity + (action.goal === "small_talk" ? 3 : action.goal === "build_trust" ? 4 : 2) * relationshipScale);
-  character.privateTrust = clamp(character.privateTrust + toneTrust + (action.goal === "build_trust" ? 5 * relationshipScale : 0), -100, 100);
-  character.suspicionOfPlayer = clamp(character.suspicionOfPlayer + pressure * state.difficulty.enemyResponseSpeed);
+  const familiarityDelta = action.goal === "small_talk" ? 3 : action.goal === "build_trust" ? 4 : 2;
+  character.familiarity = clamp(character.familiarity + familiarityDelta * relationshipScale);
+  character.privateTrust = clamp(character.privateTrust + trustDelta, -100, 100);
+  const reactionSuspicion = reaction === "boundary_violation" ? 3 : reaction === "inconsistent" ? 2 : reaction === "misaligned" ? 1 : reaction === "resonated" ? -1 : 0;
+  character.suspicionOfPlayer = clamp(character.suspicionOfPlayer + reactionSuspicion * relationshipScale + pressure * state.difficulty.enemyResponseSpeed);
   if (action.goal === "probe_attitude") {
     character.politicalAffinity = clamp(character.politicalAffinity + (definition.reliability.loyalty - 50) / 12, -100, 100);
   }
   if (action.goal === "recruit_probe") {
-    character.interestDependency = clamp(character.interestDependency + (definition.reliability.loyalty < 50 ? 4 : 1));
-    if (definition.recruitable && character.familiarity >= 8 && character.privateTrust >= 5) {
+    const receptive = reaction === "resonated" || reaction === "respected_boundary";
+    if (receptive) character.interestDependency = clamp(character.interestDependency + (definition.reliability.loyalty < 50 ? 4 : 1) * relationshipScale);
+    if (receptive && definition.recruitable && character.familiarity >= 8 && character.privateTrust >= 5) {
       character.recruitmentProgress = clamp(character.recruitmentProgress + 20, 0, 60);
       character.recruitmentCase.stage = character.recruitmentCase.completedTestTypes.length >= 3 ? "ready" : "screening";
     }
@@ -2053,6 +2077,19 @@ function resolveDialogue(
   intel.collectedSourceIds = [...new Set([...intel.collectedSourceIds, definition.id])];
   const evidence = addIntelEvidence(campaign, state, candidate, field, definition.id, definition.name, "testimony", `${action.idempotencyKey}:${candidate.id}:${field}`);
   return evidence ? { intelId: candidate.id, field, verified, assessment: evidence.assessment } : null;
+}
+
+function inferFallbackRelationshipReaction(
+  definition: CampaignDefinition["characters"][number],
+  action: Extract<GameAction, { type: "dialogue" }>,
+): NonNullable<NonNullable<Extract<GameAction, { type: "dialogue" }>["agentOutcome"]>["relationshipReaction"]> {
+  const text = action.playerText.trim();
+  if (action.tone === "threatening" || /(?:不说就|后果|威胁|别逼我|必须告诉|少废话)/.test(text)) return "boundary_violation";
+  if (definition.personality?.sensitiveTopics.some((topic) => text.includes(topic))) return "boundary_violation";
+  if (/(?:不方便可以不说|不必回答|以你的安全为先|不牵连|可以先核对|按规矩|尊重你的决定)/.test(text)) return "respected_boundary";
+  if (definition.personality?.values.some((value) => value.length >= 2 && text.includes(value))) return "resonated";
+  if (/(?:你们这种人|这不重要|管不了那么多|随便|无所谓)/.test(text)) return "misaligned";
+  return "neutral";
 }
 
 function addIntelEvidence(
@@ -2113,9 +2150,17 @@ function recruitmentTestMinutes(testType: RecruitmentTestType): number {
 }
 
 function validateRecruitmentPlan(plan: Extract<GameAction, { type: "recruitment_test" }>["plan"]) {
-  if (plan.steps.split(/\r?\n|[。；;]/).filter(Boolean).length < 2) throw new Error("甄别计划至少需要写出两个执行步骤");
+  const steps = getRecruitmentPlanSteps(plan);
+  if (steps.length < 2) throw new Error("甄别计划至少需要写出两个执行步骤");
+  if (steps.length > 6) throw new Error("甄别计划最多包含六个执行步骤，请合并过细的步骤");
   if (plan.safeguards.length < 8) throw new Error("请补充具体的风险控制措施");
   if (plan.abortCondition.length < 8) throw new Error("请写明何种情况触发撤退");
+}
+
+export function getRecruitmentPlanSteps(
+  plan: Extract<GameAction, { type: "recruitment_test" }>["plan"],
+): string[] {
+  return plan.steps.split(/\r?\n|[。；;]/).map((step) => step.trim()).filter(Boolean);
 }
 
 export function evaluateRecruitmentTest(
@@ -2137,6 +2182,81 @@ export function evaluateRecruitmentTest(
   if (adjustedScore >= 70) return "favorable";
   if (adjustedScore < 50) return "warning";
   return "inconclusive";
+}
+
+export function buildRecruitmentExecutionReport(
+  definition: CampaignDefinition["characters"][number],
+  testType: RecruitmentTestType,
+  result: RecruitmentEvidenceResult,
+  plan: Extract<GameAction, { type: "recruitment_test" }>["plan"],
+  durationMinutes: number,
+  investigationPressure = 0,
+): RecruitmentExecutionReport {
+  const steps = getRecruitmentPlanSteps(plan).slice(0, 6);
+  const concreteSteps = steps.length >= 2 ? steps : [plan.objective, "从独立来源复核行动中出现的细节"];
+  const detailByType: Record<RecruitmentTestType, Record<RecruitmentEvidenceResult, string[]>> = {
+    background_check: {
+      favorable: ["公开任职日期与两处独立旁证能够对上", "被问及空档时给出的地点和经手人可以继续核验"],
+      warning: ["一段任职时间在公开记录中缺少连续签字", "对同一时期的来往对象先后使用了不同称呼"],
+      inconclusive: ["公开记录没有直接冲突", "关键时期只找到转述，尚无独立在场者"],
+    },
+    controlled_leak: {
+      favorable: ["带有来源标记的消息没有离开预设接触范围", "观察窗口结束前没有出现额外探问"],
+      warning: ["消息出现在未授权的接触路径上", "候选人无法完整解释中间一次传话"],
+      inconclusive: ["观察期内没有确认扩散", "外围接触记录不完整，无法排除消息从别处重合出现"],
+    },
+    discipline_check: {
+      favorable: ["约定时间、地点和备用规则均得到执行", "遇到变化时先核对而没有自行扩大接触"],
+      warning: ["候选人临时改变了一项约定", "变更后没有按备用方式留下说明"],
+      inconclusive: ["主要约定得到执行", "突发情况中的处置有一处无法由旁证还原"],
+    },
+    low_risk_task: {
+      favorable: ["任务结果与独立来源能够相互印证", "候选人没有越过计划规定的知情边界"],
+      warning: ["交回结果遗漏了一个可核对步骤", "候选人试图用结果替代对过程异常的解释"],
+      inconclusive: ["任务只完成到可验证的一部分", "现有记录无法区分能力不足、谨慎中止或态度保留"],
+    },
+  };
+  const details = detailByType[testType][result];
+  const timeline = concreteSteps.map((step, index) => {
+    const minuteOffset = Math.min(durationMinutes, Math.max(10, Math.round((durationMinutes * (index + 1) / concreteSteps.length) / 10) * 10));
+    const outcome = result === "warning" && index === concreteSteps.length - 1
+      ? "blocked" as const
+      : result !== "favorable" && index >= Math.max(1, concreteSteps.length - 2)
+        ? "partial" as const
+        : "completed" as const;
+    return { minuteOffset, step, outcome, observation: `${details[index % details.length]}。该记录对应计划中的“${step.slice(0, 80)}”。` };
+  });
+  const traits = definition.personality?.traits.join("、") || "谨慎";
+  const behavior = result === "warning"
+    ? `${definition.name}在关键追问前出现停顿，并把一处具体问题转向程序或他人；这种回避可能来自隐瞒，也可能来自自保。`
+    : result === "favorable"
+      ? `${definition.name}面对重复核对时保持了基本一致，没有主动索取计划之外的人名、地点或联络方式。`
+      : `${definition.name}配合了部分步骤，但在无法确认的信息上保留说法，没有给出足以排除其他解释的细节。`;
+  return {
+    planSummary: `本次行动围绕“${plan.objective.trim()}”展开，按玩家提交的${concreteSteps.length}个步骤执行；风险控制采用“${plan.safeguards.trim()}”，并以“${plan.abortCondition.trim()}”作为中止边界。`,
+    timeline,
+    candidateBehavior: [
+      `${definition.name}以${definition.publicIdentity}的公开身份参与，言行仍表现出${traits}的个人特点。`,
+      behavior,
+    ],
+    evidence: [
+      { source: "计划步骤与现场记录", observation: details[0], limitation: "记录只能证明本次行动中的表现，不能直接推断长期立场。" },
+      { source: "独立旁证与既有档案", observation: details[1] ?? details[0], limitation: result === "favorable" ? "旁证之间仍可能共享同一上游来源。" : "旁证数量或观察窗口不足，仍存在其他合理解释。" },
+    ],
+    contradictions: result === "warning"
+      ? ["候选人对一个关键时间点的说法与公开记录不能完全对应。", "计划要求的说明方式与实际留下的联络痕迹不一致。"]
+      : result === "inconclusive" ? ["没有发现直接冲突，但一处关键经历只有候选人自己的说法。"] : [],
+    deviations: result === "warning" ? ["行动在最后一个核验步骤受阻，没有按原计划取得完整闭环。"] : result === "inconclusive" ? ["一项独立核验只完成了一部分。"] : [],
+    externalFactors: investigationPressure >= 50
+      ? ["敌方调查压力较高，外围观察被迫缩短，部分接触不能反复确认。"]
+      : ["行动期间没有出现足以终止计划的公开盘查，但外围视野仍然有限。"],
+    unresolvedQuestions: result === "warning"
+      ? ["时间空档究竟来自刻意隐瞒、公开身份需要，还是记录缺失？", "未经授权的接触由谁发起，候选人是否知情？"]
+      : result === "favorable" ? ["候选人在更高压力和涉及家人时是否仍会保持相同边界？"] : ["缺失旁证的关键时期还有谁能够独立确认？", "候选人的保留是谨慎、能力不足还是另有顾虑？"],
+    followUpOptions: result === "warning"
+      ? ["更换独立来源复核矛盾时间点。", "降低透露范围，再观察一次联络纪律。"]
+      : result === "favorable" ? ["用不同来源复核本次最有利的证据。", "在不扩大知情面的前提下观察压力反应。"] : ["补足一个独立在场者或书面记录。", "缩小问题范围后再次核对同一细节。"],
+  };
 }
 
 export function recruitmentEvidenceSummary(testType: RecruitmentTestType, result: RecruitmentEvidenceResult): string {
@@ -2178,7 +2298,12 @@ function dialogueNarration(
   }
   if (discovered && action.goal === "verify_intel") return `${definition.name}从另一个角度印证了你掌握的细节，情报可信度有所提高。`;
   if (discovered && action.goal === "request_information") return `${definition.name}说了一段看似随意的话，其中有一个细节值得记入情报板。`;
-  if (action.goal === "build_trust" || action.goal === "small_talk") return `${definition.name}对你的戒心稍有松动，但仍在观察你的来意。`;
+  if (action.goal === "build_trust" || action.goal === "small_talk") {
+    const reaction = action.agentOutcome?.relationshipReaction ?? inferFallbackRelationshipReaction(definition, action);
+    if (reaction === "resonated" || reaction === "respected_boundary") return `${definition.name}认真听完了你的话，态度出现了有限但可感知的变化。`;
+    if (reaction === "misaligned" || reaction === "boundary_violation" || reaction === "inconsistent") return `${definition.name}记住了你的说法，但戒心没有因此减少。`;
+    return `这次交谈让${definition.name}对你更熟悉了一些，但尚不足以建立新的信任。`;
+  }
   return `${definition.name}没有给出明确答案，只留下了一些需要核验的措辞。`;
 }
 

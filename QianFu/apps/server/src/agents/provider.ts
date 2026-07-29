@@ -9,6 +9,8 @@ const npcResponseSchema = z.object({
     value: z.number().min(-20).max(20),
     reason: z.string().max(200),
   })).max(8).catch([]).default([]),
+  relationshipReaction: z.enum(["resonated", "respected_boundary", "neutral", "misaligned", "boundary_violation", "inconsistent"]).optional(),
+  reactionReason: z.string().max(200).optional(),
 });
 
 export type NpcAgentResponse = z.infer<typeof npcResponseSchema>;

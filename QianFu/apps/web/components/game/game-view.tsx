@@ -101,15 +101,21 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
     setTargetIntelId((current) => options.some((intel) => intel.id === current) ? current : options[0]?.id ?? "");
   }, [goal, selectedNpc, context]);
 
+  useEffect(() => {
+    const available = context?.characters.find((item) => item.id === selectedNpc)?.availableDialogueGoals ?? [];
+    if (available.length > 0 && !available.includes(goal)) setGoal(available[0]);
+  }, [context, goal, selectedNpc]);
+
   if (!state || !context) {
     return <main className="flex min-h-screen items-center justify-center bg-ink text-sm text-muted">
       {error || "正在读取战役档案..."}
     </main>;
   }
 
-  const selectedGoal = goals.find((item) => item.id === goal) ?? goals[0];
   const currentLocation = context.locations.find((location) => location.id === state.currentLocationId)?.name ?? "未知地点";
   const selectedCharacter = context.characters.find((character) => character.id === selectedNpc);
+  const availableGoals = goals.filter((item) => selectedCharacter?.availableDialogueGoals.includes(item.id));
+  const selectedGoal = availableGoals.find((item) => item.id === goal) ?? availableGoals[0] ?? goals[0];
   const verifiableIntel = context.intel.filter((intel) => selectedCharacter?.verifiableIntelIds.includes(intel.id));
   const selectedCandidate = context.recruitmentCandidates.find((candidate) => candidate.id === selectedNpc);
   const formattedTime = new Intl.DateTimeFormat("zh-CN", {
@@ -222,7 +228,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
               <label className="text-xs text-muted">交谈目标
                 <select value={goal} onChange={(event) => setGoal(event.target.value as DialogueGoal)} className="mt-2 h-11 w-full border border-line bg-panel px-3 text-sm text-paper outline-none focus:border-copper">
-                  {goals.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.duration}分钟 / {item.duration / 2}轮</option>)}
+                  {availableGoals.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.duration}分钟 / {item.duration / 2}轮</option>)}
                 </select>
               </label>
               <label className="text-xs text-muted">表达方式

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { DifficultyVisibilityPolicy, GameAction, RecruitmentEvidenceResult, RecruitmentPlan, RecruitmentTestType } from "@qianfu/core";
+import type { DifficultyVisibilityPolicy, GameAction, RecruitmentEvidenceResult, RecruitmentExecutionReport, RecruitmentPlan, RecruitmentStepOutcome, RecruitmentTestType } from "@qianfu/core";
 import { Check, CircleAlert, ClipboardCheck, FileSearch, ShieldCheck, UserPlus, X } from "lucide-react";
 import type { GameContext } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,8 @@ const resultClasses: Record<RecruitmentEvidenceResult, string> = {
   inconclusive: "text-copper",
 };
 
+const outcomeLabels: Record<RecruitmentStepOutcome, string> = { completed: "完成", partial: "部分完成", blocked: "受阻", aborted: "已中止" };
+
 export function RecruitmentDossier({
   candidate,
   visibility,
@@ -41,6 +43,7 @@ export function RecruitmentDossier({
   const [confirming, setConfirming] = useState(false);
   const [planning, setPlanning] = useState<RecruitmentTestType | null>(null);
   const [plan, setPlan] = useState<RecruitmentPlan>({ objective: "", steps: "", safeguards: "", abortCondition: "" });
+  const planStepCount = plan.steps.split(/\r?\n|[。；;]/).map((step) => step.trim()).filter(Boolean).length;
   if (!candidate) return null;
 
   const recruited = candidate.stage === "recruited";
@@ -89,10 +92,13 @@ export function RecruitmentDossier({
     <div className="mt-5">
       <p className="text-xs text-muted">已记录证据</p>
       {candidate.evidence.length === 0 ? <p className="mt-3 text-sm text-muted">尚无可供判断的独立证据。一次测试不能证明一个人绝对可靠。</p> : <div className="mt-3 divide-y divide-line border-y border-line">
-        {candidate.evidence.map((evidence) => <div key={evidence.id} className={`grid gap-1 py-3 ${evidence.result ? "sm:grid-cols-[100px_1fr] sm:gap-4" : ""}`}>
-          {evidence.result && <span className={`text-xs ${resultClasses[evidence.result]}`}>{resultLabels[evidence.result]}</span>}
-          <p className="text-sm leading-6 text-paper/80">{evidence.summary}</p>
-        </div>)}
+        {candidate.evidence.map((evidence) => <article key={evidence.id} className="py-5">
+          <div className={`grid gap-1 ${evidence.result ? "sm:grid-cols-[100px_1fr] sm:gap-4" : ""}`}>
+            {evidence.result && <span className={`text-xs ${resultClasses[evidence.result]}`}>{resultLabels[evidence.result]}</span>}
+            <div><p className="text-sm leading-6 text-paper/80">{evidence.summary}</p><p className="mt-1 text-[10px] text-muted">{tests.find((item) => item.id === evidence.testType)?.label ?? evidence.testType} · {new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(evidence.observedAt))}</p></div>
+          </div>
+          {evidence.executionReport && <ExecutionReportView report={evidence.executionReport} />}
+        </article>)}
       </div>}
     </div>
 
@@ -103,7 +109,7 @@ export function RecruitmentDossier({
       </div>
     </div>}
 
-    {planning && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="screening-plan-title"><div className="mx-auto mt-8 w-full max-w-2xl border border-line bg-panel p-5 shadow-2xl sm:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-copper">行动计划</p><h2 id="screening-plan-title" className="mt-2 font-serif text-2xl">{tests.find((item) => item.id === planning)?.label}</h2><p className="mt-2 text-sm leading-6 text-muted">提交后将按计划展开甄别；行动期间时间照常流逝，结束后你会收到可观察到的结果。</p></div><button aria-label="关闭" onClick={() => setPlanning(null)} className="grid h-8 w-8 place-items-center text-muted hover:text-paper"><X size={17} /></button></div><div className="mt-6 space-y-4">{([ ["objective", "行动目标", "你想验证什么，不要写成直接判定可靠或不可靠"], ["steps", "执行步骤", "至少两步，可用换行分隔"], ["safeguards", "风险控制", "如何分段、留痕、避免牵连无关人员"], ["abortCondition", "撤退条件", "出现什么迹象时立即停止"] ] as const).map(([key, label, hint]) => <label key={key} className="block text-xs text-muted">{label}<span className="mt-1 block text-[10px] text-muted/70">{hint}</span><textarea value={plan[key]} onChange={(event) => setPlan((current) => ({ ...current, [key]: event.target.value }))} rows={key === "steps" ? 4 : 2} className="mt-2 w-full resize-y border border-line bg-ink px-3 py-2.5 text-sm leading-6 text-paper outline-none focus:border-copper" /></label>)}</div><div className="mt-6 flex flex-wrap justify-end gap-3"><Button variant="ghost" disabled={busy} onClick={() => setPlan(defaultPlan(planning, candidate.name))}>生成稳妥计划</Button><Button disabled={busy || !plan.objective.trim() || plan.steps.trim().length < 8 || plan.safeguards.trim().length < 4 || plan.abortCondition.trim().length < 4} onClick={() => { setPlanning(null); runTest(planning, tests.find((item) => item.id === planning)?.minutes ?? 30, plan); }}><FileSearch size={15} />提交并执行</Button></div></div></div>}
+    {planning && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="screening-plan-title"><div className="mx-auto mt-8 w-full max-w-2xl border border-line bg-panel p-5 shadow-2xl sm:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-copper">行动计划</p><h2 id="screening-plan-title" className="mt-2 font-serif text-2xl">{tests.find((item) => item.id === planning)?.label}</h2><p className="mt-2 text-sm leading-6 text-muted">提交后将按计划展开甄别；行动期间时间照常流逝，结束后你会收到可观察到的结果。</p></div><button aria-label="关闭" onClick={() => setPlanning(null)} className="grid h-8 w-8 place-items-center text-muted hover:text-paper"><X size={17} /></button></div><div className="mt-6 space-y-4">{([ ["objective", "行动目标", "你想验证什么，不要写成直接判定可靠或不可靠"], ["steps", "执行步骤", "填写二至六步，可用换行、句号或分号分隔"], ["safeguards", "风险控制", "如何分段、留痕、避免牵连无关人员"], ["abortCondition", "撤退条件", "出现什么迹象时立即停止"] ] as const).map(([key, label, hint]) => <label key={key} className="block text-xs text-muted">{label}<span className="mt-1 block text-[10px] text-muted/70">{hint}</span><textarea value={plan[key]} onChange={(event) => setPlan((current) => ({ ...current, [key]: event.target.value }))} rows={key === "steps" ? 4 : 2} className="mt-2 w-full resize-y border border-line bg-ink px-3 py-2.5 text-sm leading-6 text-paper outline-none focus:border-copper" /></label>)}</div><div className="mt-6 flex flex-wrap justify-end gap-3">{visibility.showPlanGenerator && <Button variant="ghost" disabled={busy} onClick={() => setPlan(defaultPlan(planning, candidate.name))}>生成稳妥计划</Button>}<Button disabled={busy || !plan.objective.trim() || planStepCount < 2 || planStepCount > 6 || plan.safeguards.trim().length < 8 || plan.abortCondition.trim().length < 8} onClick={() => { setPlanning(null); runTest(planning, tests.find((item) => item.id === planning)?.minutes ?? 30, plan); }}><FileSearch size={15} />提交并执行</Button></div></div></div>}
 
     {confirming && <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="recruit-title">
       <div className="w-full max-w-md border border-line bg-panel p-5 shadow-2xl">
@@ -113,6 +119,24 @@ export function RecruitmentDossier({
       </div>
     </div>}
   </section>;
+}
+
+function ExecutionReportView({ report }: { report: RecruitmentExecutionReport }) {
+  return <div className="mt-5 space-y-5 border-l border-line pl-4 sm:ml-[116px]">
+    <div><p className="text-[10px] text-muted">计划执行摘要</p><p className="mt-2 text-sm leading-6 text-paper/80">{report.planSummary}</p></div>
+    <div><p className="text-[10px] text-muted">执行时间线</p><div className="mt-2 divide-y divide-line/70">{report.timeline.map((item, index) => <div key={`${item.minuteOffset}-${index}`} className="grid gap-1 py-3 sm:grid-cols-[72px_88px_1fr] sm:gap-3"><span className="text-xs text-copper">+{item.minuteOffset} 分钟</span><span className="text-xs text-muted">{outcomeLabels[item.outcome]}</span><div><p className="text-xs text-paper">{item.step}</p><p className="mt-1 text-xs leading-5 text-muted">{item.observation}</p></div></div>)}</div></div>
+    <ReportList title="候选人表现" items={report.candidateBehavior} />
+    <div><p className="text-[10px] text-muted">证据与局限</p><div className="mt-2 space-y-3">{report.evidence.map((item, index) => <div key={`${item.source}-${index}`} className="border-l-2 border-copper/60 pl-3"><p className="text-xs text-copper">{item.source}</p><p className="mt-1 text-xs leading-5 text-paper/80">{item.observation}</p><p className="mt-1 text-[11px] leading-5 text-muted">局限：{item.limitation}</p></div>)}</div></div>
+    <ReportList title="矛盾记录" items={report.contradictions} empty="本次没有记录到直接矛盾。" />
+    <ReportList title="计划偏离" items={report.deviations} empty="执行过程没有明显偏离提交的计划。" />
+    <ReportList title="外部因素" items={report.externalFactors} />
+    <ReportList title="仍待回答" items={report.unresolvedQuestions} />
+    {report.followUpOptions.length > 0 && <ReportList title="后续核验方向" items={report.followUpOptions} />}
+  </div>;
+}
+
+function ReportList({ title, items, empty }: { title: string; items: string[]; empty?: string }) {
+  return <div><p className="text-[10px] text-muted">{title}</p>{items.length > 0 ? <ul className="mt-2 space-y-2">{items.map((item, index) => <li key={`${title}-${index}`} className="text-xs leading-5 text-paper/75">{index + 1}. {item}</li>)}</ul> : empty ? <p className="mt-2 text-xs leading-5 text-muted">{empty}</p> : null}</div>;
 }
 
 function defaultPlan(testType: RecruitmentTestType, name: string): RecruitmentPlan {

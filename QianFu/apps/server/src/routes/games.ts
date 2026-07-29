@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { CampaignEngine, COVER_PROFILES, getCountermeasureOptions, getDifficultyVisibility, getRadioMinigameConfig, getRadioSites, getRestAvailability, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction, type RadioMessageItem } from "@qianfu/core";
+import { CampaignEngine, COVER_PROFILES, getContextualDialogueGoals, getCountermeasureOptions, getDifficultyVisibility, getRadioMinigameConfig, getRadioSites, getRestAvailability, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction, type RadioMessageItem } from "@qianfu/core";
 import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
 import { getCampaignDefinition } from "@qianfu/content";
@@ -113,7 +113,11 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
         const verifiableIntelIds = campaign.intel
           .filter((intel) => intel.sourceCharacterIds.includes(character.id) && (state.intel[intel.id]?.knownFields.length ?? 0) > 0)
           .map((intel) => intel.id);
-        return { id: character.id, name: known ? character.name : "？？？", publicIdentity: known ? character.publicIdentity : "尚未认识", recruitable: known && character.recruitable, known, verifiableIntelIds };
+        const relationship = state.characters[character.id];
+        const availableDialogueGoals = known && relationship
+          ? getContextualDialogueGoals(relationship, { recruitable: character.recruitable, hasVerifiableIntel: verifiableIntelIds.length > 0 })
+          : [];
+        return { id: character.id, name: known ? character.name : "？？？", publicIdentity: known ? character.publicIdentity : "尚未认识", recruitable: known && character.recruitable, known, verifiableIntelIds, availableDialogueGoals };
       });
     res.json({
       campaign: { id: campaign.id, version: campaign.version, name: campaign.name },
@@ -166,6 +170,11 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
             evidence: recruitmentCase.evidence.map((evidence) => ({
               ...evidence,
               result: visibility.showEvidenceRelations ? evidence.result : null,
+              summary: visibility.showEvidenceRelations ? evidence.summary : "甄别行动已经结束，以下仅保留可观察的原始执行记录。",
+              executionReport: evidence.executionReport ? {
+                ...evidence.executionReport,
+                followUpOptions: visibility.showPlanGenerator ? evidence.executionReport.followUpOptions : [],
+              } : undefined,
             })),
             requirements: {
               contactReady: candidate.familiarity >= 3,

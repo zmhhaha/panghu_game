@@ -24,7 +24,7 @@ export interface GameContext {
     requiresTarget: boolean;
   }>;
   radioSites: Array<{ id: string; name: string; baseRisk: number; available: boolean; discovered: boolean; currentHeat: number; requiresRecruitedCharacterId: string | null }>;
-  characters: { id: string; name: string; publicIdentity: string; recruitable: boolean; known: boolean; verifiableIntelIds: string[] }[];
+  characters: { id: string; name: string; publicIdentity: string; recruitable: boolean; known: boolean; verifiableIntelIds: string[]; availableDialogueGoals: import("@qianfu/core").DialogueGoal[] }[];
   networkMembers: { id: string; name: string; publicIdentity: string }[];
   recruitmentCandidates: Array<{
     id: string;

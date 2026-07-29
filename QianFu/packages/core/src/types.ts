@@ -16,6 +16,19 @@ export type LeaveReason = "family" | "health" | "official";
 export type RecruitmentTestType = "background_check" | "controlled_leak" | "discipline_check" | "low_risk_task";
 export type RecruitmentEvidenceResult = "favorable" | "warning" | "inconclusive";
 export type RecruitmentStage = "contact" | "screening" | "ready" | "recruited";
+export type RecruitmentStepOutcome = "completed" | "partial" | "blocked" | "aborted";
+
+export interface RecruitmentExecutionReport {
+  planSummary: string;
+  timeline: Array<{ minuteOffset: number; step: string; outcome: RecruitmentStepOutcome; observation: string }>;
+  candidateBehavior: string[];
+  evidence: Array<{ source: string; observation: string; limitation: string }>;
+  contradictions: string[];
+  deviations: string[];
+  externalFactors: string[];
+  unresolvedQuestions: string[];
+  followUpOptions: string[];
+}
 
 export interface RecruitmentEvidence {
   id: string;
@@ -24,6 +37,7 @@ export interface RecruitmentEvidence {
   summary: string;
   observedAt: string;
   plan: RecruitmentPlan;
+  executionReport?: RecruitmentExecutionReport;
 }
 
 export interface RecruitmentPlan {
@@ -720,6 +734,14 @@ export type DialogueGoal =
   | "recruit_probe"
   | "long_talk";
 
+export type DialogueRelationshipReaction =
+  | "resonated"
+  | "respected_boundary"
+  | "neutral"
+  | "misaligned"
+  | "boundary_violation"
+  | "inconsistent";
+
 export type DialogueTone = "neutral" | "friendly" | "formal" | "urgent" | "threatening";
 
 export interface DialogueAction extends ActionBase {
@@ -734,6 +756,8 @@ export interface DialogueAction extends ActionBase {
     privateIntent: string;
     requestedEffects: Array<{ type: string; value: number; reason: string }>;
     evidenceQuote?: string;
+    relationshipReaction?: DialogueRelationshipReaction;
+    reactionReason?: string;
     provider: "model" | "fallback";
   };
 }
@@ -844,7 +868,7 @@ export interface RecruitmentTestAction extends ActionBase {
   targetCharacterId: string;
   testType: RecruitmentTestType;
   plan: RecruitmentPlan;
-  agentObservation?: string;
+  agentReport?: RecruitmentExecutionReport;
 }
 
 export interface RecruitCandidateAction extends ActionBase {

@@ -1,4 +1,4 @@
-import { evaluateCooperationRequest, evaluateRecruitmentTest, getCoverProfile, isIntelUnlocked, recruitmentEvidenceSummary, type CampaignDefinition, type DialogueAction, type DialogueMemory, type DialogueTurnAction, type ProposeCooperationRequestAction, type RecruitmentTestAction, type WorldState } from "@qianfu/core";
+import { buildRecruitmentExecutionReport, evaluateCooperationRequest, evaluateRecruitmentTest, getCoverProfile, getRecruitmentPlanSteps, isIntelUnlocked, recruitmentEvidenceSummary, type CampaignDefinition, type DialogueAction, type DialogueMemory, type DialogueTurnAction, type ProposeCooperationRequestAction, type RecruitmentExecutionReport, type RecruitmentTestAction, type WorldState } from "@qianfu/core";
 import { DIALOGUE_TEXT_LIMITS } from "@qianfu/core/dialogue";
 import { getCampaignDefinition } from "@qianfu/content";
 import { createAgentProvider, parseModelJson, parseNpcResponse, type AgentProvider, type NpcAgentResponse } from "./provider.js";
@@ -59,28 +59,51 @@ export class CampaignOrchestrator {
     if (!character || !this.provider) return action;
     const authoritativeResult = evaluateRecruitmentTest(character, action.testType, action.plan);
     const authoritativeSummary = recruitmentEvidenceSummary(action.testType, authoritativeResult);
+    const plannedSteps = getRecruitmentPlanSteps(action.plan).slice(0, 6);
     try {
-      const system = 'You are the screening-action narrator for a spy game. The controller projection is authoritative. Add one concrete, externally observable detail that supports it without changing its result. Never reveal hidden alignment, true reliability, backend values, or call anyone reliable, unreliable, loyal, a traitor, a spy, an agent, or a comrade. Output JSON only: {"result":"favorable|warning|inconclusive","observation":"an observation under 240 Chinese characters"}.';
+      const system = [
+        "你是谍战游戏的甄别行动执行 Agent。玩家提交的每个计划步骤都必须在报告时间线中得到执行、部分执行、受阻或中止的结果。",
+        "主控提供的 result 和 baselineObservation 是权威世界投影，不得改变；候选人的背景、人格、公开身份和当前压力只用于决定如何行动、回避、误判或临时调整。",
+        "只写玩家在行动后能够观察和核验的事实，不读取或泄露隐藏阵营、真实可靠性、后台数值、系统判定，也不能称任何人为可靠、不可靠、忠诚、叛徒、特务、间谍、自己人或同志。",
+        "报告要提供足够事实供玩家自行判断：至少两条时间线、两项人物行为、两条带来源和局限的证据，以及至少一个未决问题。矛盾、计划偏离和外部干扰允许为空，但必须忠于主控结果。",
+        '只输出JSON：{"result":"favorable|warning|inconclusive","report":{"planSummary":"...","timeline":[{"step":"...","outcome":"completed|partial|blocked|aborted","observation":"..."}],"candidateBehavior":["..."],"evidence":[{"source":"...","observation":"...","limitation":"..."}],"contradictions":["..."],"deviations":["..."],"externalFactors":["..."],"unresolvedQuestions":["..."],"followUpOptions":["..."]}}。',
+      ].join("\n");
       const user = JSON.stringify({
         testType: action.testType,
         candidate: { name: character.name, publicIdentity: character.publicIdentity, personality: character.personality },
         plan: action.plan,
-        time: state.currentTime,
+        scene: { time: state.currentTime, locationId: state.currentLocationId, investigationPressureBand: state.investigation.pressure >= 70 ? "high" : state.investigation.pressure >= 35 ? "elevated" : "low", durationMinutes: action.durationMinutes },
         controllerProjection: { result: authoritativeResult, baselineObservation: authoritativeSummary },
       });
       const raw = await this.provider.complete(system, user);
       const value = z.object({
         result: z.enum(["favorable", "warning", "inconclusive"]),
-        observation: z.string().min(1).max(240),
+        report: z.object({
+          planSummary: z.string().trim().min(30).max(500),
+          timeline: z.array(z.object({ step: z.string().trim().min(4).max(240), outcome: z.enum(["completed", "partial", "blocked", "aborted"]), observation: z.string().trim().min(20).max(320) })).length(plannedSteps.length),
+          candidateBehavior: z.array(z.string().trim().min(12).max(320)).min(2).max(8),
+          evidence: z.array(z.object({ source: z.string().trim().min(2).max(100), observation: z.string().trim().min(15).max(320), limitation: z.string().trim().min(8).max(240) })).min(2).max(8),
+          contradictions: z.array(z.string().trim().min(8).max(240)).max(6),
+          deviations: z.array(z.string().trim().min(8).max(240)).max(6),
+          externalFactors: z.array(z.string().trim().min(8).max(240)).max(6),
+          unresolvedQuestions: z.array(z.string().trim().min(8).max(240)).min(1).max(6),
+          followUpOptions: z.array(z.string().trim().min(8).max(240)).min(1).max(6),
+        }),
       }).parse(typeof raw === "string" ? parseModelJson(raw) : raw);
       if (value.result !== authoritativeResult) throw new Error("screening observation contradicted controller result");
-      if (/(?:不可靠|可靠|忠诚|背叛者|叛徒|内奸|特务|间谍|自己人|同志)/.test(value.observation)) {
+      if (/(?:不可靠|可靠|忠诚|背叛者|叛徒|内奸|特务|间谍|自己人|同志)/.test(JSON.stringify(value.report))) {
         throw new Error("screening observation exposed a hidden verdict");
       }
-      return { ...action, agentObservation: value.observation };
+      validateRecruitmentReportAgainstResult(value.report, authoritativeResult);
+      const timeline = value.report.timeline.map((item, index, items) => ({
+        ...item,
+        step: plannedSteps[index],
+        minuteOffset: Math.min(action.durationMinutes, Math.max(10, Math.round((action.durationMinutes * (index + 1) / items.length) / 10) * 10)),
+      }));
+      return { ...action, agentReport: { ...value.report, timeline } };
     } catch (error) {
       console.warn(`[QianFu Agent] recruitment target=${action.targetCharacterId} provider=${this.provider.name} status=fallback`, error instanceof Error ? error.message : error);
-      return action;
+      return { ...action, agentReport: buildRecruitmentExecutionReport(character, action.testType, authoritativeResult, action.plan, action.durationMinutes, state.investigation.pressure) };
     }
   }
 
@@ -142,12 +165,13 @@ export class CampaignOrchestrator {
       "回复必须紧接玩家刚说的话，体现情绪和关系变化；不要泛泛而谈，不要重复前几轮的句式或口头禅。",
       "像真实交谈一样，可以回答日常细节、停顿、误解、敷衍或改变主意；不要每轮都把话题转向工作，不要总让玩家先表态。口头禅最多偶尔使用一次。",
       "通常回复1到4句中文。关系不足时可以回避、反问、撒谎或转移话题，不要为了推进剧情主动泄露情报。",
+      "根据玩家本轮实际说法而不是所选交谈目标，判断你对这句话的关系反应：resonated表示具体回应了你的价值或当前需要；respected_boundary表示尊重了你的顾虑和边界；neutral表示普通交流；misaligned表示立场或处境不合；boundary_violation表示越界打听、威胁或冒犯；inconsistent表示与其此前说法明显矛盾。不要因为玩家选择友好语气或建立信任就自动给出正面反应。",
       `visibleSpeech不得超过${DIALOGUE_TEXT_LIMITS[action.goal]}个字符；${action.goal === "small_talk" ? "寒暄只说简短自然的日常话，不展开长篇叙述。" : action.goal === "long_talk" ? "长谈可以完整表达观点，但仍要像当面交谈。" : "控制在两三句有针对性的话内。"}`,
-      "只输出JSON对象：visibleSpeech是对玩家说的话；privateIntent是未说出口的一句真实意图；requestedEffects必须是数组，通常输出[]，需要建议状态变化时元素格式为{type,value,reason}。",
+      "只输出JSON对象：visibleSpeech是对玩家说的话；privateIntent是未说出口的一句真实意图；relationshipReaction是上述六种反应之一；reactionReason用一句内部理由说明该反应；requestedEffects必须是数组，通常输出[]，需要建议状态变化时元素格式为{type,value,reason}。",
       `Immutable scene facts: local time is ${localTime}; the player's public identity is ${cover.title}; the NPC is ${character.publicIdentity}. Never contradict these facts.`,
       "Never borrow another NPC's profession, verbal habits, memories, or concerns. A dock worker must not speak as an editor; an editor must not speak as a merchant or technician.",
       "Only claim a concrete intelligence fact when it appears in permittedEvidence. If a fact is spoken, evidenceQuote must be an exact non-empty substring copied from visibleSpeech. Otherwise evidenceQuote must be an empty string.",
-      "Output JSON fields: visibleSpeech, privateIntent, evidenceQuote, requestedEffects.",
+      "Output JSON fields: visibleSpeech, privateIntent, evidenceQuote, relationshipReaction, reactionReason, requestedEffects.",
     ].join("\n");
 
     const userPayload = {
@@ -188,7 +212,7 @@ export class CampaignOrchestrator {
       })));
       validateNpcResponse(response, previousNpc, action.playerText, permittedEvidence, character.id, localTime);
     }
-    return response;
+    return { ...response, relationshipReaction: response.relationshipReaction ?? "neutral", reactionReason: response.reactionReason ?? "本轮没有形成足以改变信任的明确依据。" };
   }
 
   private buildPermittedEvidence(campaign: CampaignDefinition, state: WorldState, characterId: string, action: DialogueAction) {
@@ -233,6 +257,18 @@ export class CampaignOrchestrator {
     const session = state.activeDialogue;
     const target = targetIntel ? `；核验对象：${targetIntel.title}（玩家已知字段：${state.intel[targetIntel.id]?.knownFields.map((field) => targetIntel.fieldLabels?.[field] ?? field).join("、") || "无"}）` : "";
     return `时间：${state.currentTime}；地点：${location?.name ?? "未知"}；交谈目标：${action.goal}${target}；本次会话已进行${session?.elapsedMinutes ?? 0}分钟，共${session?.allocatedMinutes ?? action.durationMinutes}分钟。世界规则和情报判定由主控系统负责。`;
+  }
+}
+
+function validateRecruitmentReportAgainstResult(
+  report: Omit<RecruitmentExecutionReport, "timeline"> & { timeline: Array<Omit<RecruitmentExecutionReport["timeline"][number], "minuteOffset">> },
+  result: ReturnType<typeof evaluateRecruitmentTest>,
+) {
+  if (result === "warning" && report.timeline.every((item) => item.outcome === "completed") && report.contradictions.length === 0 && report.deviations.length === 0) {
+    throw new Error("screening warning report omitted observable problems");
+  }
+  if (result === "inconclusive" && report.evidence.every((item) => item.limitation.length < 12)) {
+    throw new Error("screening inconclusive report omitted evidence limitations");
   }
 }
 

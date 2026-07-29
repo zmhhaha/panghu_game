@@ -24,6 +24,27 @@ describe("CampaignOrchestrator", () => {
     };
   }
 
+  function generatedScreeningReport(observation: string) {
+    return {
+      planSummary: "按照玩家提交的三步计划核对公开档案、独立旁证和约定执行情况，并保留撤退边界。",
+      timeline: [
+        { step: "核对公开档案", outcome: "completed", observation: "公开任职日期和登记地点已经逐项抄录，可以与原始簿册继续复核。" },
+        { step: "寻找独立旁证", outcome: "partial", observation: "找到一名外围见证者，但他只能确认其中一段时间，无法覆盖全部经历。" },
+        { step: "模型自行改写的第三步", outcome: "blocked", observation: "约定观察结束时没有取得完整闭环，这一步仍需由另一个来源继续确认。" },
+      ],
+      candidateBehavior: [observation, "面对重复提问时保持原有称呼，但对一个具体日期没有立即回答。"],
+      evidence: [
+        { source: "公开登记簿", observation: "任职起始日期与候选人的第一版说法一致。", limitation: "登记只能证明公开任职，不能证明私下活动。" },
+        { source: "外围见证者", observation: "见证者确认候选人在其中一个时段出现过。", limitation: "见证者没有覆盖完整时间线，也可能记错具体日期。" },
+      ],
+      contradictions: ["一个关键月份仍缺少独立签字。"],
+      deviations: ["最后一步只完成了部分核验。"],
+      externalFactors: ["外围观察时间有限，没有进行第二次接触。"],
+      unresolvedQuestions: ["缺少签字的月份里候选人实际在哪里？"],
+      followUpOptions: ["更换独立来源核对缺失月份。"],
+    };
+  }
+
   function cooperationAction(): ProposeCooperationRequestAction {
     return {
       type: "propose_cooperation_request", memberId: "old-wu", kind: "gather_intel", targetId: "shipment-time", approach: "urgent",
@@ -223,7 +244,7 @@ describe("CampaignOrchestrator", () => {
       name: "test",
       async complete(_system, user) {
         capturedUser = user;
-        return { result: authoritativeResult, observation: "约定时间过去五分钟后，他仍在原处等待，没有另找旁人传话。" };
+        return { result: authoritativeResult, report: generatedScreeningReport("约定时间过去五分钟后，他仍在原处等待，没有另找旁人传话。") };
       },
     };
 
@@ -232,7 +253,14 @@ describe("CampaignOrchestrator", () => {
 
     expect(payload.controllerProjection.result).toBe(authoritativeResult);
     expect(payload.controllerProjection.baselineObservation).toBeTruthy();
-    expect(prepared.agentObservation).toContain("没有另找旁人传话");
+    expect(prepared.agentReport?.candidateBehavior.join(" ")).toContain("没有另找旁人传话");
+    expect(prepared.agentReport?.timeline).toHaveLength(3);
+    expect(prepared.agentReport?.timeline.map((item) => item.step)).toEqual([
+      "先核对公开档案",
+      "再从独立来源确认关键经历",
+      "最后观察是否遵守约定",
+    ]);
+    expect(prepared.agentReport?.timeline[0].minuteOffset).toBeGreaterThan(0);
   });
 
   it("discards a screening observation that contradicts the controller", async () => {
@@ -243,12 +271,13 @@ describe("CampaignOrchestrator", () => {
     const conflictingResult = authoritativeResult === "warning" ? "favorable" : "warning";
     const provider: AgentProvider = {
       name: "test",
-      async complete() { return { result: conflictingResult, observation: "记录与约定不一致。" }; },
+      async complete() { return { result: conflictingResult, report: generatedScreeningReport("记录与约定不一致，但模型试图改变主控结果。") }; },
     };
 
     const prepared = await new CampaignOrchestrator(provider).prepareRecruitmentTest(state, action);
 
-    expect(prepared.agentObservation).toBeUndefined();
+    expect(prepared.agentReport?.timeline.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(prepared.agentReport)).not.toContain("模型试图改变主控结果");
   });
 
   it("discards a screening observation that exposes a hidden verdict", async () => {
@@ -258,12 +287,13 @@ describe("CampaignOrchestrator", () => {
     const authoritativeResult = evaluateRecruitmentTest(character, action.testType, action.plan);
     const provider: AgentProvider = {
       name: "test",
-      async complete() { return { result: authoritativeResult, observation: "这些表现足以证明他是可靠的自己人。" }; },
+      async complete() { return { result: authoritativeResult, report: generatedScreeningReport("这些表现足以证明他是可靠的自己人。") }; },
     };
 
     const prepared = await new CampaignOrchestrator(provider).prepareRecruitmentTest(state, action);
 
-    expect(prepared.agentObservation).toBeUndefined();
+    expect(prepared.agentReport?.timeline.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(prepared.agentReport)).not.toContain("可靠的自己人");
   });
 
   it("lets the NPC phrase a controller-authorized cooperation counteroffer", async () => {

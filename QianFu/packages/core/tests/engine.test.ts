@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CampaignEngine, calculateScore, createInitialWorld, getCountermeasureOptions, getRadioSites, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type CampaignDefinition, type WorldState } from "../src/index.js";
+import { CampaignEngine, calculateScore, createInitialWorld, getContextualDialogueGoals, getCountermeasureOptions, getRadioSites, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type CampaignDefinition, type WorldState } from "../src/index.js";
 
 const campaign: CampaignDefinition = {
   id: "test", version: "1.0.0", engineVersion: "1.0.0", name: "Test",
@@ -115,7 +115,10 @@ describe("CampaignEngine", () => {
     shortEngine.execute({ type: "dialogue_end", sessionId: "short-start", durationMinutes: 0, idempotencyKey: "short-end" });
     expect(shortEngine.getState().activeDialogue).toBeNull();
 
-    const longEngine = new CampaignEngine(dialogueCampaign, createInitialWorld(dialogueCampaign, "game-long-dialogue", "user-1"));
+    const longState = createInitialWorld(dialogueCampaign, "game-long-dialogue", "user-1");
+    longState.characters.contact.familiarity = 12;
+    longState.characters.contact.privateTrust = 8;
+    const longEngine = new CampaignEngine(dialogueCampaign, longState);
     longEngine.execute({ type: "dialogue_start", targetCharacterId: "contact", goal: "long_talk", tone: "formal", allocatedMinutes: 60, durationMinutes: 0, idempotencyKey: "long-start" });
     const result = longEngine.execute({ type: "dialogue_turn", sessionId: "long-start", playerText: "谈".repeat(300), durationMinutes: 2, idempotencyKey: "long-turn" });
     expect(result.state.activeDialogue?.turnCount).toBe(1);
@@ -143,6 +146,47 @@ describe("CampaignEngine", () => {
     expect(npcLines[1]).not.toBe(npcLines[0]);
   });
 
+  it("offers no more than five dialogue goals and keeps sensitive goals out of first contact", () => {
+    expect(getContextualDialogueGoals(
+      { familiarity: 0, privateTrust: 0, suspicionOfPlayer: 0 },
+      { recruitable: true, hasVerifiableIntel: false },
+    )).toEqual(["small_talk", "build_trust"]);
+    const advanced = getContextualDialogueGoals(
+      { familiarity: 15, privateTrust: 12, suspicionOfPlayer: 20 },
+      { recruitable: true, hasVerifiableIntel: true },
+    );
+    expect(advanced.length).toBeLessThanOrEqual(5);
+    expect(advanced).toContain("request_information");
+    expect(advanced).toContain("recruit_probe");
+  });
+
+  it("changes trust from the NPC reaction instead of the selected dialogue goal", () => {
+    const dialogueCampaign: CampaignDefinition = {
+      ...campaign,
+      characters: [{
+        id: "contact", name: "Contact", publicIdentity: "Clerk", hiddenAlignment: "neutral",
+        initialLocationId: "office", recruitable: false,
+        schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
+        reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 },
+      }],
+    };
+    const state = createInitialWorld(dialogueCampaign, "reaction-dialogue", "user-1");
+    state.characters.contact.privateTrust = 5;
+    const engine = new CampaignEngine(dialogueCampaign, state);
+    engine.execute({ type: "dialogue_start", targetCharacterId: "contact", goal: "build_trust", tone: "friendly", allocatedMinutes: 20, durationMinutes: 0, idempotencyKey: "reaction-start" });
+    const neutral = engine.execute({
+      type: "dialogue_turn", sessionId: "reaction-start", playerText: "今天天气不错。", durationMinutes: 2, idempotencyKey: "reaction-neutral",
+      agentOutcome: { visibleSpeech: "是还不错。", privateIntent: "普通寒暄", evidenceQuote: "", requestedEffects: [], relationshipReaction: "neutral", reactionReason: "没有涉及当前需要", provider: "model" },
+    });
+    expect(neutral.state.characters.contact.familiarity).toBeGreaterThan(0);
+    expect(neutral.state.characters.contact.privateTrust).toBe(5);
+    const violated = engine.execute({
+      type: "dialogue_turn", sessionId: "reaction-start", playerText: "你必须把知道的都告诉我。", durationMinutes: 2, idempotencyKey: "reaction-violation",
+      agentOutcome: { visibleSpeech: "你没有资格这样问。", privateIntent: "提高戒心", evidenceQuote: "", requestedEffects: [], relationshipReaction: "boundary_violation", reactionReason: "玩家越过边界", provider: "model" },
+    });
+    expect(violated.state.characters.contact.privateTrust).toBeLessThan(5);
+  });
+
   it("infers an old active dialogue as NPC-initiated when its first turn is an NPC opening", () => {
     const state = createInitialWorld(campaign, "legacy-proactive-dialogue", "user-1");
     state.activeDialogue = {
@@ -165,11 +209,15 @@ describe("CampaignEngine", () => {
       }],
       intel: [{ id: "fact", title: "Fact", truth: "true", requiredFields: ["when", "where"], sourceCharacterIds: ["source"], expiresAt: "1942-05-13T20:00:00.000Z" }],
     };
-    const engine = new CampaignEngine(conversational, createInitialWorld(conversational, "game-dialogue", "user-1"));
-    engine.execute({ type: "dialogue", targetCharacterId: "source", goal: "request_information", tone: "neutral", playerText: "告诉我最近的安排。", durationMinutes: 30, idempotencyKey: "dialogue-locked" });
+    const initialDialogueState = createInitialWorld(conversational, "game-dialogue", "user-1");
+    const engine = new CampaignEngine(conversational, initialDialogueState);
+    expect(() => engine.execute({ type: "dialogue", targetCharacterId: "source", goal: "request_information", tone: "neutral", playerText: "告诉我最近的安排。", durationMinutes: 30, idempotencyKey: "dialogue-locked" })).toThrow("当前关系和已知信息不足");
     expect(engine.getState().intel.fact.knownFields).toHaveLength(0);
-    engine.execute({ type: "dialogue", targetCharacterId: "source", goal: "build_trust", tone: "friendly", playerText: "我们可以先从小事合作。", durationMinutes: 20, idempotencyKey: "dialogue-trust" });
-    const result = engine.execute({ type: "dialogue", targetCharacterId: "source", goal: "request_information", tone: "neutral", playerText: "现在可以谈谈那批货了吗？", durationMinutes: 30, idempotencyKey: "dialogue-info" });
+    const rapportState = engine.getState();
+    rapportState.characters.source.familiarity = 8;
+    rapportState.characters.source.privateTrust = 5;
+    const rapportEngine = new CampaignEngine(conversational, rapportState);
+    const result = rapportEngine.execute({ type: "dialogue", targetCharacterId: "source", goal: "request_information", tone: "neutral", playerText: "现在可以谈谈那批货了吗？", durationMinutes: 30, idempotencyKey: "dialogue-info" });
     expect(result.state.intel.fact.knownFields).toHaveLength(1);
     expect(result.state.intel.fact.collectedSourceIds).toEqual(["source"]);
   });
@@ -185,7 +233,10 @@ describe("CampaignEngine", () => {
       }],
       intel: [{ id: "fact", title: "Fact", truth: "true", requiredFields: ["when", "where"], sourceCharacterIds: ["source"], expiresAt: "1942-05-13T20:00:00.000Z" }],
     };
-    const engine = new CampaignEngine(conversational, createInitialWorld(conversational, "session-fragment", "user-1"));
+    const dialogueState = createInitialWorld(conversational, "session-fragment", "user-1");
+    dialogueState.characters.source.familiarity = 8;
+    dialogueState.characters.source.privateTrust = 5;
+    const engine = new CampaignEngine(conversational, dialogueState);
     engine.execute({ type: "dialogue_start", targetCharacterId: "source", goal: "build_trust", tone: "friendly", allocatedMinutes: 20, durationMinutes: 0, idempotencyKey: "session-trust" });
     for (let turn = 0; turn < 10; turn += 1) engine.execute({ type: "dialogue_turn", sessionId: "session-trust", playerText: `Trust ${turn}`, durationMinutes: 2, idempotencyKey: `session-trust-${turn}` });
     engine.execute({ type: "dialogue_end", sessionId: "session-trust", durationMinutes: 0, idempotencyKey: "session-trust-end" });
@@ -229,9 +280,11 @@ describe("CampaignEngine", () => {
       }],
     };
     const engine = new CampaignEngine(recruitCampaign, createInitialWorld(recruitCampaign, "game-recruit", "user-1"));
-    engine.execute({ type: "dialogue", targetCharacterId: "recruit", goal: "build_trust", tone: "friendly", playerText: "先从一件小事合作。", durationMinutes: 20, idempotencyKey: "recruit-trust" });
-    engine.execute({ type: "dialogue", targetCharacterId: "recruit", goal: "build_trust", tone: "friendly", playerText: "这段时间的往来可以继续。", durationMinutes: 20, idempotencyKey: "recruit-trust-more" });
-    engine.execute({ type: "dialogue", targetCharacterId: "recruit", goal: "recruit_probe", tone: "formal", playerText: "愿意接受一次低风险测试吗？", durationMinutes: 30, idempotencyKey: "recruit-probe" });
+    const positiveOutcome = { visibleSpeech: "这件事可以继续谈。", privateIntent: "有限观察", requestedEffects: [], evidenceQuote: "", relationshipReaction: "resonated" as const, reactionReason: "玩家回应了当前需要", provider: "model" as const };
+    engine.execute({ type: "dialogue", targetCharacterId: "recruit", goal: "build_trust", tone: "friendly", playerText: "先从一件小事合作。", durationMinutes: 20, idempotencyKey: "recruit-trust", agentOutcome: positiveOutcome });
+    engine.execute({ type: "dialogue", targetCharacterId: "recruit", goal: "build_trust", tone: "friendly", playerText: "这段时间的往来可以继续。", durationMinutes: 20, idempotencyKey: "recruit-trust-more", agentOutcome: positiveOutcome });
+    engine.execute({ type: "dialogue", targetCharacterId: "recruit", goal: "build_trust", tone: "friendly", playerText: "不方便的地方可以不说。", durationMinutes: 20, idempotencyKey: "recruit-trust-boundary", agentOutcome: positiveOutcome });
+    engine.execute({ type: "dialogue", targetCharacterId: "recruit", goal: "recruit_probe", tone: "formal", playerText: "愿意接受一次低风险测试吗？", durationMinutes: 30, idempotencyKey: "recruit-probe", agentOutcome: positiveOutcome });
     expect(engine.getState().characters.recruit.recruited).toBe(false);
     expect(() => engine.execute({ type: "recruit_candidate", targetCharacterId: "recruit", durationMinutes: 30, idempotencyKey: "recruit-too-early" })).toThrow("三类不同甄别");
 
@@ -239,6 +292,8 @@ describe("CampaignEngine", () => {
     engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "controlled_leak", plan: recruitmentPlan, durationMinutes: 40, idempotencyKey: "screen-leak" });
     engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "discipline_check", plan: recruitmentPlan, durationMinutes: 30, idempotencyKey: "screen-discipline" });
     expect(background.state.characters.recruit.recruitmentCase.evidence[0]?.result).toBe("favorable");
+    expect(background.state.characters.recruit.recruitmentCase.evidence[0]?.executionReport?.timeline.length).toBeGreaterThanOrEqual(2);
+    expect(background.state.characters.recruit.recruitmentCase.evidence[0]?.executionReport?.evidence.length).toBeGreaterThanOrEqual(2);
     expect(() => engine.execute({ type: "recruitment_test", targetCharacterId: "recruit", testType: "discipline_check", plan: recruitmentPlan, durationMinutes: 30, idempotencyKey: "screen-duplicate" })).toThrow("同类甄别已经完成");
     expect(engine.getState().characters.recruit.recruited).toBe(false);
 
@@ -337,6 +392,8 @@ describe("public cover identity", () => {
     };
     const state = createInitialWorld(workplaceCampaign, "cover-dialogue-credit", "user-1");
     state.currentTime = "1942-05-12T00:00:00.000Z";
+    state.characters["chen-jingwen"].familiarity = 12;
+    state.characters["chen-jingwen"].privateTrust = 8;
     const engine = new CampaignEngine(workplaceCampaign, state);
     engine.execute({ type: "dialogue_start", targetCharacterId: "chen-jingwen", goal: "long_talk", tone: "formal", allocatedMinutes: 60, durationMinutes: 0, idempotencyKey: "cover-dialogue-start" });
     let credited = false;
@@ -467,16 +524,17 @@ describe("public cover identity", () => {
     const state = createInitialWorld(eventCampaign, "controller-events", "user-1");
     state.knownCharacterIds = ["technician"];
     const engine = new CampaignEngine(eventCampaign, state);
+    const positiveReaction = { visibleSpeech: "记录可以按这个办法核对。", privateIntent: "认可玩家尊重程序", evidenceQuote: "", requestedEffects: [], relationshipReaction: "resonated" as const, reactionReason: "玩家的处理方式符合当前需要", provider: "model" as const };
     engine.execute({ type: "dialogue_start", targetCharacterId: "technician", goal: "build_trust", tone: "friendly", allocatedMinutes: 20, durationMinutes: 0, idempotencyKey: "event-dialogue" });
     for (let turn = 1; turn <= 5; turn += 1) {
-      engine.execute({ type: "dialogue_turn", sessionId: "event-dialogue", playerText: `Public work ${turn}`, durationMinutes: 2, idempotencyKey: `event-turn-${turn}` });
+      engine.execute({ type: "dialogue_turn", sessionId: "event-dialogue", playerText: `Public work ${turn}`, durationMinutes: 2, idempotencyKey: `event-turn-${turn}`, agentOutcome: positiveReaction });
     }
     expect(engine.getState().locationKnowledge?.dock?.stage).toBe("rumored");
     expect(engine.getState().discoveredLocationIds).not.toContain("dock");
     expect(engine.getState().narrativeThreads?.find((thread) => thread.id === "receipt")?.title).toBe("Missing receipt");
     let finalTurn;
     for (let turn = 6; turn <= 10; turn += 1) {
-      finalTurn = engine.execute({ type: "dialogue_turn", sessionId: "event-dialogue", playerText: `Public work ${turn}`, durationMinutes: 2, idempotencyKey: `event-turn-${turn}` });
+      finalTurn = engine.execute({ type: "dialogue_turn", sessionId: "event-dialogue", playerText: `Public work ${turn}`, durationMinutes: 2, idempotencyKey: `event-turn-${turn}`, agentOutcome: positiveReaction });
     }
     expect(engine.getState().locationKnowledge?.dock?.stage).toBe("accessible");
     expect(engine.getState().discoveredLocationIds).toContain("dock");
