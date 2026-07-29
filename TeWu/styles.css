@@ -238,6 +238,9 @@ h1, h2, h3, p { margin-top: 0; }
 .review-row span { color: var(--muted); }
 .review-result.correct { color: var(--teal); }
 .review-result.wrong { color: var(--alert); }
+.review-entry + .review-entry { border-top: 1px solid var(--line-soft); }
+.review-entry .review-row { border-top: 0; }
+.review-basis { margin: -2px 16px 10px 54px; color: var(--muted-deep); font-size: 10px; line-height: 1.5; }
 .settlement-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
 .secondary-button { min-height: 43px; padding: 0 16px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; }
 .secondary-button:hover { border-color: var(--paper); color: var(--paper); }

@@ -138,21 +138,41 @@ const NPC_BLUEPRINTS = [
   { id: "surveyor", role: "水文测绘员", origin: "河堤巡测线", target: false, public: "鞋底有湿泥，记录簿边缘微微卷曲", signature: "会先讲潮位和河流，再回答私人问题", tell: "测绘数据与公开水务记录吻合" },
   { id: "archivist", role: "旧档案修复员", origin: "东郊档案库", target: true, public: "携带没有编号的空白文件夹", signature: "对档案分类和机关旧称很熟，却混淆了当日路线", tell: "解释不出文件夹为什么没有入库章" },
   { id: "botanist", role: "植物标本采集员", origin: "西坡林场", target: false, public: "手提箱里有湿润泥土和压好的叶片", signature: "说起植物时会忘记保持警惕", tell: "采集许可、天气和绕行路线相互印证" },
+  { id: "bookbinder", role: "旧书装订工", origin: "中央图书馆后库", target: false, public: "背着皮线和一摞待修的书脊", signature: "会下意识检查纸张纤维和装订线", tell: "修复登记、纸张批次与领取时间可以交叉核对" },
+  { id: "conductor", role: "夜班电车售票员", origin: "北城电车库", target: false, public: "腰包里有剪票钳和一卷未用完的车票", signature: "记得每一站的上车人，却说不清自己的休息时间", tell: "末班车票根、车库排班与临时绕行记录能拼出路线" },
+  { id: "photographer", role: "报社暗房技师", origin: "西区新闻社", target: false, public: "提着装有底片盒的帆布袋，手指沾着显影液", signature: "谈光线和药水时极其镇定，谈拍摄对象时会变得谨慎", tell: "底片编号、暗房登记与报道截稿时间可以互相印证" },
+  { id: "locksmith", role: "市政锁具维修员", origin: "东门市政工坊", target: false, public: "工具卷里放着钥匙胚和一份褪色的维修单", signature: "会先观察门锁磨损，再回答别的问题", tell: "维修单、钥匙胚批次和夜间报修电话能够互相核查" },
+  { id: "baker", role: "配给面包房夜班师傅", origin: "北区配给站", target: false, public: "围裙上沾着面粉，提着两只空面包箱", signature: "总会先问交接时间，再回答私人问题", tell: "面粉配给单、烤炉班次与送货箱回收记录可以核对" },
+  { id: "tailor", role: "制服裁缝", origin: "南街缝纫合作社", target: false, public: "皮尺绕在颈上，布包里露出半截制服袖章", signature: "能准确说出布料和针脚，却回避顾客姓名", tell: "裁缝登记、布料批次和取衣凭条能区分正常订单与临时改制" },
+  { id: "telegraphist", role: "邮电局夜班报务员", origin: "中央邮电局", target: false, public: "携带一只上锁的报文夹和备用碳纸", signature: "习惯把句子说得像电文一样短", tell: "报文编号、值班钟点和碳纸压痕能够核验其夜班经历" },
+  { id: "ferryman", role: "渡口摆渡人", origin: "东河临时码头", target: false, public: "雨披仍滴着水，腰间挂着缆绳钩", signature: "记得船次和水位，却不喜欢谈乘客", tell: "渡口船次、缆绳登记和潮位记录能重建夜间航线" },
+  { id: "labtech", role: "市立检验所助理", origin: "西郊检验所", target: false, public: "手提装有试管架的木盒，衣袖有淡淡消毒剂气味", signature: "遇到化验问题会变得异常精确", tell: "样本编号、药品领用和送检时间能验证其工作轨迹" },
+  { id: "porter", role: "保税仓搬运工", origin: "南站保税仓", target: false, public: "肩上搭着麻绳，手背有新磨出的血泡", signature: "知道货物重量，却常把箱号说得过快", tell: "货物磅单、入库签收和夜班点名册可以还原他的装卸顺序" },
 ];
 
 // These are shared facts, not hidden answers. They only enter the board after
 // the player asks about the relevant subject or runs the institution check.
 const NETWORKS = {
-  printer: { node: "旧检查棚", relation: "曾有人看见一名校样员在旧检查棚与电台技师短暂停留。", verify: "档案室核到：校样员的岗位交接登记比其自述晚了四十分钟。" },
-  nurse: { node: "南郊疗养院", relation: "疗养院值班表和药箱封签可互相核验。", verify: "值班登记与药箱封签编号一致。" },
-  mechanic: { node: "北线车辆段", relation: "车辆段的检修记录可对应到其扳手盒上的编号。", verify: "检修记录确认了他提到的小故障。" },
-  courier: { node: "旧检查棚", relation: "电台技师与一名携带文件夹的人都在旧检查棚附近出现过。", verify: "岗亭交接簿显示他熟悉不属于修理工职责的无线电呼号。" },
-  teacher: { node: "城南学校", relation: "城南学校的作业册上留有当天的批改日期。", verify: "校舍值班员确认其下午仍在学校。" },
-  merchant: { node: "东线货站", relation: "货站税票与商行账本可按箱号串联。", verify: "箱号、税票和货运记录顺序一致。" },
-  actor: { node: "南门剧院区", relation: "剧团后台名单里少了一名替补演员的签名。", verify: "剧团演出单显示当晚并没有安排该角色上台。" },
-  surveyor: { node: "河堤巡测线", relation: "河堤潮位记录可对应测绘簿的湿痕与时间。", verify: "水务公开记录与测绘数据一致。" },
-  archivist: { node: "旧检查棚", relation: "一只无编号文件夹曾和校样纸、修理工具出现在同一条换乘线。", verify: "档案库入库册中没有这只文件夹的登记或印章。" },
-  botanist: { node: "西坡林场", relation: "林场采集许可会记录当天的天气和绕行路线。", verify: "采集许可与当日天气记录相符。" },
+  printer: { node: "旧检查棚", relation: "曾有人看见一名校样员在旧检查棚与电台技师短暂停留。", verify: "档案室记录了一段临时改线和两次货车停靠；夜班岗位栏的笔迹并不完整。" },
+  nurse: { node: "南郊疗养院", relation: "疗养院值班表和药箱封签可互相核验。", verify: "值班表记有药箱 A-47 的封签，但交接人只留下姓氏缩写。" },
+  mechanic: { node: "北线车辆段", relation: "车辆段的检修记录可对应到其扳手盒上的编号。", verify: "检修簿登记过轴承异响和一只缺失的专用套筒，签字栏尚未补全。" },
+  courier: { node: "旧检查棚", relation: "电台技师与一名携带文件夹的人都在旧检查棚附近出现过。", verify: "岗亭交接簿记下有人询问过无线电呼号，但没有写明提问者姓名或来意。" },
+  teacher: { node: "城南学校", relation: "城南学校的作业册上留有当天的批改日期。", verify: "校舍值班表记录了傍晚仍有人批改作业，旧印章的领用页缺少归还时间。" },
+  merchant: { node: "东线货站", relation: "货站税票与商行账本可按箱号串联。", verify: "箱号、税票和货运顺序大体相连，但一笔金额被涂改后重新誊写。" },
+  actor: { node: "南门剧院区", relation: "剧团后台名单里少了一名替补演员的签名。", verify: "剧团演出单有一处替补栏被划线，后台签名在同一时段出现过两种写法。" },
+  surveyor: { node: "河堤巡测线", relation: "河堤潮位记录可对应测绘簿的湿痕与时间。", verify: "水务记录和测绘簿的潮位读数相近，河堤封闭段是否绕行仍需比对天气时刻。" },
+  archivist: { node: "旧检查棚", relation: "一只无编号文件夹曾和校样纸、修理工具出现在同一条换乘线。", verify: "档案库入库册没有对应文件夹编号，但旧分类号在一份待整理目录中出现过。" },
+  botanist: { node: "西坡林场", relation: "林场采集许可会记录当天的天气和绕行路线。", verify: "采集许可记有雨后绕行的备注，封闭带附近的土样没有列入常规采集清单。" },
+  bookbinder: { node: "中央图书馆后库", relation: "装订线、旧分类卡和新闻社的纸张批次在同一份采购清单中出现。", verify: "修复登记写有一批受潮书脊，领取人只签了姓氏首字母。" },
+  conductor: { node: "北城电车库", relation: "末班车的临时绕行与市政工坊一通夜间报修电话时间接近。", verify: "车票根少了两张，车库排班表在换班处留有更正笔迹。" },
+  photographer: { node: "西区新闻社", relation: "暗房的纸张批次与图书馆后库领出的修复纸相同。", verify: "底片盒编号连续，但一张联系样片没有写明拍摄地点。" },
+  locksmith: { node: "东门市政工坊", relation: "市政工坊的夜间报修与末班电车的绕行记录可能指向同一处门锁。", verify: "维修单列有锁芯型号和报修时间，报修人的姓名难以辨认。" },
+  baker: { node: "北区配给站", relation: "面包箱的回收时间与保税仓一批夜间卸货时间相邻。", verify: "配给单少了一枚交接章，烤炉班次表记录有一次临时延长。" },
+  tailor: { node: "南街缝纫合作社", relation: "一件改制制服的布料批次与邮电局夜班的封签线相同。", verify: "取衣凭条写有尺寸与日期，顾客姓名只留下首字母。" },
+  telegraphist: { node: "中央邮电局", relation: "夜间报文夹使用的封签线与制服裁缝的一批材料相同。", verify: "报文编号连续，但一张碳纸压痕显示曾重抄过一段地址。" },
+  ferryman: { node: "东河临时码头", relation: "渡口夜航的水位与检验所样本运输的时间可以交叉比对。", verify: "船次簿记有一趟临时加开，乘客栏只写了货物类别。" },
+  labtech: { node: "西郊检验所", relation: "样本送检时间与东河临时码头的一次加开夜航接近。", verify: "药品领用单与样本编号相符，但送检人签名过于模糊。" },
+  porter: { node: "南站保税仓", relation: "夜间货物磅单与北区配给站的空箱回收时间相邻。", verify: "入库签收和点名册能对上大部分顺序，最后一只箱号被雨水洇开。" },
 };
 
 // Hidden character dossiers drive the LLM role-play. They are deliberately
@@ -169,6 +189,16 @@ const CHARACTER_MODELS = {
   surveyor: { temperament: "冷静、观察细致、略显疏离", immediateGoal: "把潮位记录送回水务部门", privateBurden: "和一位被怀疑的旧同学保持过书信往来，但与任务无关", socialStance: "不喜欢解释私生活，愿意解释数据", memoryAnchors: ["潮位刻度", "河堤泥土", "巡测时间"], stressResponse: "面对私人问题会显得回避，面对现场数据则非常准确", disclosureArc: "有真实可疑点但并非目标，需要玩家区分私人秘密与任务关联" },
   archivist: { temperament: "谨慎、怀旧、对分类秩序有近乎偏执的执念", immediateGoal: "将空白文件夹送入指定地点并确认无人跟踪", privateBurden: "曾在旧档案中发现不该看到的名单，因此熟悉多个机关旧称", socialStance: "对档案人员有亲近感，对现场检查人员不耐烦", memoryAnchors: ["入库章", "旧分类号", "东郊档案库"], stressResponse: "会给出丰富的制度知识，却难以解释当天最普通的行程", disclosureArc: "前段专业可信，中段关系与物品来源逐步暴露破绽" },
   botanist: { temperament: "好奇、散漫、容易被感兴趣的事带走", immediateGoal: "带回一批湿润标本并赶上下一班车", privateBurden: "采集时越过过一次封闭地带，只是不想被没收样本", socialStance: "认为检查站不理解野外工作的麻烦", memoryAnchors: ["叶片编号", "雨后土壤", "林场岔路"], stressResponse: "遇到植物问题异常流畅，遇到路线问题会先讲环境再回答", disclosureArc: "行为有违规感但证据链最终能自洽" },
+  bookbinder: { temperament: "安静、挑剔、对旧物有耐心", immediateGoal: "把受潮的旧书送回后库并领回修复回执", privateBurden: "曾替一位无证读者偷偷修补过借阅证，担心因此失去工作", socialStance: "不爱谈政治，只相信纸张、日期和签名", memoryAnchors: ["书脊裂口", "纸张水印", "后库领取簿"], stressResponse: "被追问时会纠正细节，却容易忘记先回答问题", disclosureArc: "起初显得过度回避，随后能给出丰富而可信的物件细节" },
+  conductor: { temperament: "健谈、疲惫、习惯留意乘客", immediateGoal: "交回末班票款并赶上下一轮排班", privateBurden: "曾放过一名没有车票的孕妇，担心被追究短款", socialStance: "觉得制度离不开人情，但不愿为陌生人担保", memoryAnchors: ["末班车票根", "雨夜站牌", "换班铃"], stressResponse: "会先讲乘客故事来缓和气氛，涉及票款时突然变得防备", disclosureArc: "路线知识非常具体，却因私人短款制造误判空间" },
+  photographer: { temperament: "敏感、克制、观察欲强", immediateGoal: "在截稿前把底片送到新闻社并避免损坏", privateBurden: "拍到过一张不该保留的集会照片，至今没有交给编辑", socialStance: "相信画面比口号诚实，对强迫表态有本能戒备", memoryAnchors: ["底片编号", "显影时间", "暗房红灯"], stressResponse: "面对技术问题坦率，问到拍摄对象就把话题拉回职业伦理", disclosureArc: "专业细节足以自证，但一张未标地点的样片让其长期处于灰区" },
+  locksmith: { temperament: "务实、谨慎、不喜欢空谈", immediateGoal: "完成夜间报修并把备用钥匙胚交回工坊", privateBurden: "曾替邻居配过未登记的备用钥匙，只为让老人能回家", socialStance: "认为锁具服务于生活，不愿看它被当作政治证据", memoryAnchors: ["锁芯型号", "钥匙胚批次", "门框划痕"], stressResponse: "会先要求查看实物，面对虚构指控时变得冷硬", disclosureArc: "看似掌握危险技能，但维修记录最终能解释大部分疑点" },
+  baker: { temperament: "直率、能吃苦、对时间极敏感", immediateGoal: "在清晨配给前交回空箱并确认面粉没有受潮", privateBurden: "曾私下多留过一小袋面粉给邻居孩子，担心被当成盗用", socialStance: "相信让人吃饱比漂亮话更重要", memoryAnchors: ["烤炉温度", "配给单", "空箱编号"], stressResponse: "被质疑时会反复强调班次和面团，却回避那袋多出的面粉", disclosureArc: "生活细节非常真实，但私人善意会制造可疑缺口" },
+  tailor: { temperament: "细致、克制、擅长倾听", immediateGoal: "按时交回改制制服并结清布料账", privateBurden: "曾替失业亲属改过一件无凭条制服，不愿牵连对方", socialStance: "不相信衣服能决定一个人的立场", memoryAnchors: ["袖章针脚", "布料批次", "取衣凭条"], stressResponse: "面对材料问题非常自信，问到顾客关系会把话说得很轻", disclosureArc: "表面最稳妥，但一张无姓名凭条会引出复杂的人情解释" },
+  telegraphist: { temperament: "冷静、节制、对措辞有职业洁癖", immediateGoal: "完成夜班交接并把报文夹送回局内", privateBurden: "曾替同事延迟过一封私人电报，担心留下违规痕迹", socialStance: "认为信息应该准确传递，不该被任意曲解", memoryAnchors: ["报码节奏", "值班钟", "碳纸压痕"], stressResponse: "会像宣读电文一样回答，遇到地址问题会停顿得过久", disclosureArc: "时间与编号经得住核对，真正的压力来自一段被重抄的地址" },
+  ferryman: { temperament: "寡言、耐心、熟悉水路风险", immediateGoal: "等雨势稍缓后回码头收缆绳", privateBurden: "曾在登记外摆渡过一名抱病旅客，不愿让其家属受罚", socialStance: "不轻易评判乘客，只相信船次和水位", memoryAnchors: ["潮位刻度", "缆绳结", "船篷漏水声"], stressResponse: "会详述河流和船况，对乘客身份则坚持记不清", disclosureArc: "航线细节可信，但临时加开的夜航让其始终难以完全摆脱怀疑" },
+  labtech: { temperament: "理性、紧张、习惯反复确认", immediateGoal: "把易变质样本送入检验所冷柜", privateBurden: "曾替一名熟人提前看过检验结果，违反了流程", socialStance: "相信数据应当由专业人员解释，不愿接受政治化盘问", memoryAnchors: ["样本编号", "冷柜温度", "领用标签"], stressResponse: "技术问题越问越详细，关系问题会突然变得简短", disclosureArc: "物品和时间看似完美，但送检人签名留下可供追问的缝隙" },
+  porter: { temperament: "粗犷、谨慎、有很强的记忆力", immediateGoal: "完成最后一批卸货并拿到夜班工钱", privateBurden: "替受伤同伴顶过一次班，导致点名册与实际装卸人不一致", socialStance: "讨厌被当成不懂事的人，也不愿解释工友关系", memoryAnchors: ["磅单重量", "麻绳磨痕", "仓门编号"], stressResponse: "会报出大量重量和箱号，越说越快时反而容易露出顺序问题", disclosureArc: "具备扎实劳动细节，但替班行为足以成为误捕陷阱" },
 };
 
 const SOCIAL_ENVIRONMENTS = {
@@ -190,6 +220,16 @@ const OCCUPATION_LENSES = {
   surveyor: "野外巡测让他更依赖实地数据、天气和路线；私人交往未必等同于政治立场。",
   archivist: "档案分类让他明白制度如何定义人；他会对旧称、缺页和未盖章文件异常敏感。",
   botanist: "采集工作与林场、土地和季节相连；他会将越界行为理解为工作必要，未必意识到它的政治含义。",
+  bookbinder: "装订和修复工作让他从纸张、水印和书脊判断来历；他会把物件损坏当作比口头态度更可靠的证据。",
+  conductor: "夜班电车让他见过不同阶层和各种临时理由；他熟悉路线与乘客习惯，却不愿为任何人承担责任。",
+  photographer: "暗房工作使他重视编号、曝光和画面边缘的细节；他知道记录既能证明，也会给人带来风险。",
+  locksmith: "锁具维修让他接触门禁、钥匙和报修关系；他能解释机械痕迹，却会回避无登记的私人请求。",
+  baker: "配给面包房的班次、温度和空箱回收决定他的时间感；他会把生计和照顾邻里放在政治口号之前。",
+  tailor: "制服裁缝能从布料、尺寸和针脚看出订单来源；其理解人们会用衣物掩饰困境，却不会轻易替人解释。",
+  telegraphist: "报务工作要求精确的时间、编号和措辞；他会对一段被改写的信息格外敏感。",
+  ferryman: "渡口工作让他熟悉水位、船次和天气，但乘客身份常常只留下模糊剪影。",
+  labtech: "检验所的样本、标签和冷藏时限塑造了他的回答方式；他会本能地区分专业事实和私人关系。",
+  porter: "仓库搬运让他以重量、箱号和工序记忆夜晚；工友互相顶班的惯例会让正式记录留下空白。",
 };
 
 function socialContextFor(campaign, blueprint) {
@@ -208,6 +248,16 @@ const CASE_LINKS = {
   botanist: [{ to: "surveyor", type: "野外路线交叉", description: "林场岔路与河堤巡测线在雨后共用一段道路。" }],
   actor: [{ to: "teacher", type: "临时身份交叉", description: "剧团和学校都曾使用同一处旧会馆作为临时场地。" }],
   teacher: [{ to: "archivist", type: "公开职业交叉", description: "学校印章和旧档案分类存在可核对的历史联系。" }, { to: "actor", type: "临时身份交叉", description: "学校和剧团都熟悉旧会馆的后门称呼。" }],
+  bookbinder: [{ to: "photographer", type: "纸张批次交叉", description: "图书馆后库和新闻社暗房领用了同批修复纸。" }],
+  photographer: [{ to: "bookbinder", type: "纸张批次交叉", description: "暗房联系样片与后库修复纸来自同一批采购。" }],
+  conductor: [{ to: "locksmith", type: "夜间报修交叉", description: "末班电车绕行时段与一通市政报修电话相邻。" }],
+  locksmith: [{ to: "conductor", type: "夜间报修交叉", description: "工坊报修单的时间可和末班电车绕行记录对照。" }],
+  baker: [{ to: "porter", type: "夜间货箱交叉", description: "面包箱回收与保税仓最后一批卸货的时间相邻。" }],
+  porter: [{ to: "baker", type: "夜间货箱交叉", description: "保税仓磅单的空箱记录可和北区配给站的回收单对照。" }],
+  tailor: [{ to: "telegraphist", type: "封签线交叉", description: "制服改制使用的封签线与一只夜间报文夹来自同一批材料。" }],
+  telegraphist: [{ to: "tailor", type: "封签线交叉", description: "报文夹封签线的采购批次可追到南街缝纫合作社。" }],
+  ferryman: [{ to: "labtech", type: "夜航样本交叉", description: "东河加开夜航与一批检验所样本的送检时间重叠。" }],
+  labtech: [{ to: "ferryman", type: "夜航样本交叉", description: "样本送检单可与东河临时码头的夜航登记相互核对。" }],
 };
 
 const CASE_SEEDS = {
@@ -221,6 +271,16 @@ const CASE_SEEDS = {
   surveyor: { routeTrue: "沿河堤巡测线到达检查站", routeCover: "从水务办公室直接进城", timeTrue: "18:20 记录潮位，19:00 绕过河堤封闭段", timeCover: "只记得雨后沿主路行走", objectTrue: "测绘簿边缘的湿痕对应封闭段", objectCover: "记录簿只是正常工作材料", relationTrue: "与被调查的旧同学有书信往来", relationCover: "没有任何私人联系", stanceTrue: "认为私人交往不等于政治立场", stanceCover: "愿意说明所有公开工作", evidence: ["潮位记录", "水务巡测表", "天气记录"] },
   archivist: { routeTrue: "从东郊档案库经旧检查棚转入城内", routeCover: "从档案库直接走登记主路", timeTrue: "20:30 取出无编号文件夹，21:50 经过旧检查棚", timeCover: "只记得晚间离开档案库", objectTrue: "文件夹没有入库章，夹有旧分类号", objectCover: "文件夹是普通空白材料", relationTrue: "知道电台技师使用的旧检查棚称呼", relationCover: "不认识任何外部联络者", stanceTrue: "相信档案分类比现场口供更可靠", stanceCover: "只服从档案室流程", evidence: ["档案入库册", "旧分类号", "文件夹纸张来源"] },
   botanist: { routeTrue: "从西坡林场绕过封闭带到河堤巡测线", routeCover: "从林场主路搭车进城", timeTrue: "16:40 越过封闭带采集标本，18:10 遇到雨", timeCover: "下午一直在许可范围内采集", objectTrue: "标本箱带着封闭带土壤", objectCover: "标本都有正常采集许可", relationTrue: "和巡测员共享过一段雨后道路", relationCover: "独自采集，没有同行者", stanceTrue: "认为工作需要可以解释一次越界", stanceCover: "尊重所有封闭区域规则", evidence: ["采集许可", "叶片编号", "当日天气记录"] },
+  bookbinder: { routeTrue: "从中央图书馆后库沿邮政巷到检查站", routeCover: "从图书馆正门直接进城", timeTrue: "19:10 领取受潮书脊，20:00 在后库补过一次登记", timeCover: "傍晚离开后库就一直在路上", objectTrue: "皮线卷里夹着一张旧借阅证", objectCover: "背包里只有待修书脊和装订线", relationTrue: "与暗房技师核对过同批修复纸", relationCover: "只认识图书馆里的装订同事", stanceTrue: "不愿把读者借阅习惯变成政治审查材料", stanceCover: "愿意完全按图书馆程序配合", evidence: ["后库领取簿", "纸张水印", "修复登记"] },
+  conductor: { routeTrue: "从北城电车库随末班车绕行到检查站", routeCover: "从电车库按常规线路直达", timeTrue: "21:25 因夜间报修绕过两站，22:05 交回部分票根", timeCover: "只记得末班车照常运行", objectTrue: "腰包少了两张被雨水浸坏的票根", objectCover: "票款和车票都按班次交接", relationTrue: "听到市政工坊为一处门锁报修", relationCover: "只和车库调度说过话", stanceTrue: "觉得夜间乘客有自己的难处，不愿替人定性", stanceCover: "一切按车库规定处理", evidence: ["末班车票根", "车库排班", "临时绕行记录"] },
+  photographer: { routeTrue: "从西区新闻社经旧电车站进入联络区", routeCover: "从新闻社走公开入口直接过来", timeTrue: "20:40 在暗房冲洗底片，21:30 取走联系样片", timeCover: "傍晚前就结束了暗房工作", objectTrue: "底片盒里有一张未标地点的集会照片", objectCover: "帆布袋只装当晚新闻底片", relationTrue: "和装订工确认过修复纸的批次", relationCover: "只与报社编辑有工作往来", stanceTrue: "不愿把拍摄对象的政治立场替他们解释", stanceCover: "只关心报道是否按时发表", evidence: ["暗房登记", "底片编号", "截稿时间"] },
+  locksmith: { routeTrue: "从东门市政工坊经临时报修点到检查站", routeCover: "从市政工坊沿主路直接过来", timeTrue: "21:15 接到夜间报修，21:45 更换过一枚锁芯", timeCover: "下班后直接离开工坊", objectTrue: "工具卷里有一把未登记的备用钥匙胚", objectCover: "工具和钥匙胚都在维修清单内", relationTrue: "报修时间与末班电车绕行相近", relationCover: "没有和任何夜班人员联系", stanceTrue: "认为锁具维修不该被当作揣测他人身份的理由", stanceCover: "愿意遵守所有市政登记规定", evidence: ["维修单", "钥匙胚批次", "夜间报修电话"] },
+  baker: { routeTrue: "从北区配给站经夜间送货巷到检查站", routeCover: "从配给站沿主路直接过来", timeTrue: "20:30 清点空箱，21:20 延长过一轮烤炉班次", timeCover: "夜班按平常时间结束", objectTrue: "空箱底部夹着一张多领面粉的便条", objectCover: "两只空箱只是正常回收", relationTrue: "空箱回收与保税仓夜间卸货相邻", relationCover: "只和面包房同事打交道", stanceTrue: "认为配给应优先照顾真正挨饿的人", stanceCover: "完全按配给站规定办事", evidence: ["配给单", "烤炉班次表", "空箱回收记录"] },
+  tailor: { routeTrue: "从南街缝纫合作社经旧会馆外侧到检查站", routeCover: "从合作社按主路直接过来", timeTrue: "19:50 完成制服改制，21:00 等待一名取衣人", timeCover: "傍晚交件后就离开合作社", objectTrue: "布包里有一枚无凭条的旧袖章", objectCover: "只有待交还的制服袖章", relationTrue: "封签线与邮电局报文夹来自同批材料", relationCover: "只认识合作社的裁缝", stanceTrue: "不愿让顾客的衣物成为政治追问的入口", stanceCover: "只按合作社的订单程序工作", evidence: ["裁缝登记", "布料批次", "取衣凭条"] },
+  telegraphist: { routeTrue: "从中央邮电局经北门正路到检查站", routeCover: "从邮电局直接走公开入口", timeTrue: "20:15 接手夜班，21:35 重抄过一段报文地址", timeCover: "整晚只做常规值班", objectTrue: "报文夹里夹着一张作废的碳纸", objectCover: "报文夹只含已登记的夜班材料", relationTrue: "报文夹封签线可追到裁缝合作社", relationCover: "不认识邮电局外的人", stanceTrue: "认为准确传递消息比迎合任何立场更重要", stanceCover: "只服从通信流程", evidence: ["报文编号", "值班钟点", "碳纸压痕"] },
+  ferryman: { routeTrue: "从东河临时码头随加开夜航到检查站", routeCover: "从码头按常规渡口路线过来", timeTrue: "20:55 因水位变化加开一趟短航，21:40 收过一次缆绳", timeCover: "夜里没有异常船次", objectTrue: "雨披内侧留有一张未登记货物的湿纸条", objectCover: "腰间只有摆渡工具", relationTrue: "加开夜航与检验所样本送检时间重叠", relationCover: "不记得任何乘客或货物", stanceTrue: "不愿把渡口乘客的困境变成指控", stanceCover: "一切按渡口规程行船", evidence: ["渡口船次簿", "缆绳登记", "潮位记录"] },
+  labtech: { routeTrue: "从西郊检验所经东河码头到检查站", routeCover: "从检验所沿公路直接进城", timeTrue: "20:50 领取样本，21:25 登上一趟临时夜航", timeCover: "按日间流程送检，没有额外行程", objectTrue: "木盒里有一支未登记的复检试管", objectCover: "木盒中只有常规待检样本", relationTrue: "送检时间与东河临时码头夜航相近", relationCover: "只和检验所同事交接", stanceTrue: "认为样本结果不该先被政治结论解释", stanceCover: "愿意遵守所有送检程序", evidence: ["样本编号", "药品领用", "送检时间"] },
+  porter: { routeTrue: "从南站保税仓经货运后门到检查站", routeCover: "从保税仓沿主路直接离开", timeTrue: "20:40 顶班装卸，21:50 完成最后一只箱子的磅重", timeCover: "正常参加了整段夜班", objectTrue: "麻绳下压着一张替班工友的点名条", objectCover: "肩上只有正常搬运工具", relationTrue: "空箱记录与北区配给站的回收时间相邻", relationCover: "不认识仓外的任何人", stanceTrue: "认为工友互相帮忙不该被当成秘密关系", stanceCover: "所有装卸都按仓库规章执行", evidence: ["货物磅单", "入库签收", "夜班点名册"] },
 };
 
 const NETWORK_FACT_IDS = {
@@ -234,6 +294,16 @@ const NETWORK_FACT_IDS = {
   botanist: "network.night_transport",
   actor: "network.old_hall",
   teacher: "network.old_hall",
+  bookbinder: "network.paper_batch",
+  photographer: "network.paper_batch",
+  conductor: "network.night_repair",
+  locksmith: "network.night_repair",
+  baker: "network.night_crates",
+  porter: "network.night_crates",
+  tailor: "network.seal_thread",
+  telegraphist: "network.seal_thread",
+  ferryman: "network.night_crossing",
+  labtech: "network.night_crossing",
 };
 
 function makeCaseFacts(campaign, blueprint) {
@@ -256,7 +326,19 @@ const INSTITUTION_TOOLS = {
   cia: { label: "背景核查", description: "检索安全许可、公开履历和联络记录。" },
 };
 
+const FOLLOWUP_DETAILS = {
+  identity: ["我的工作证能证明岗位，但不能替我解释整段经历。", "若要核对，请查单位登记，不要只凭我说话的快慢判断。"],
+  route: ["真正容易对上的不是大路，而是换车和等候的那一小段。", "有一段路我只能说出方向，具体时间应该交给站务记录。"],
+  document: ["编号和封签是两回事，登记时请把它们分别记下。", "物品的用途可以解释，来源还要看交接册才不会混淆。"],
+  contact: ["公开关系不等于熟人愿意替我担保，这两件事请分开核对。", "我能说明联系发生的场合，但不愿替别人猜测动机。"],
+  local: ["我记得的是工作真正经过的地方，不是为了应付盘问背下来的地名。", "如果旧称和文件称呼不同，我宁可注明不确定，也不乱补细节。"],
+  purpose: ["事情办完后是否留下回执，比一句‘只是工作’更容易核对。", "我的目的和携带物有关，但不代表每个认识的人都参与其中。"],
+  pressure: ["我可以承受核验，但不能把不确定的记忆说成确定事实。", "你要的是能落到记录上的回答，不是我在压力下喊一句口号。"],
+  institution: ["我能说明自己的经历和选择，但不会替别人作政治担保。", "立场不是一张通行证，还是请把它和实际记录分开核对。"],
+};
+
 const TOPICS = [
+  { id: "institution", label: "机构与立场", keys: ["元首", "忠诚", "秩序", "政治", "组织", "工会", "共产主义", "冷战", "西方广播", "外国人", "外来信件", "占领", "日伪", "纪律", "介绍信", "安全许可", "集会", "读书会"] },
   { id: "identity", label: "身份与职责", keys: ["身份", "职业", "做什么", "姓名", "工作"] },
   { id: "route", label: "路线与时间", keys: ["路线", "从哪里", "几点", "车", "站", "路"] },
   { id: "document", label: "证件与物品", keys: ["证件", "文件", "印章", "箱子", "行李", "票"] },
@@ -306,9 +388,23 @@ function topicLabel(id) {
 }
 
 function factsForTopic(dossier, topic) {
-  const categoryByTopic = { identity: "身份", route: "路线", document: "物品", contact: "关系", local: "路线", purpose: "时间线", pressure: "政治与组织", general: "时间线" };
+  const categoryByTopic = { institution: "政治与组织", identity: "身份", route: "路线", document: "物品", contact: "关系", local: "路线", purpose: "时间线", pressure: "政治与组织", general: "时间线" };
   const category = categoryByTopic[topic] || "时间线";
   return (dossier.facts || []).filter((fact) => fact.category === category);
+}
+
+function institutionalReply(dossier, repeatCount) {
+  const position = factsForTopic(dossier, "institution")[0]?.expected || "我只愿意就自己的经历说明。";
+  const frames = {
+    gestapo: ["这种问题在这里不能随便回答。", "我知道公开表态会被写进记录。"],
+    kgb: ["安全问题不该只靠一句态度判断。", "外部接触要看时间、许可和实际来往。"],
+    juntong: ["战时人人都会说立场，关键还是看谁走过哪条交通线。", "我不拿口头忠诚替代能查到的工作记录。"],
+    zhongtong: ["组织关系要看引介、履历和程序，不是把口号说得响。", "我可以说明自己的来处，但不能替别人表态。"],
+    cia: ["政治观点和具体组织往来不是同一件事。", "安全许可应该看履历和实际接触，不该只靠标签。"],
+  };
+  const choices = frames[dossier.campaignId] || ["我只能就自己知道的事回答。"];
+  const frame = choices[repeatCount % choices.length];
+  return `${frame}${position}。我的工作和来访记录可以核对，但我不会把别人的立场替他们说出来。`;
 }
 
 async function requestNpcReply(controller, question, answer) {
@@ -353,7 +449,14 @@ async function requestJudgeReply(controller, answer, result) {
 function makeDossier(campaign, blueprint, index) {
   const persona = { ...blueprint, name: campaign.names[index] };
   const network = NETWORKS[blueprint.id] || {};
-  const personality = { ...(CHARACTER_MODELS[blueprint.id] || {}), socialContext: socialContextFor(campaign, blueprint) };
+  const basePersonality = CHARACTER_MODELS[blueprint.id] || {};
+  const personality = {
+    ...basePersonality,
+    socialContext: socialContextFor(campaign, blueprint),
+    hiddenGoal: blueprint.target
+      ? `借助${blueprint.role}这一真实掩护身份完成联络或交接，并避免关系链和时间线被串联。`
+      : `完成${blueprint.role}的实际事务，同时不让无关的私人负担被误作任务关联。`,
+  };
   const facts = makeCaseFacts(campaign, blueprint);
   const relationships = CASE_LINKS[blueprint.id] || [];
   const lines = (blueprint.target ? targetLines : ordinaryLines).map((line) => line(persona, campaign));
@@ -436,6 +539,7 @@ function makeDossier(campaign, blueprint, index) {
     local: { topic: "local", label: "回答已存档", level: "neutral" },
     purpose: { topic: "purpose", label: "回答已存档", level: "neutral" },
     pressure: { topic: "pressure", label: "回答已存档", level: "neutral" },
+    institution: { topic: "institution", label: "回答已存档", level: "neutral" },
   } : {
     identity: { topic: "identity", label: "回答已存档", level: "neutral" },
     route: { topic: "route", label: "回答已存档", level: "neutral" },
@@ -444,9 +548,11 @@ function makeDossier(campaign, blueprint, index) {
     local: { topic: "local", label: "回答已存档", level: "neutral" },
     purpose: { topic: "purpose", label: "回答已存档", level: "neutral" },
     pressure: { topic: "pressure", label: "回答已存档", level: "neutral" },
+    institution: { topic: "institution", label: "回答已存档", level: "neutral" },
   };
   return {
     id: `${campaign.id}-${blueprint.id}-${index + 1}`,
+    campaignId: campaign.id,
     name: campaign.names[index],
     role: blueprint.role,
     origin: blueprint.origin,
@@ -476,11 +582,13 @@ class NpcAgent {
     if (this.round >= 10) throw new Error("该 NPC 已完成十轮对话");
     const topic = inferTopic(question);
     const index = this.round;
-    const topicBank = this.dossier.topicReplies[topic] || this.dossier.topicReplies.general;
     const previousTopicCount = this.memory.filter((item) => item.topic === topic).length;
-    let text = topicBank[previousTopicCount % topicBank.length] || this.dossier.lines[index];
+    const topicBank = this.dossier.topicReplies[topic] || this.dossier.topicReplies.general;
+    let text = topic === "institution" ? institutionalReply(this.dossier, previousTopicCount) : (topicBank[previousTopicCount % topicBank.length] || this.dossier.lines[index]);
     if (previousTopicCount > 0 && topic !== "general") {
-      text = `你刚才已经问过${topicLabel(topic)}。${text}`;
+      const details = FOLLOWUP_DETAILS[topic] || [];
+      const detail = details[(previousTopicCount - 1) % details.length] || "我只能补充已经能够核对的部分。";
+      text = `你刚才已经问过${topicLabel(topic)}。${text} ${detail}`;
     }
     if (this.round >= 7 && topic === "pressure") {
       text = `${text} 现在轮到你把记录写清楚了。`;
@@ -505,11 +613,28 @@ class NpcAgent {
   }
 }
 
+function createOfficerRoster() {
+  const roster = NPC_BLUEPRINTS.map((blueprint) => ({ ...blueprint }));
+  for (let index = roster.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [roster[index], roster[swapIndex]] = [roster[swapIndex], roster[index]];
+  }
+  roster.length = 10;
+  const targetOrder = [...roster.keys()];
+  for (let index = targetOrder.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [targetOrder[index], targetOrder[swapIndex]] = [targetOrder[swapIndex], targetOrder[index]];
+  }
+  const targetIndexes = new Set(targetOrder.slice(0, 4));
+  return roster.map((blueprint, index) => ({ ...blueprint, target: targetIndexes.has(index) }));
+}
+
 class WorldController {
-  constructor(campaignId = CAMPAIGNS[0].id) {
+  constructor(campaignId = CAMPAIGNS[0].id, roster = null) {
     this.mode = "officer";
     this.campaign = cloneCampaign(campaignId);
-    this.agents = NPC_BLUEPRINTS.map((blueprint, index) => new NpcAgent(makeDossier(this.campaign, blueprint, index)));
+    this.roster = Array.isArray(roster) && roster.length === 10 ? roster.map((blueprint) => ({ ...blueprint })) : createOfficerRoster();
+    this.agents = this.roster.map((blueprint, index) => new NpcAgent(makeDossier(this.campaign, blueprint, index)));
     this.status = "briefing";
     this.currentIndex = 0;
     this.logs = [];
@@ -651,6 +776,7 @@ class WorldController {
       caseClaims: this.caseClaims,
       decisions: this.decisions,
       selectedTargets: this.selectedTargets,
+      roster: this.roster,
       lastDecision: this.lastDecision,
       awaitingNext: this.awaitingNext,
       agentStates: this.agents.map((agent) => agent.snapshot()),
@@ -659,7 +785,7 @@ class WorldController {
   }
 
   static restore(snapshot) {
-    const controller = new WorldController(snapshot.campaignId);
+    const controller = new WorldController(snapshot.campaignId, snapshot.roster || NPC_BLUEPRINTS.slice(0, 10));
     controller.status = snapshot.status === "interrogation" ? "complete" : (snapshot.status || "briefing");
     controller.currentIndex = snapshot.currentIndex || 0;
     controller.logs = (snapshot.logs || []).map((line) => ({
@@ -934,7 +1060,7 @@ function renderLeftRail() {
 
 function renderFacts() {
   const observations = controller.observations;
-  const topics = ["route", "document", "contact", "local"];
+  const topics = ["route", "document", "contact", "local", "institution"];
   return `<div class="facts">${topics.map((topic) => { const found = [...observations].reverse().find((item) => item.topic === topic); return `<div class="fact"><div class="fact-head"><span>${topicLabel(topic)}</span><strong>${found ? "已记入" : "未记录"}</strong></div><p>${found ? "该主题已有回答。请用本地知识、其他候选人的陈述和机构记录交叉判断。" : "尚未就该主题取得候选人的陈述。"}</p></div>`; }).join("")}</div>`;
 }
 
@@ -1070,7 +1196,7 @@ function renderSettlement() {
   const leaked = controller.decisions.filter((decision) => !decision.correct && decision.action === "release").length;
   const grade = accuracy === 100 ? "S" : accuracy >= 90 ? "A" : accuracy >= 80 ? "B" : accuracy >= 70 ? "C" : accuracy >= 60 ? "D" : "E";
   const summary = grade === "S" ? "十名候选人的处置全部正确，主控将本次行动记为无误判断。" : grade === "A" ? "大部分判断稳健，但仍有少数证据没有及时连成闭环。" : grade === "B" ? "你抓住了部分异常，不过行动记录显示还有明显的复核空档。" : "这次行动留下了较大判断风险，建议回到简报重新检查问题路径。";
-  const rows = controller.decisions.map((decision, index) => `<div class="review-row"><b>${String(index + 1).padStart(2, "0")}</b><span>${escapeHtml(decision.name)} · ${decision.action === "detain" ? "扣留" : "放行"}</span><strong class="review-result ${decision.correct ? "correct" : "wrong"}">${decision.correct ? "正确" : decision.action === "detain" ? "误捕" : "漏网"}</strong></div>`).join("");
+  const rows = controller.decisions.map((decision, index) => `<div class="review-entry"><div class="review-row"><b>${String(index + 1).padStart(2, "0")}</b><span>${escapeHtml(decision.name)} · ${decision.action === "detain" ? "扣留" : "放行"}</span><strong class="review-result ${decision.correct ? "correct" : "wrong"}">${decision.correct ? "正确" : decision.action === "detain" ? "误捕" : "漏网"}</strong></div><p class="review-basis">结案复盘：${escapeHtml(decision.tell)}</p></div>`).join("");
   const totalRounds = controller.agents.reduce((sum, agent) => sum + agent.round, 0);
   const clues = controller.caseClues.slice(-6);
   const archiveClaims = controller.caseClaims.slice(-8);
