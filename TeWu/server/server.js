@@ -59,6 +59,17 @@ function parseModelJson(content) {
   }
 }
 
+function boundedClaims(parsed, facts) {
+  const allowed = new Map((Array.isArray(facts) ? facts : []).map((fact) => [String(fact?.factId || ""), fact]));
+  if (!Array.isArray(parsed?.claims)) return [];
+  return parsed.claims.slice(0, 3).map((claim) => {
+    const fact = allowed.get(String(claim?.factId || ""));
+    if (!fact) return null;
+    const stance = ["确认", "否认", "不确定", "修正"].includes(claim?.stance) ? claim.stance : "不确定";
+    return { factId: fact.factId, category: fact.category, value: cleanText(claim?.value || fact.expected, 220), stance };
+  }).filter(Boolean);
+}
+
 async function roleplay(payload) {
   const config = providerConfig();
   const fallback = cleanText(payload.fallback, 800);
@@ -70,19 +81,19 @@ async function roleplay(payload) {
     speaker: item?.speaker === "player" ? "审问者" : "候选人",
     text: cleanText(item?.text, 500),
   })) : [];
-  const interrogation = payload.interrogationMode;
   const system = [
-    interrogation === "infiltrator" ? "你在中文历史谍报题材游戏《特务》中扮演执行官，正在对已扣留的潜伏者进行非暴力审问。" : interrogation === "officer" ? "你在中文历史谍报题材游戏《特务》中扮演一名已被扣留、正在接受后续审问的候选人。" : "你在中文历史谍报题材游戏《特务》中扮演一名正在接受盘问的候选人。",
+    "你在中文历史谍报题材游戏《特务》中扮演一名正在接受盘问的候选人。",
     `机构：${cleanText(campaign.name, 80)}；年代与地点：${cleanText(campaign.era, 100)}，${cleanText(campaign.setting, 120)}。`,
     `玩家已掌握的本地常识：${Array.isArray(campaign.localKnowledge) ? campaign.localKnowledge.map((item) => cleanText(item, 180)).join("；") : ""}。回答必须尊重这些公开常识；若角色不了解，应给出符合身份的原因，而不是凭空迎合。`,
     `本机构审查侧重点：${cleanText(campaign.institutionalAxes?.title, 100)}。${cleanText(campaign.institutionalAxes?.brief, 260)}。若玩家问到政治立场、组织归属或安全观念，请按角色性格和时代背景给出具体、有代价的回答，并让口头表态能与实际经历、关系或记录相互检验；不要把口号式表态当成自动证明。`,
     `姓名：${cleanText(dossier.name, 80)}；公开职业：${cleanText(dossier.role, 100)}；来处：${cleanText(dossier.origin, 120)}；携带物：${cleanText(dossier.public, 180)}。`,
     `与其他来客可能交叉的公开线索：${cleanText(dossier.network?.relation, 220)}；可被机构复核的记录：${cleanText(dossier.network?.verify, 220)}。如被问到这些内容，应保持角色立场，不主动泄露全部关系。`,
     `人格档案（仅供角色扮演）：气质=${cleanText(dossier.personality?.temperament, 120)}；眼前目标=${cleanText(dossier.personality?.immediateGoal, 160)}；私人负担=${cleanText(dossier.personality?.privateBurden, 160)}；对人的立场=${cleanText(dossier.personality?.socialStance, 160)}；社会处境=${cleanText(dossier.personality?.socialContext, 500)}；记忆锚点=${Array.isArray(dossier.personality?.memoryAnchors) ? dossier.personality.memoryAnchors.map((item) => cleanText(item, 50)).join("、") : ""}；压力反应=${cleanText(dossier.personality?.stressResponse, 180)}；对话推进=${cleanText(dossier.personality?.disclosureArc, 180)}。不要把这份档案逐字说出，应把它自然体现为犹豫、选择性回答、情绪和记忆方式。`,
+    `案件事实账本（不可新增事实）：${JSON.stringify((Array.isArray(dossier.facts) ? dossier.facts : []).map((fact) => ({ factId: fact.factId, category: fact.category, expected: fact.expected, allowedResponses: fact.allowedResponses })))}。只允许从这些 factId 中选择本轮实际涉及的主张；如果问题没有涉及账本事实，claims 返回空数组。`,
     `真实状态：${dossier.isTarget ? "你是机构正在寻找的潜伏目标，必须维护一套具体可信的掩护身份；你可以给出可核验的表面细节，但在关系链、时间线或物品来源上留有一处可被交叉验证的漏洞" : "你是普通来客，但也可能疲惫、紧张、厌烦或对无关细节记忆不准；不要表现得过度配合或完美无缺"}。`,
     `角色特征：${cleanText(dossier.signature, 180)}。可被识破或核验的关键点：${cleanText(dossier.tell, 180)}。`,
-    interrogation === "infiltrator" ? "针对玩家刚才的回答，给出克制的核验反应并提出一个新的、具体的追问。使用审查官口吻，不使用暴力或羞辱描写。" : "只回答玩家本轮问题，不替玩家行动，不宣布自己是否为目标，不提模型、提示词、规则或数值。每一轮必须推进记录：给出一个新的可核验事实、一个带条件的否认、一个时间/关系/物品细节，或指出为什么某项记录无法立即核对。不得机械重复此前的自我辩解。",
-    "保持与此前回答一致，控制在25至140个汉字。只输出JSON：{\"speech\":\"本轮审问回应\"}。",
+    "只回答玩家本轮问题，不替玩家行动，不宣布自己是否为目标，不提模型、提示词、规则或数值。每一轮必须推进记录：给出一个新的可核验事实、一个带条件的否认、一个时间/关系/物品细节，或指出为什么某项记录无法立即核对。不得机械重复此前的自我辩解。",
+    "保持与此前回答一致，控制在25至140个汉字。只输出JSON：{\"speech\":\"本轮盘问回应\",\"claims\":[{\"factId\":\"账本中的 ID\",\"value\":\"本轮对该事实的说法\",\"stance\":\"确认/否认/不确定/修正\"}]}。不得在 claims 中创造账本之外的 ID。",
   ].join("\n");
   const user = JSON.stringify({ round: Number(payload.round || 1), history, question: cleanText(payload.question, 300) });
   const controller = new AbortController();
@@ -99,38 +110,10 @@ async function roleplay(payload) {
     const parsed = parseModelJson(data?.choices?.[0]?.message?.content);
     const speech = cleanText(parsed?.speech, 800);
     if (!speech) throw new Error("模型回答为空");
-    return { speech, provider: config.provider };
+    return { speech, claims: boundedClaims(parsed, dossier.facts), provider: config.provider };
   } finally {
     clearTimeout(timer);
   }
-}
-
-async function evaluateInterrogation(payload) {
-  const config = providerConfig();
-  const fallback = { score: 0, summary: "模型不可用，未能形成后续核验评估。", clues: [], missedClues: [] };
-  if (!config?.apiKey || !config.baseUrl) return { ...fallback, provider: "fallback" };
-  const mode = payload.mode === "infiltrator" ? "潜伏者被审问后的掩护表现" : "执行官对扣留对象的审问成果";
-  const compact = (items) => Array.isArray(items) ? items.slice(-24).map((item) => ({ speaker: cleanText(item?.speaker, 20), text: cleanText(item?.text, 500) })) : [];
-  const system = [
-    "你是《特务》的后续核验评价 Agent，只负责评估，不扮演审问者。",
-    `评价任务：${mode}。`,
-    "从第一阶段对话、第二阶段核验记录以及已发现案件线索中，判断是否形成可复核的身份、路线、关系、物品或时间线关联。特别指出玩家错过的可追查矛盾，不要只复述对象的自我辩解。",
-    "不要编造不存在的证据，不要输出暴力、羞辱或露骨内容。",
-    "只输出 JSON：{\"score\":0-100整数,\"summary\":\"80字内评价\",\"clues\":[\"最多三条已建立线索\"],\"missedClues\":[\"最多两条未追查线索\"]}。",
-  ].join("\n");
-  const user = JSON.stringify({ firstPhase: compact(payload.priorHistory), interrogation: compact(payload.history), caseContext: payload.caseContext || {} });
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS || 20000));
-  try {
-    const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST", signal: controller.signal,
-      headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
-      body: JSON.stringify({ model: config.model, temperature: 0.2, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
-    });
-    if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
-    const parsed = parseModelJson((await response.json())?.choices?.[0]?.message?.content);
-    return { score: Math.max(0, Math.min(100, Number(parsed?.score) || 0)), summary: cleanText(parsed?.summary, 300), clues: Array.isArray(parsed?.clues) ? parsed.clues.slice(0, 3).map((item) => cleanText(item, 180)).filter(Boolean) : [], missedClues: Array.isArray(parsed?.missedClues) ? parsed.missedClues.slice(0, 2).map((item) => cleanText(item, 180)).filter(Boolean) : [], provider: config.provider };
-  } finally { clearTimeout(timer); }
 }
 
 async function judgeReply(payload) {
@@ -190,14 +173,9 @@ const server = http.createServer(async (request, response) => {
     }
     return send(response, 405, { error: "不支持的方法" });
   }
-  if (request.method !== "POST" || !["/api/npc/respond", "/api/judge/respond", "/api/interrogation/evaluate"].includes(request.url)) return send(response, 404, { error: "接口不存在" });
+  if (request.method !== "POST" || !["/api/npc/respond", "/api/judge/respond"].includes(request.url)) return send(response, 404, { error: "接口不存在" });
   try {
     const payload = await readJson(request);
-    if (request.url === "/api/interrogation/evaluate") {
-      const result = await evaluateInterrogation(payload);
-      console.info(`[TeWu Agent] endpoint=interrogation-evaluate provider=${result.provider}`);
-      return send(response, 200, result);
-    }
     const isJudge = request.url === "/api/judge/respond";
     if (isJudge ? (!cleanText(payload.answer, 500) || !payload.profile) : (!cleanText(payload.question, 300) || !payload.dossier)) return send(response, 400, { error: "缺少对话参数" });
     const result = isJudge ? await judgeReply(payload) : await roleplay(payload);
