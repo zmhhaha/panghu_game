@@ -417,17 +417,43 @@ export interface RadioState {
 
 export type ComradeTaskKind = "gather_intel" | "verify_intel" | "scout_location";
 export type ComradeTaskApproach = "cautious" | "balanced" | "urgent";
-export type ComradeTaskStatus = "active" | "completed" | "failed" | "cancelled";
+export type CooperationRiskLimit = "low" | "moderate" | "high";
+export type CooperationExchange = "none" | "favor" | "payment" | "protection";
+export type CooperationDecision = "accept" | "counter" | "refuse";
+export type ComradeTaskStatus = "awaiting_confirmation" | "countered" | "declined" | "active" | "completed" | "failed" | "cancelled";
+
+export interface CooperationTerms {
+  purpose: string;
+  riskLimit: CooperationRiskLimit;
+  exchange: CooperationExchange;
+  abortCondition: string;
+}
+
+export interface CooperationResponse {
+  decision: CooperationDecision;
+  message: string;
+  proposedApproach: ComradeTaskApproach | null;
+  requestedExchange: CooperationExchange | null;
+}
+
+export interface AgentCommitment {
+  agreedAt: string;
+  approach: ComradeTaskApproach;
+  exchange: CooperationExchange;
+  dueAt: string;
+}
 
 export interface ComradeTask {
   id: string;
   memberId: string;
   kind: ComradeTaskKind;
   targetId: string;
-  approach: ComradeTaskApproach;
+  requestedApproach: ComradeTaskApproach;
   status: ComradeTaskStatus;
-  assignedAt: string;
-  dueAt: string;
+  requestedAt: string;
+  terms: CooperationTerms;
+  response: CooperationResponse;
+  commitment: AgentCommitment | null;
   completedAt: string | null;
   report: string | null;
 }
@@ -791,17 +817,24 @@ export interface AbortRadioMessageAction extends ActionBase {
   timing?: RadioTiming;
 }
 
-export interface DelegateComradeTaskAction extends ActionBase {
-  type: "delegate_comrade_task";
+export interface ProposeCooperationRequestAction extends ActionBase {
+  type: "propose_cooperation_request";
   memberId: string;
   kind: ComradeTaskKind;
   targetId: string;
   approach: ComradeTaskApproach;
+  terms: CooperationTerms;
+  agentResponse?: CooperationResponse;
 }
 
-export interface CancelComradeTaskAction extends ActionBase {
-  type: "cancel_comrade_task";
-  taskId: string;
+export interface ConfirmCooperationRequestAction extends ActionBase {
+  type: "confirm_cooperation_request";
+  requestId: string;
+}
+
+export interface CancelCooperationRequestAction extends ActionBase {
+  type: "cancel_cooperation_request";
+  requestId: string;
 }
 
 export interface RecruitmentTestAction extends ActionBase {
@@ -817,7 +850,7 @@ export interface RecruitCandidateAction extends ActionBase {
   targetCharacterId: string;
 }
 
-export type GameAction = MoveAction | ObserveAction | WaitAction | RestAction | RecordIntelAction | TransmitIntelAction | CoverWorkAction | RequestLeaveAction | SendRadioMessageAction | AbortRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | RespondToContactAction | CountermeasureAction | InterrogationAnswerAction | DelegateComradeTaskAction | CancelComradeTaskAction | RecruitmentTestAction | RecruitCandidateAction;
+export type GameAction = MoveAction | ObserveAction | WaitAction | RestAction | RecordIntelAction | TransmitIntelAction | CoverWorkAction | RequestLeaveAction | SendRadioMessageAction | AbortRadioMessageAction | DialogueAction | DialogueStartAction | DialogueTurnAction | DialogueEndAction | RespondToContactAction | CountermeasureAction | InterrogationAnswerAction | ProposeCooperationRequestAction | ConfirmCooperationRequestAction | CancelCooperationRequestAction | RecruitmentTestAction | RecruitCandidateAction;
 
 export interface ActionResult {
   state: WorldState;

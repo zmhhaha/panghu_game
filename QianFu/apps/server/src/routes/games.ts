@@ -56,8 +56,13 @@ const actionSchema = z.discriminatedUnion("type", [
     durationMinutes: z.literal(0),
     idempotencyKey: z.string().min(8).max(128),
   }),
-  z.object({ type: z.literal("delegate_comrade_task"), memberId: z.string().min(1), kind: z.enum(["gather_intel", "verify_intel", "scout_location"]), targetId: z.string().min(1), approach: z.enum(["cautious", "balanced", "urgent"]), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
-  z.object({ type: z.literal("cancel_comrade_task"), taskId: z.string().min(8).max(128), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({
+    type: z.literal("propose_cooperation_request"), memberId: z.string().min(1), kind: z.enum(["gather_intel", "verify_intel", "scout_location"]), targetId: z.string().min(1), approach: z.enum(["cautious", "balanced", "urgent"]),
+    terms: z.object({ purpose: z.string().trim().min(4).max(240), riskLimit: z.enum(["low", "moderate", "high"]), exchange: z.enum(["none", "favor", "payment", "protection"]), abortCondition: z.string().trim().min(4).max(240) }),
+    durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128),
+  }),
+  z.object({ type: z.literal("confirm_cooperation_request"), requestId: z.string().min(8).max(128), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ type: z.literal("cancel_cooperation_request"), requestId: z.string().min(8).max(128), durationMinutes: z.literal(0), idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("recruitment_test"), targetCharacterId: z.string().min(1), testType: z.enum(["background_check", "controlled_leak", "discipline_check", "low_risk_task"]), plan: z.object({ objective: z.string().trim().min(4).max(240), steps: z.string().trim().min(8).max(1200), safeguards: z.string().trim().min(4).max(600), abortCondition: z.string().trim().min(4).max(400) }), durationMinutes: duration, idempotencyKey: z.string().min(8).max(128) }),
   z.object({ type: z.literal("recruit_candidate"), targetCharacterId: z.string().min(1), durationMinutes: z.literal(30), idempotencyKey: z.string().min(8).max(128) }),
   z.object({
@@ -305,6 +310,10 @@ gamesRouter.post("/:id/actions", async (req, res) => {
       const current = await gameRepository.getGame(req.params.id, req.user.id);
       if (!current) { res.status(404).json({ error: "战役不存在" }); return; }
       action = await campaignOrchestrator.prepareRecruitmentTest(current, action);
+    } else if (action.type === "propose_cooperation_request") {
+      const current = await gameRepository.getGame(req.params.id, req.user.id);
+      if (!current) { res.status(404).json({ error: "战役不存在" }); return; }
+      action = await campaignOrchestrator.prepareCooperationRequest(current, action);
     } else if (action.type === "send_radio_message" && parsed.data.type === "send_radio_message") {
       const current = await gameRepository.getGame(req.params.id, req.user.id);
       if (!current) { res.status(404).json({ error: "战役不存在" }); return; }

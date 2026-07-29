@@ -1,4 +1,4 @@
-import { evaluateRecruitmentTest, getCoverProfile, isIntelUnlocked, recruitmentEvidenceSummary, type CampaignDefinition, type DialogueAction, type DialogueMemory, type DialogueTurnAction, type RecruitmentTestAction, type WorldState } from "@qianfu/core";
+import { evaluateCooperationRequest, evaluateRecruitmentTest, getCoverProfile, isIntelUnlocked, recruitmentEvidenceSummary, type CampaignDefinition, type DialogueAction, type DialogueMemory, type DialogueTurnAction, type ProposeCooperationRequestAction, type RecruitmentTestAction, type WorldState } from "@qianfu/core";
 import { DIALOGUE_TEXT_LIMITS } from "@qianfu/core/dialogue";
 import { getCampaignDefinition } from "@qianfu/content";
 import { createAgentProvider, parseModelJson, parseNpcResponse, type AgentProvider, type NpcAgentResponse } from "./provider.js";
@@ -80,6 +80,41 @@ export class CampaignOrchestrator {
       return { ...action, agentObservation: value.observation };
     } catch (error) {
       console.warn(`[QianFu Agent] recruitment target=${action.targetCharacterId} provider=${this.provider.name} status=fallback`, error instanceof Error ? error.message : error);
+      return action;
+    }
+  }
+
+  async prepareCooperationRequest(state: WorldState, action: ProposeCooperationRequestAction): Promise<ProposeCooperationRequestAction> {
+    const campaign = this.resolveCampaign(state.campaignId, state.campaignVersion);
+    const character = campaign.characters.find((item) => item.id === action.memberId);
+    const relationship = state.characters[action.memberId];
+    if (!character || !relationship?.recruited || !state.network.activeMemberIds.includes(action.memberId)) return action;
+    const target = action.kind === "scout_location"
+      ? campaign.locations.find((item) => item.id === action.targetId)?.name
+      : campaign.intel.find((item) => item.id === action.targetId)?.title;
+    const authoritative = evaluateCooperationRequest(character, relationship, action);
+    if (!this.provider) return action;
+    try {
+      const system = [
+        `你正在扮演谍战游戏中的${character.name}，公开身份是${character.publicIdentity}。`,
+        "玩家正在向你提出一次有限合作请求。你不是听命工具，要像真实人物一样回应风险、交换条件和退出边界。",
+        "主控给出的decision和条件调整是权威结果，不得更改。只写你当面对玩家说的话，不解释数值、规则、AI或隐藏立场。",
+        "回复应为一到四句自然中文，不超过240字；可以迟疑、反问或强调个人顾虑，但不能凭空添加情报或承诺未给出的资源。",
+        '只输出JSON：{"decision":"accept|counter|refuse","message":"角色化回应"}。',
+      ].join("\n");
+      const raw = await this.provider.complete(system, JSON.stringify({
+        request: { kind: action.kind, target: target ?? "未确认目标", approach: action.approach, terms: action.terms },
+        npc: { publicIdentity: character.publicIdentity, personality: character.personality ?? null },
+        npcCurrentView: { trust: relationship.privateTrust, stress: relationship.stress, interestDependency: relationship.interestDependency },
+        controllerProjection: authoritative,
+      }));
+      const generated = z.object({ decision: z.enum(["accept", "counter", "refuse"]), message: z.string().trim().min(1).max(240) })
+        .parse(typeof raw === "string" ? parseModelJson(raw) : raw);
+      if (generated.decision !== authoritative.decision) throw new Error("cooperation response contradicted controller decision");
+      if (/(?:忠诚度|可靠性|后台数值|成功率|系统判定|隐藏阵营)/.test(generated.message)) throw new Error("cooperation response exposed hidden state");
+      return { ...action, agentResponse: { ...authoritative, message: generated.message } };
+    } catch (error) {
+      console.warn(`[QianFu Agent] cooperation member=${action.memberId} provider=${this.provider.name} status=fallback`, error instanceof Error ? error.message : error);
       return action;
     }
   }

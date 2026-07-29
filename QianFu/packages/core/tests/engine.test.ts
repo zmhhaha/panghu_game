@@ -991,7 +991,7 @@ describe("radio transmission workflow", () => {
   });
 });
 
-describe("autonomous comrade tasks", () => {
+describe("negotiated comrade cooperation", () => {
   const taskCampaign: CampaignDefinition = {
     ...campaign,
     characters: [{
@@ -1005,21 +1005,34 @@ describe("autonomous comrade tasks", () => {
   const recruitedState = (gameInstanceId: string) => {
     const state = createInitialWorld(taskCampaign, gameInstanceId, "user-1");
     state.characters.member.recruited = true;
+    state.characters.member.recruitmentProgress = 100;
+    state.characters.member.privateTrust = 10;
     state.network.activeMemberIds.push("member");
     return state;
   };
 
-  it("rejects delegation to a character outside the network", () => {
+  const terms = { purpose: "核对运输记录的来源和经手人", riskLimit: "moderate" as const, exchange: "none" as const, abortCondition: "发现跟踪或临时盘查时立即中止" };
+
+  it("rejects a cooperation request to a character outside the network", () => {
     const engine = new CampaignEngine(taskCampaign, createInitialWorld(taskCampaign, "unrecruited-task", "user-1"));
-    expect(() => engine.execute({ type: "delegate_comrade_task", memberId: "member", kind: "gather_intel", targetId: "shipment", approach: "balanced", durationMinutes: 0, idempotencyKey: "unrecruited-delegation" })).toThrow("not an active network member");
+    expect(() => engine.execute({ type: "propose_cooperation_request", memberId: "member", kind: "gather_intel", targetId: "shipment", approach: "balanced", terms, durationMinutes: 0, idempotencyKey: "unrecruited-cooperation" })).toThrow("尚未与玩家建立有效合作关系");
   });
 
-  it("lets a recruited comrade complete work while world time advances", () => {
+  it("requires the player to confirm an accepted request before work begins", () => {
     const engine = new CampaignEngine(taskCampaign, recruitedState("background-task"));
-    const assigned = engine.execute({ type: "delegate_comrade_task", memberId: "member", kind: "gather_intel", targetId: "shipment", approach: "cautious", durationMinutes: 0, idempotencyKey: "gather-delegation" });
-    expect(assigned.state.currentTime).toBe(taskCampaign.startTime);
-    expect(assigned.state.network.tasks[0]?.status).toBe("active");
-    expect(assigned.state.characters.member.agentTier).toBe("active");
+    const proposed = engine.execute({ type: "propose_cooperation_request", memberId: "member", kind: "gather_intel", targetId: "shipment", approach: "cautious", terms, durationMinutes: 0, idempotencyKey: "gather-request" });
+    expect(proposed.state.currentTime).toBe(taskCampaign.startTime);
+    expect(proposed.state.network.tasks[0]?.status).toBe("awaiting_confirmation");
+    expect(proposed.state.characters.member.agentTier).toBe("background");
+
+    engine.execute({ type: "wait", durationMinutes: 100, idempotencyKey: "unconfirmed-wait" });
+    expect(engine.getState().network.tasks[0]?.status).toBe("awaiting_confirmation");
+    expect(engine.getState().intel.shipment.knownFields).toHaveLength(0);
+
+    const confirmed = engine.execute({ type: "confirm_cooperation_request", requestId: "gather-request", durationMinutes: 0, idempotencyKey: "confirm-gather-request" });
+    expect(confirmed.state.network.tasks[0]?.status).toBe("active");
+    expect(confirmed.state.network.tasks[0]?.commitment?.approach).toBe("cautious");
+    expect(confirmed.state.characters.member.agentTier).toBe("active");
 
     engine.execute({ type: "wait", durationMinutes: 70, idempotencyKey: "task-wait-70" });
     expect(engine.getState().network.tasks[0]?.status).toBe("active");
@@ -1030,10 +1043,20 @@ describe("autonomous comrade tasks", () => {
     expect(completed.notices.some((notice) => notice.includes("Member"))).toBe(true);
   });
 
-  it("allows an active assignment to be withdrawn without advancing time", () => {
+  it("lets a member counter unsafe terms and uses those terms when confirmed", () => {
+    const engine = new CampaignEngine(taskCampaign, recruitedState("counter-request"));
+    const proposed = engine.execute({ type: "propose_cooperation_request", memberId: "member", kind: "gather_intel", targetId: "shipment", approach: "urgent", terms: { ...terms, riskLimit: "low" }, durationMinutes: 0, idempotencyKey: "unsafe-request" });
+    expect(proposed.state.network.tasks[0]?.status).toBe("countered");
+    expect(proposed.state.network.tasks[0]?.response.proposedApproach).toBe("cautious");
+    const confirmed = engine.execute({ type: "confirm_cooperation_request", requestId: "unsafe-request", durationMinutes: 0, idempotencyKey: "confirm-counter" });
+    expect(confirmed.state.network.tasks[0]?.commitment?.approach).toBe("cautious");
+  });
+
+  it("allows an active cooperation request to be withdrawn without advancing time", () => {
     const engine = new CampaignEngine(taskCampaign, recruitedState("cancel-task"));
-    engine.execute({ type: "delegate_comrade_task", memberId: "member", kind: "gather_intel", targetId: "shipment", approach: "balanced", durationMinutes: 0, idempotencyKey: "cancel-delegation" });
-    const cancelled = engine.execute({ type: "cancel_comrade_task", taskId: "cancel-delegation", durationMinutes: 0, idempotencyKey: "cancel-command" });
+    engine.execute({ type: "propose_cooperation_request", memberId: "member", kind: "gather_intel", targetId: "shipment", approach: "balanced", terms, durationMinutes: 0, idempotencyKey: "cancel-request" });
+    engine.execute({ type: "confirm_cooperation_request", requestId: "cancel-request", durationMinutes: 0, idempotencyKey: "confirm-cancel-request" });
+    const cancelled = engine.execute({ type: "cancel_cooperation_request", requestId: "cancel-request", durationMinutes: 0, idempotencyKey: "cancel-command" });
     expect(cancelled.state.currentTime).toBe(taskCampaign.startTime);
     expect(cancelled.state.network.tasks[0]?.status).toBe("cancelled");
     expect(cancelled.state.characters.member.agentTier).toBe("background");

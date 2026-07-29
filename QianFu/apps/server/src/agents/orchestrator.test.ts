@@ -1,4 +1,4 @@
-import { createInitialWorld, evaluateRecruitmentTest, type CampaignDefinition, type RecruitmentTestAction } from "@qianfu/core";
+import { createInitialWorld, evaluateRecruitmentTest, type CampaignDefinition, type ProposeCooperationRequestAction, type RecruitmentTestAction } from "@qianfu/core";
 import { LINJIANG_1942 } from "@qianfu/content";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CampaignOrchestrator } from "./orchestrator.js";
@@ -21,6 +21,14 @@ describe("CampaignOrchestrator", () => {
     return {
       type: "recruitment_test", targetCharacterId: "old-wu", testType: "background_check",
       plan: screeningPlan, durationMinutes: 60, idempotencyKey: "screening-agent-test",
+    };
+  }
+
+  function cooperationAction(): ProposeCooperationRequestAction {
+    return {
+      type: "propose_cooperation_request", memberId: "old-wu", kind: "gather_intel", targetId: "shipment-time", approach: "urgent",
+      terms: { purpose: "核对运输记录的来源和经手人", riskLimit: "low", exchange: "none", abortCondition: "发现跟踪或临时盘查时立即中止" },
+      durationMinutes: 0, idempotencyKey: "cooperation-agent-test",
     };
   }
 
@@ -256,5 +264,36 @@ describe("CampaignOrchestrator", () => {
     const prepared = await new CampaignOrchestrator(provider).prepareRecruitmentTest(state, action);
 
     expect(prepared.agentObservation).toBeUndefined();
+  });
+
+  it("lets the NPC phrase a controller-authorized cooperation counteroffer", async () => {
+    const state = createInitialWorld(LINJIANG_1942, "cooperation-game", "cooperation-user", "undercover");
+    state.characters["old-wu"].recruited = true;
+    state.characters["old-wu"].recruitmentProgress = 100;
+    state.network.activeMemberIds.push("old-wu");
+    const provider: AgentProvider = {
+      name: "test",
+      async complete() { return { decision: "counter", message: "这事能办，但得照我的路线走；一见巡查，我马上收手。" }; },
+    };
+
+    const prepared = await new CampaignOrchestrator(provider).prepareCooperationRequest(state, cooperationAction());
+
+    expect(prepared.agentResponse).toMatchObject({ decision: "counter", proposedApproach: "cautious" });
+    expect(prepared.agentResponse?.message).toContain("照我的路线走");
+  });
+
+  it("discards an NPC cooperation answer that contradicts the controller", async () => {
+    const state = createInitialWorld(LINJIANG_1942, "cooperation-conflict", "cooperation-user", "undercover");
+    state.characters["old-wu"].recruited = true;
+    state.characters["old-wu"].recruitmentProgress = 100;
+    state.network.activeMemberIds.push("old-wu");
+    const provider: AgentProvider = {
+      name: "test",
+      async complete() { return { decision: "accept", message: "没问题，我现在就去。" }; },
+    };
+
+    const prepared = await new CampaignOrchestrator(provider).prepareCooperationRequest(state, cooperationAction());
+
+    expect(prepared.agentResponse).toBeUndefined();
   });
 });

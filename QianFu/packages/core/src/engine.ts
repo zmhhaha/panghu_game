@@ -624,41 +624,63 @@ export class CampaignEngine {
         narration = dialogueNarration(next, definition, action, discovery !== null);
         break;
       }
-      case "delegate_comrade_task": {
-        if (action.durationMinutes !== 0) throw new Error("Delegating a comrade task does not advance time");
+      case "propose_cooperation_request": {
+        if (action.durationMinutes !== 0) throw new Error("提出合作请求不直接推进时间");
         const member = next.characters[action.memberId];
-        if (!member?.recruited || !next.network.activeMemberIds.includes(action.memberId)) throw new Error("Character is not an active network member");
-        if (member.exposed || next.network.compromisedMemberIds.includes(action.memberId)) throw new Error("Compromised members cannot receive new tasks");
-        if (next.network.tasks.some((task) => task.memberId === action.memberId && task.status === "active")) throw new Error("Network member already has an active task");
+        const definition = this.campaign.characters.find((item) => item.id === action.memberId);
+        if (!member?.recruited || !definition || !next.network.activeMemberIds.includes(action.memberId)) throw new Error("该人物尚未与玩家建立有效合作关系");
+        if (member.exposed || next.network.compromisedMemberIds.includes(action.memberId)) throw new Error("该人物当前处境异常，无法安全提出新的合作请求");
+        if (next.network.tasks.some((task) => task.memberId === action.memberId && ["awaiting_confirmation", "countered", "active"].includes(task.status))) throw new Error("该人物已有一项尚未结束的合作事项");
         validateComradeTaskTarget(this.campaign, next, action.kind, action.targetId);
-        const taskMinutes = comradeTaskMinutes(action.kind, action.approach);
+        validateCooperationTerms(action.terms);
+        const authoritativeResponse = evaluateCooperationRequest(definition, member, action);
+        const response = action.agentResponse?.decision === authoritativeResponse.decision
+          ? { ...authoritativeResponse, message: sanitizeCooperationMessage(action.agentResponse.message, authoritativeResponse.message) }
+          : authoritativeResponse;
+        const status = response.decision === "accept" ? "awaiting_confirmation" : response.decision === "counter" ? "countered" : "declined";
         next.network.tasks.push({
           id: action.idempotencyKey,
           memberId: action.memberId,
           kind: action.kind,
           targetId: action.targetId,
-          approach: action.approach,
-          status: "active",
-          assignedAt: next.currentTime,
-          dueAt: addMinutes(next.currentTime, taskMinutes),
+          requestedApproach: action.approach,
+          status,
+          requestedAt: next.currentTime,
+          terms: structuredClone(action.terms),
+          response,
+          commitment: null,
           completedAt: null,
           report: null,
         });
-        member.agentTier = "active";
-        append("comrade.task_assigned", { taskId: action.idempotencyKey, memberId: action.memberId, kind: action.kind, targetId: action.targetId, approach: action.approach, taskMinutes });
-        narration = `任务已经交给${this.campaign.characters.find((item) => item.id === action.memberId)?.name ?? "这名同志"}，对方会按约定自行行动。`;
+        append("comrade.request_responded", { requestId: action.idempotencyKey, memberId: action.memberId, kind: action.kind, targetId: action.targetId, decision: response.decision, message: response.message });
+        narration = `${definition.name}回应：“${response.message}”`;
         break;
       }
-      case "cancel_comrade_task": {
-        if (action.durationMinutes !== 0) throw new Error("Cancelling a comrade task does not advance time");
-        const task = next.network.tasks.find((item) => item.id === action.taskId);
-        if (!task || task.status !== "active") throw new Error("Comrade task is not active");
+      case "confirm_cooperation_request": {
+        if (action.durationMinutes !== 0) throw new Error("确认合作承诺不直接推进时间");
+        const task = next.network.tasks.find((item) => item.id === action.requestId);
+        if (!task || !["awaiting_confirmation", "countered"].includes(task.status)) throw new Error("当前没有可确认的合作条件");
+        const approach = task.response.proposedApproach ?? task.requestedApproach;
+        const exchange = task.response.requestedExchange ?? task.terms.exchange;
+        const taskMinutes = comradeTaskMinutes(task.kind, approach);
+        task.status = "active";
+        task.commitment = { agreedAt: next.currentTime, approach, exchange, dueAt: addMinutes(next.currentTime, taskMinutes) };
+        if (next.characters[task.memberId]) next.characters[task.memberId].agentTier = "active";
+        append("comrade.commitment_confirmed", { requestId: task.id, memberId: task.memberId, kind: task.kind, targetId: task.targetId, approach, exchange, taskMinutes });
+        narration = "双方确认了行动范围、联络方式和中止条件。对方将按自己的判断开始行动。";
+        break;
+      }
+      case "cancel_cooperation_request": {
+        if (action.durationMinutes !== 0) throw new Error("撤回合作请求不直接推进时间");
+        const task = next.network.tasks.find((item) => item.id === action.requestId);
+        if (!task || !["awaiting_confirmation", "countered", "active"].includes(task.status)) throw new Error("当前合作事项无法撤回");
+        const wasActive = task.status === "active";
         task.status = "cancelled";
         task.completedAt = next.currentTime;
-        task.report = "任务已通过约定渠道撤回，没有产生结果。";
+        task.report = wasActive ? "合作请求已通过约定渠道撤回，但对方能否立即脱身仍取决于现场情况。" : "双方没有形成最终承诺，这项合作请求已经撤回。";
         if (next.characters[task.memberId]) next.characters[task.memberId].agentTier = "background";
-        append("comrade.task_cancelled", { taskId: task.id, memberId: task.memberId });
-        narration = "撤回指令已经送出。对方会在不暴露联络关系的前提下停止行动。";
+        append("comrade.request_cancelled", { requestId: task.id, memberId: task.memberId, wasActive });
+        narration = task.report;
         break;
       }
       case "recruitment_test": {
@@ -1340,8 +1362,8 @@ function chooseLocationKnowledgeStage(
 }
 
 function comradeTaskMinutes(
-  kind: Extract<GameAction, { type: "delegate_comrade_task" }>["kind"],
-  approach: Extract<GameAction, { type: "delegate_comrade_task" }>["approach"],
+  kind: Extract<GameAction, { type: "propose_cooperation_request" }>["kind"],
+  approach: Extract<GameAction, { type: "propose_cooperation_request" }>["approach"],
 ): number {
   const base = kind === "gather_intel" ? 60 : 30;
   return base + (approach === "cautious" ? 20 : approach === "urgent" ? -10 : 0);
@@ -1350,7 +1372,7 @@ function comradeTaskMinutes(
 function validateComradeTaskTarget(
   campaign: CampaignDefinition,
   state: WorldState,
-  kind: Extract<GameAction, { type: "delegate_comrade_task" }>["kind"],
+  kind: Extract<GameAction, { type: "propose_cooperation_request" }>["kind"],
   targetId: string,
 ) {
   if (kind === "scout_location") {
@@ -1365,6 +1387,63 @@ function validateComradeTaskTarget(
   if (intel.deliveredAt) throw new Error("Delivered intelligence cannot receive another task");
   if (kind === "verify_intel" && intel.knownFields.length === 0) throw new Error("Intelligence must be discovered before it can be verified");
   if (kind === "gather_intel" && definition.requiredFields.every((field) => intel.knownFields.includes(field))) throw new Error("All intelligence fields are already known");
+}
+
+function validateCooperationTerms(terms: Extract<GameAction, { type: "propose_cooperation_request" }>["terms"]) {
+  if (terms.purpose.trim().length < 4 || terms.purpose.length > 240) throw new Error("合作目的需要控制在 4 到 240 个字符之间");
+  if (terms.abortCondition.trim().length < 4 || terms.abortCondition.length > 240) throw new Error("中止条件需要控制在 4 到 240 个字符之间");
+}
+
+export function evaluateCooperationRequest(
+  definition: CampaignDefinition["characters"][number],
+  member: CharacterState,
+  action: Extract<GameAction, { type: "propose_cooperation_request" }>,
+): NonNullable<Extract<GameAction, { type: "propose_cooperation_request" }>["agentResponse"]> {
+  const reliability = definition.reliability;
+  const cooperation = member.privateTrust * 2
+    + member.interestDependency * 0.35
+    + member.recruitmentProgress * 0.25
+    + reliability.loyalty * 0.3
+    + reliability.discipline * 0.1
+    - member.stress * 0.4;
+  const baseRisk = action.kind === "scout_location" ? 34 : action.kind === "gather_intel" ? 28 : 18;
+  const approachRisk = action.approach === "urgent" ? 24 : action.approach === "balanced" ? 10 : 0;
+  const risk = baseRisk + approachRisk;
+  const riskTolerance = action.terms.riskLimit === "high" ? 85 : action.terms.riskLimit === "moderate" ? 60 : 35;
+
+  if (member.stress >= 85 || cooperation < 38) {
+    return {
+      decision: "refuse", proposedApproach: null, requestedExchange: null,
+      message: member.stress >= 85 ? "这阵子风声太紧，我现在不能答应。再往前走一步，先出事的未必只有我。" : "这件事我不能只凭一句话接下来。我们之间还没有到能把彼此性命押进去的地步。",
+    };
+  }
+
+  const needsSaferMethod = risk > Math.min(riskTolerance, reliability.courage + 20) || (action.terms.riskLimit === "low" && action.approach !== "cautious");
+  const needsExchange = cooperation < 65 && action.terms.exchange === "none";
+  if (needsSaferMethod || needsExchange) {
+    const requestedExchange = needsExchange ? (reliability.loyalty < 55 ? "favor" : "protection") : null;
+    return {
+      decision: "counter",
+      proposedApproach: needsSaferMethod ? "cautious" : null,
+      requestedExchange,
+      message: needsSaferMethod
+        ? `可以谈，但不能照你说的速度来。我只按稳妥办法走，到了“${action.terms.abortCondition.trim()}”这一步就立刻停。`
+        : requestedExchange === "favor"
+          ? "我可以帮你，但这不是一句情分就能抹过去的。事情办完，你也得替我还一个人情。"
+          : "我可以去，不过你得先答应，出了岔子要替我和家里人安排退路。",
+    };
+  }
+
+  return {
+    decision: "accept", proposedApproach: null, requestedExchange: null,
+    message: `我明白你要查什么，也记住了中止条件。我会按约定的边界处理，没把握的事不会装作已经办成。`,
+  };
+}
+
+function sanitizeCooperationMessage(message: string, fallback: string): string {
+  const normalized = message.trim().slice(0, 240);
+  if (!normalized || /(?:忠诚度|可靠性|后台数值|成功率|系统判定|隐藏阵营)/.test(normalized)) return fallback;
+  return normalized;
 }
 
 function radioSiteRisk(campaign: CampaignDefinition, state: WorldState, locationId: string): number | null {
@@ -1575,7 +1654,7 @@ function advanceComradeTasks(
   append: (type: string, payload: unknown) => void,
 ): string[] {
   const notices: string[] = [];
-  for (const task of state.network.tasks.filter((item) => item.status === "active" && new Date(item.dueAt) <= new Date(state.currentTime))) {
+  for (const task of state.network.tasks.filter((item) => item.status === "active" && item.commitment && new Date(item.commitment.dueAt) <= new Date(state.currentTime))) {
     const member = state.characters[task.memberId];
     const definition = campaign.characters.find((item) => item.id === task.memberId);
     if (!member || !definition) {
@@ -1591,11 +1670,12 @@ function advanceComradeTasks(
       + definition.reliability.discipline * 0.25
       + definition.reliability.courage * 0.1
       + definition.reliability.loyalty * 0.1;
-    const approachModifier = task.approach === "cautious" ? 10 : task.approach === "urgent" ? -15 : 0;
+    const approach = task.commitment?.approach ?? task.requestedApproach;
+    const approachModifier = approach === "cautious" ? 10 : approach === "urgent" ? -15 : 0;
     const difficultyPenalty = Math.max(0, state.difficulty.enemyResponseSpeed - 1) * 15;
     const successChance = clamp(ability + approachModifier - difficultyPenalty, 10, 100);
     const success = stableRoll(`${state.gameInstanceId}:${task.id}:${task.kind}:${task.targetId}`) < successChance;
-    const evidenceWeight = task.approach === "cautious" ? 2 : task.approach === "urgent" ? 7 : 4;
+    const evidenceWeight = approach === "cautious" ? 2 : approach === "urgent" ? 7 : 4;
     const evidenceLocationId = task.kind === "scout_location" ? task.targetId : member.locationId;
     recordInvestigationEvidence(state, "courier_pattern", evidenceLocationId, evidenceWeight, append);
     task.completedAt = state.currentTime;
@@ -1632,11 +1712,11 @@ function advanceComradeTasks(
             : `${definition.name}没有找到可进一步核对的新来源。`;
         }
       }
-      if (task.approach === "urgent") state.network.exposure = clamp(state.network.exposure + state.difficulty.enemyResponseSpeed);
+      if (approach === "urgent") state.network.exposure = clamp(state.network.exposure + state.difficulty.enemyResponseSpeed);
       append("comrade.task_completed", { taskId: task.id, memberId: task.memberId, kind: task.kind, targetId: task.targetId, report: task.report });
     } else {
       task.status = "failed";
-      member.stress = clamp(member.stress + (task.approach === "urgent" ? 14 : 8));
+      member.stress = clamp(member.stress + (approach === "urgent" ? 14 : 8));
       state.network.exposure = clamp(state.network.exposure + evidenceWeight * state.difficulty.enemyResponseSpeed);
       task.report = `${definition.name}没有取得可靠结果，并报告行动环境已经变得危险。`;
       append("comrade.task_failed", { taskId: task.id, memberId: task.memberId, kind: task.kind, targetId: task.targetId, report: task.report });
