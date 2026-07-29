@@ -1037,6 +1037,7 @@ function resolveCampaignLeads(
 
   for (const lead of leads) {
     if (lead.trigger !== trigger || resolved.includes(lead.id)) continue;
+    if (lead.profileIds?.length && !lead.profileIds.includes(state.cover.profileId)) continue;
     if (trigger === "cover_work" && (lead.profileId !== profileId || lead.workKind !== workKind)) continue;
     if (trigger === "dialogue_discovery" && lead.characterId !== characterId) continue;
 

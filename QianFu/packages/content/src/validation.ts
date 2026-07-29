@@ -1,4 +1,4 @@
-import type { CampaignDefinition } from "@qianfu/core";
+import { COVER_PROFILES, type CampaignDefinition, type CoverProfileDefinition } from "@qianfu/core";
 
 export interface ValidationResult {
   valid: boolean;
@@ -6,6 +6,142 @@ export interface ValidationResult {
 }
 
 const duplicateIds = (ids: string[]) => [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];
+
+export interface CampaignReachabilityReport {
+  profileId: CoverProfileDefinition["id"];
+  reachableLocationIds: string[];
+  reachableCharacterIds: string[];
+  reachableIntelIds: string[];
+  completableObjectiveIds: string[];
+  unreachableLocationIds: string[];
+  unreachableCharacterIds: string[];
+  unreachableIntelIds: string[];
+  unreachableObjectiveIds: string[];
+}
+
+export function analyzeCampaignReachability(campaign: CampaignDefinition): CampaignReachabilityReport[] {
+  return COVER_PROFILES.map((profile) => {
+    const report = analyzeProfileReachability(campaign, profile);
+    const failureBlockedObjectives = campaign.objectives.filter((target) => {
+      const targetSequence = target.sequence ?? 0;
+      const priorFailures = new Set(campaign.objectives
+        .filter((objective) => (objective.sequence ?? 0) < targetSequence)
+        .map((objective) => objective.id));
+      return priorFailures.size > 0
+        && analyzeProfileReachability(campaign, profile, priorFailures).unreachableObjectiveIds.includes(target.id);
+    }).map((objective) => objective.id);
+    report.unreachableObjectiveIds = [...new Set([...report.unreachableObjectiveIds, ...failureBlockedObjectives])];
+    return report;
+  });
+}
+
+function analyzeProfileReachability(
+  campaign: CampaignDefinition,
+  profile: CoverProfileDefinition,
+  forcedFailedObjectiveIds = new Set<string>(),
+): CampaignReachabilityReport {
+  const locations = new Set<string>([
+    profile.startingLocationId,
+    ...campaign.locations.filter((location) => location.radioSite?.initiallyAvailable).map((location) => location.id),
+  ]);
+  const knownCharacters = new Set(profile.initialContactCharacterIds);
+  const reachableIntel = new Set<string>();
+  const resolvedLeads = new Set<string>();
+  const resolvedEvents = new Set<string>();
+  const unlockedObjectives = new Set<string>();
+  const settledObjectives = new Set<string>();
+  const completableObjectives = new Set<string>();
+  const appliedObjectiveEffects = new Set<string>();
+
+  const isContactable = (characterId: string) => {
+    if (!knownCharacters.has(characterId)) return false;
+    const character = campaign.characters.find((item) => item.id === characterId);
+    return Boolean(character && [character.initialLocationId, ...character.schedule.map((entry) => entry.locationId)].some((id) => locations.has(id)));
+  };
+  const applyLead = (lead: NonNullable<CampaignDefinition["publicLeads"]>[number]) => {
+    for (const locationId of lead.locationIds) locations.add(locationId);
+    for (const characterId of lead.characterIds) knownCharacters.add(characterId);
+    resolvedLeads.add(lead.id);
+  };
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const before = [locations.size, knownCharacters.size, reachableIntel.size, resolvedLeads.size, resolvedEvents.size, unlockedObjectives.size, settledObjectives.size, completableObjectives.size].join(":");
+
+    for (const objective of campaign.objectives) {
+      if ((objective.unlockAfterObjectiveIds ?? []).every((id) => settledObjectives.has(id))) {
+        unlockedObjectives.add(objective.id);
+        if (forcedFailedObjectiveIds.has(objective.id)) settledObjectives.add(objective.id);
+      }
+    }
+
+    for (const lead of campaign.publicLeads ?? []) {
+      if (resolvedLeads.has(lead.id) || (lead.profileIds?.length && !lead.profileIds.includes(profile.id))) continue;
+      if (lead.trigger === "cover_work") {
+        if (lead.profileId === profile.id) applyLead(lead);
+        continue;
+      }
+      const sourceCanRevealIntel = campaign.intel.some((intel) => reachableIntel.has(intel.id) && intel.sourceCharacterIds.includes(lead.characterId ?? ""));
+      if (lead.characterId && isContactable(lead.characterId) && sourceCanRevealIntel) applyLead(lead);
+    }
+
+    for (const intel of campaign.intel) {
+      const owners = campaign.objectives.filter((objective) => objective.requiredIntelIds.includes(intel.id));
+      const unlocked = owners.length === 0 || owners.some((objective) => unlockedObjectives.has(objective.id));
+      if (unlocked && intel.sourceCharacterIds.some(isContactable)) reachableIntel.add(intel.id);
+    }
+
+    for (const objective of campaign.objectives) {
+      if (!forcedFailedObjectiveIds.has(objective.id)
+        && unlockedObjectives.has(objective.id)
+        && objective.requiredIntelIds.every((id) => reachableIntel.has(id))) {
+        completableObjectives.add(objective.id);
+        settledObjectives.add(objective.id);
+      }
+      if (!completableObjectives.has(objective.id) || appliedObjectiveEffects.has(objective.id)) continue;
+      for (const locationId of objective.completionEffects?.unlockLocationIds ?? []) locations.add(locationId);
+      for (const characterId of objective.completionEffects?.introduceCharacterIds ?? []) knownCharacters.add(characterId);
+      const interrogatorId = objective.completionEffects?.interrogation?.interrogatorCharacterId;
+      if (interrogatorId) knownCharacters.add(interrogatorId);
+      appliedObjectiveEffects.add(objective.id);
+    }
+
+    for (const event of campaign.narrativeEvents ?? []) {
+      if (resolvedEvents.has(event.id)) continue;
+      const trigger = event.trigger;
+      if (!(trigger.requiredEventIds ?? []).every((id) => resolvedEvents.has(id))) continue;
+      if (!(trigger.requiredLeadIds ?? []).every((id) => resolvedLeads.has(id))) continue;
+      if (!(trigger.requiredCompletedObjectiveIds ?? []).every((id) => completableObjectives.has(id))) continue;
+      if (trigger.type === "relationship" && (!trigger.characterId || !isContactable(trigger.characterId))) continue;
+      if (event.effects.contact && !isContactable(event.effects.contact.characterId)) continue;
+      for (const effect of event.effects.locations ?? []) {
+        if (effect.stage === "accessible") locations.add(effect.locationId);
+      }
+      for (const characterId of event.effects.introduceCharacterIds ?? []) knownCharacters.add(characterId);
+      resolvedEvents.add(event.id);
+    }
+
+    const after = [locations.size, knownCharacters.size, reachableIntel.size, resolvedLeads.size, resolvedEvents.size, unlockedObjectives.size, settledObjectives.size, completableObjectives.size].join(":");
+    changed = before !== after;
+  }
+
+  const reachableCharacters = campaign.characters.filter((character) => isContactable(character.id)).map((character) => character.id);
+  const reachableLocationIds = campaign.locations.filter((location) => locations.has(location.id)).map((location) => location.id);
+  const reachableIntelIds = campaign.intel.filter((intel) => reachableIntel.has(intel.id)).map((intel) => intel.id);
+  const completableObjectiveIds = campaign.objectives.filter((objective) => completableObjectives.has(objective.id)).map((objective) => objective.id);
+  return {
+    profileId: profile.id,
+    reachableLocationIds,
+    reachableCharacterIds: reachableCharacters,
+    reachableIntelIds,
+    completableObjectiveIds,
+    unreachableLocationIds: campaign.locations.map((location) => location.id).filter((id) => !locations.has(id)),
+    unreachableCharacterIds: campaign.characters.map((character) => character.id).filter((id) => !reachableCharacters.includes(id)),
+    unreachableIntelIds: campaign.intel.map((intel) => intel.id).filter((id) => !reachableIntel.has(id)),
+    unreachableObjectiveIds: campaign.objectives.map((objective) => objective.id).filter((id) => !completableObjectives.has(id)),
+  };
+}
 
 export function validateCampaign(campaign: CampaignDefinition): ValidationResult {
   const errors: string[] = [];
@@ -90,6 +226,9 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
       errors.push(`public lead ${lead.id} requires characterId for dialogue_discovery`);
     }
     if (lead.characterId && !characters.has(lead.characterId)) errors.push(`public lead ${lead.id} references unknown source character ${lead.characterId}`);
+    for (const profileId of lead.profileIds ?? []) {
+      if (!COVER_PROFILES.some((profile) => profile.id === profileId)) errors.push(`public lead ${lead.id} references unknown cover profile ${profileId}`);
+    }
     for (const locationId of lead.locationIds) {
       if (!locations.has(locationId)) errors.push(`public lead ${lead.id} references unknown location ${locationId}`);
     }
@@ -127,6 +266,14 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
     const contact = event.effects.contact;
     if (contact && !characters.has(contact.characterId)) errors.push(`narrative event ${event.id} contacts unknown character ${contact.characterId}`);
     if (contact && (contact.responseWindowMinutes < 10 || contact.responseWindowMinutes % 10 !== 0)) errors.push(`narrative event ${event.id} has invalid contact response window`);
+  }
+  if (errors.length === 0) {
+    for (const report of analyzeCampaignReachability(campaign)) {
+      for (const locationId of report.unreachableLocationIds) errors.push(`cover profile ${report.profileId} cannot reach location ${locationId}`);
+      for (const characterId of report.unreachableCharacterIds) errors.push(`cover profile ${report.profileId} cannot reach character ${characterId}`);
+      for (const intelId of report.unreachableIntelIds) errors.push(`cover profile ${report.profileId} cannot reach intel ${intelId}`);
+      for (const objectiveId of report.unreachableObjectiveIds) errors.push(`cover profile ${report.profileId} cannot complete objective ${objectiveId}`);
+    }
   }
   return { valid: errors.length === 0, errors };
 }

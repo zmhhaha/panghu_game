@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CampaignEngine, createInitialWorld } from "@qianfu/core";
-import { LINJIANG_1942, validateCampaign } from "../src/index.js";
+import { analyzeCampaignReachability, LINJIANG_1942, validateCampaign } from "../src/index.js";
 
 describe("campaign content", () => {
   it("validates the Linjiang campaign", () => {
@@ -24,6 +24,29 @@ describe("campaign content", () => {
     expect(LINJIANG_1942.narrativeEvents?.find((event) => event.id === "director-chen-missing-register")?.trigger.requiredLeadIds).toEqual(["archive-file-crosscheck"]);
     expect(LINJIANG_1942.narrativeEvents?.find((event) => event.id === "director-lin-source-check")?.trigger.requiredLeadIds).toEqual(["writer-copy-source"]);
     expect(LINJIANG_1942.narrativeEvents?.find((event) => event.id === "director-luo-account-question")?.trigger.requiredLeadIds).toEqual(["merchant-ledger-delay"]);
+  });
+
+  it("keeps every location, character, intel item and objective connected to each cover identity", () => {
+    for (const report of analyzeCampaignReachability(LINJIANG_1942)) {
+      expect(report.unreachableLocationIds, `${report.profileId} location gaps`).toEqual([]);
+      expect(report.unreachableCharacterIds, `${report.profileId} character gaps`).toEqual([]);
+      expect(report.unreachableIntelIds, `${report.profileId} intel gaps`).toEqual([]);
+      expect(report.unreachableObjectiveIds, `${report.profileId} objective gaps`).toEqual([]);
+    }
+  });
+
+  it("rejects a content island that cannot be reached from a cover identity", () => {
+    const broken = structuredClone(LINJIANG_1942);
+    broken.publicLeads = broken.publicLeads?.filter((lead) => lead.id !== "merchant-news-introduction");
+    expect(validateCampaign(broken).errors).toContain("cover profile travelling_merchant cannot reach location linjiang-news");
+    expect(validateCampaign(broken).errors).toContain("cover profile travelling_merchant cannot reach character lin-ruolan");
+    expect(validateCampaign(broken).errors).toContain("cover profile travelling_merchant cannot complete objective trace-security-crackdown");
+  });
+
+  it("rejects an unknown cover profile scope on a public lead", () => {
+    const broken = structuredClone(LINJIANG_1942);
+    broken.publicLeads![0].profileIds = ["missing-profile" as never];
+    expect(validateCampaign(broken).errors).toContain(`public lead ${broken.publicLeads![0].id} references unknown cover profile missing-profile`);
   });
 
   it("rejects broken references", () => {

@@ -189,6 +189,7 @@ export interface CampaignLead {
   id: string;
   trigger: "cover_work" | "dialogue_discovery";
   profileId?: CoverProfileId;
+  profileIds?: CoverProfileId[];
   workKind?: CoverWorkKind;
   characterId?: string;
   locationIds: string[];
