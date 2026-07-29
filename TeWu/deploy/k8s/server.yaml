@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tewu-server
+  namespace: tewu
+  labels: { app: tewu-server }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: tewu-server }
+  template:
+    metadata:
+      labels: { app: tewu-server }
+    spec:
+      containers:
+        - name: server
+          image: arm-cluster-master:5000/tewu-server:latest
+          imagePullPolicy: Always
+          ports: [{ name: http, containerPort: 3001 }]
+          env:
+            - name: PROVIDER
+              valueFrom:
+                configMapKeyRef: { name: tewu-agent-config, key: PROVIDER }
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef: { name: tewu-agent, key: DEEPSEEK_API_KEY, optional: true }
+            - name: DEEPSEEK_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: tewu-agent, key: DEEPSEEK_BASE_URL, optional: true }
+            - name: DEEPSEEK_MODEL
+              valueFrom:
+                secretKeyRef: { name: tewu-agent, key: DEEPSEEK_MODEL, optional: true }
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: tewu-agent, key: OPENAI_API_KEY, optional: true }
+            - name: OPENAI_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: tewu-agent, key: OPENAI_BASE_URL, optional: true }
+            - name: OPENAI_MODEL
+              valueFrom:
+                secretKeyRef: { name: tewu-agent, key: OPENAI_MODEL, optional: true }
+            - name: CUSTOM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: tewu-agent, key: CUSTOM_API_KEY, optional: true }
+            - name: CUSTOM_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: tewu-agent, key: CUSTOM_BASE_URL, optional: true }
+            - name: CUSTOM_MODEL
+              valueFrom:
+                secretKeyRef: { name: tewu-agent, key: CUSTOM_MODEL, optional: true }
+            - name: LLM_TIMEOUT_MS
+              value: "20000"
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 96Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tewu-server
+  namespace: tewu
+spec:
+  selector: { app: tewu-server }
+  ports: [{ name: http, port: 3001, targetPort: http }]

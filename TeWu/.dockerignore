@@ -1,0 +1,5 @@
+.git
+deploy/*.sh
+README.md
+GAME_PLAN.md
+*.log

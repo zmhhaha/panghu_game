@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">夜间城市入口</title>
+  <desc id="desc">有检查岗亭、闸杆、路灯和远处楼群的夜间城市入口。</desc>
+  <rect width="1200" height="480" fill="#101716"/>
+  <rect y="286" width="1200" height="194" fill="#1b2623"/>
+  <rect y="337" width="1200" height="8" fill="#32413b"/>
+  <g fill="#24332f">
+    <rect x="440" y="164" width="110" height="173"/>
+    <rect x="568" y="114" width="145" height="223"/>
+    <rect x="735" y="206" width="99" height="131"/>
+    <rect x="860" y="146" width="174" height="191"/>
+    <rect x="1061" y="228" width="94" height="109"/>
+  </g>
+  <g fill="#b9c6ae" opacity=".7">
+    <path d="M466 187h16v21h-16zm39 0h16v21h-16zm-39 36h16v21h-16zm39 0h16v21h-16zm-39 36h16v21h-16zm39 0h16v21h-16z"/>
+    <path d="M595 142h17v22h-17zm43 0h17v22h-17zm43 0h17v22h-17zm-86 39h17v22h-17zm43 0h17v22h-17zm43 0h17v22h-17zm-86 39h17v22h-17zm43 0h17v22h-17zm43 0h17v22h-17z"/>
+    <path d="M885 175h20v22h-20zm47 0h20v22h-20zm47 0h20v22h-20zm-94 39h20v22h-20zm47 0h20v22h-20zm47 0h20v22h-20z"/>
+  </g>
+  <rect x="76" y="181" width="266" height="156" fill="#263632"/>
+  <path d="M64 181h290l-25-46H89z" fill="#40514a" stroke="#84938a" stroke-width="3"/>
+  <rect x="104" y="148" width="209" height="22" fill="#b9704b"/>
+  <text x="208" y="164" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" letter-spacing="3" fill="#f3e8ce">七号入口</text>
+  <rect x="101" y="208" width="100" height="73" fill="#0e1514" stroke="#91aaa0" stroke-width="4"/>
+  <rect x="220" y="208" width="100" height="73" fill="#0e1514" stroke="#91aaa0" stroke-width="4"/>
+  <rect x="179" y="249" width="69" height="88" fill="#17221f"/>
+  <path d="M352 314h391" stroke="#91a49b" stroke-width="7"/>
+  <path d="M395 314h283" stroke="#c58155" stroke-width="3" stroke-dasharray="19 16"/>
+  <rect x="738" y="252" width="14" height="86" fill="#86958d"/>
+  <circle cx="745" cy="247" r="18" fill="#c65e59"/>
+  <path d="M745 247L831 182L1100 182" fill="none" stroke="#c65e59" stroke-width="9" stroke-linecap="round"/>
+  <rect x="824" y="170" width="13" height="28" fill="#e0b26b"/>
+  <g fill="#e0b26b">
+    <circle cx="379" cy="305" r="4"/><circle cx="429" cy="305" r="4"/><circle cx="479" cy="305" r="4"/><circle cx="529" cy="305" r="4"/><circle cx="579" cy="305" r="4"/><circle cx="629" cy="305" r="4"/>
+  </g>
+  <path d="M0 408h1200" stroke="#0a0f0e" stroke-width="4"/>
+  <text x="76" y="424" font-family="Arial, sans-serif" font-size="11" letter-spacing="2" fill="#8fa199">夜班入口 / 仅限核验</text>
+</svg>
