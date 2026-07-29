@@ -100,6 +100,7 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
   const narrativeEventIds = (campaign.narrativeEvents ?? []).map((event) => event.id);
   for (const eventId of duplicateIds(narrativeEventIds)) errors.push(`duplicate narrative event id: ${eventId}`);
   const narrativeEvents = new Set(narrativeEventIds);
+  const publicLeads = new Set((campaign.publicLeads ?? []).map((lead) => lead.id));
   for (const event of campaign.narrativeEvents ?? []) {
     const trigger = event.trigger;
     if (trigger.notBefore && Number.isNaN(Date.parse(trigger.notBefore))) errors.push(`narrative event ${event.id} has invalid notBefore`);
@@ -107,6 +108,9 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
     if (trigger.characterId && !characters.has(trigger.characterId)) errors.push(`narrative event ${event.id} references unknown trigger character ${trigger.characterId}`);
     for (const requiredEventId of trigger.requiredEventIds ?? []) {
       if (!narrativeEvents.has(requiredEventId)) errors.push(`narrative event ${event.id} requires unknown event ${requiredEventId}`);
+    }
+    for (const requiredLeadId of trigger.requiredLeadIds ?? []) {
+      if (!publicLeads.has(requiredLeadId)) errors.push(`narrative event ${event.id} requires unknown public lead ${requiredLeadId}`);
     }
     for (const objectiveId of trigger.requiredCompletedObjectiveIds ?? []) {
       if (!objectives.has(objectiveId)) errors.push(`narrative event ${event.id} requires unknown objective ${objectiveId}`);

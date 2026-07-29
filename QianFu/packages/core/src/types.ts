@@ -226,6 +226,7 @@ export interface CampaignNarrativeEvent {
     minInteractionCount?: number;
     notBefore?: string;
     requiredEventIds?: string[];
+    requiredLeadIds?: string[];
     requiredCompletedObjectiveIds?: string[];
     minInvestigationPressure?: number;
     maxInvestigationPressure?: number;

@@ -216,7 +216,7 @@ const draft: CampaignDefinition = {
       id: "director-chen-missing-register",
       title: "陈敬文主动核对登记",
       visibleSummary: "陈敬文注意到你正在处理设备档案，主动来确认一页缺失的登记。",
-      trigger: { type: "time", notBefore: "1942-05-12T01:00:00.000Z", maxInvestigationPressure: 30 },
+      trigger: { type: "time", notBefore: "1942-05-12T01:00:00.000Z", requiredLeadIds: ["archive-file-crosscheck"], maxInvestigationPressure: 30 },
       effects: { contact: {
         characterId: "chen-jingwen", reason: "设备档案缺少经办签字，他想判断你是否发现了异常。",
         openingLine: "先停一下。你手里那本设备登记，最后一页是谁交给你的？我记得那里原本有个经办签字。",
@@ -227,7 +227,7 @@ const draft: CampaignDefinition = {
       id: "director-lin-source-check",
       title: "林若岚追问稿件来源",
       visibleSummary: "林若岚放下手里的校样，主动询问你最近采写的一条消息。",
-      trigger: { type: "time", notBefore: "1942-05-12T01:10:00.000Z", maxInvestigationPressure: 35 },
+      trigger: { type: "time", notBefore: "1942-05-12T01:10:00.000Z", requiredLeadIds: ["writer-copy-source"], maxInvestigationPressure: 35 },
       effects: { contact: {
         characterId: "lin-ruolan", reason: "一条公开消息的出处含糊，她想确认你是否尊重信源规则。",
         openingLine: "你先别走。我看了你留下的那几行材料，消息写得像真的，可出处太干净了。你是亲眼看见的，还是有人希望你这样写？",
@@ -238,7 +238,7 @@ const draft: CampaignDefinition = {
       id: "director-luo-account-question",
       title: "罗伯安试探账目来意",
       visibleSummary: "罗伯安结束一场商会会面后，主动问起你今天核对货账的目的。",
-      trigger: { type: "time", notBefore: "1942-05-12T03:10:00.000Z", maxInvestigationPressure: 35 },
+      trigger: { type: "time", notBefore: "1942-05-12T03:10:00.000Z", requiredLeadIds: ["merchant-ledger-delay"], maxInvestigationPressure: 35 },
       effects: { contact: {
         characterId: "luo-boan", reason: "商会账目出现缺口，他想弄清你代表自己还是某个靠山。",
         openingLine: "刚才听柜上说，你在问一笔迟到的货款。生意上的差错总有缘故，只是不知道你想找的是钱，还是经手的人？",

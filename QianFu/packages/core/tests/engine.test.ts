@@ -1105,6 +1105,23 @@ describe("director contacts and counterintelligence", () => {
     expect(expired.events.some((event) => event.type === "director.contact_expired")).toBe(true);
   });
 
+  it("does not offer a proactive contact until its public lead actually occurred", () => {
+    const leadGatedCampaign: CampaignDefinition = {
+      ...directorCampaign,
+      publicLeads: [{ id: "public-record-work", trigger: "cover_work", profileId: "archive_clerk", workKind: "file_sorting", locationIds: [], characterIds: [], hint: "A public record was handled." }],
+      narrativeEvents: directorCampaign.narrativeEvents?.map((event) => ({ ...event, trigger: { ...event.trigger, requiredLeadIds: ["public-record-work"] } })),
+    };
+    const engine = new CampaignEngine(leadGatedCampaign, createInitialWorld(leadGatedCampaign, "lead-gated-contact", "user-1"));
+    const beforeLead = engine.execute({ type: "wait", durationMinutes: 10, idempotencyKey: "before-public-lead" });
+    expect(beforeLead.state.pendingContact).toBeNull();
+    expect(beforeLead.state.resolvedNarrativeEventIds).not.toContain("visitor-asks");
+
+    const stateWithLead = createInitialWorld(leadGatedCampaign, "resolved-lead-contact", "user-1");
+    stateWithLead.resolvedLeadIds = ["public-record-work"];
+    const afterLead = new CampaignEngine(leadGatedCampaign, stateWithLead).execute({ type: "wait", durationMinutes: 10, idempotencyKey: "after-public-lead" });
+    expect(afterLead.state.pendingContact?.characterId).toBe("visitor");
+  });
+
   const counterCampaign: CampaignDefinition = {
     ...campaign,
     locations: [

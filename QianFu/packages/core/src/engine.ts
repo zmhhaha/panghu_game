@@ -1098,6 +1098,7 @@ function advanceNarrativeEvents(
     const trigger = event.trigger;
     if (trigger.notBefore && new Date(state.currentTime) < new Date(trigger.notBefore)) continue;
     if (!(trigger.requiredEventIds ?? []).every((id) => resolved.includes(id))) continue;
+    if (!(trigger.requiredLeadIds ?? []).every((id) => state.resolvedLeadIds?.includes(id))) continue;
     if (!(trigger.requiredCompletedObjectiveIds ?? []).every((id) => state.completedObjectiveIds?.includes(id))) continue;
     if (state.investigation.pressure < (trigger.minInvestigationPressure ?? 0)) continue;
     if (state.investigation.pressure > (trigger.maxInvestigationPressure ?? 100)) continue;
