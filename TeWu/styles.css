@@ -210,6 +210,7 @@ h1, h2, h3, p { margin-top: 0; }
 .interrogation-score h2 { margin: 0 0 7px; font-size: 14px; font-weight: 500; }
 .interrogation-score p { margin: 0 0 10px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .interrogation-score span { display: inline-block; margin: 3px 5px 0 0; padding: 4px 6px; border: 1px solid #5d5138; color: #ded1aa; font-size: 10px; }
+.interrogation-score span.missed-clue { border-color: rgba(211, 107, 98, .68); color: #e39a8e; }
 
 .settlement { max-width: 920px; margin: 0 auto; }
 .settlement-head { padding: 25px 0 24px; border-bottom: 1px solid var(--line); }

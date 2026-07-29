@@ -119,6 +119,22 @@ const NETWORKS = {
   botanist: { node: "西坡林场", relation: "林场采集许可会记录当天的天气和绕行路线。", verify: "采集许可与当日天气记录相符。" },
 };
 
+// Hidden character dossiers drive the LLM role-play. They are deliberately
+// broader than the public cover and the target flag, so no NPC is reducible
+// to a single "truthful" or "lying" response pattern.
+const CHARACTER_MODELS = {
+  printer: { temperament: "克制、好胜，习惯用专业术语保护自己", immediateGoal: "在天亮前把校样交到接头链的下一环", privateBurden: "曾因一次排版失误害同事受罚，因此害怕留下书面痕迹", socialStance: "对权力机构表面尊重，内心极度防备", memoryAnchors: ["旧检查棚", "校样纸页码", "交接时间"], stressResponse: "越被追问越会给出看似精确、但刻意避开关键人的细节", disclosureArc: "前两轮建立可信职业感，中段用技术细节转移，后段才会在时间线出现裂缝" },
+  nurse: { temperament: "耐心、疲惫、有职业责任感", immediateGoal: "把需冷藏的药品及时送回疗养院", privateBurden: "私下替一名无证病人留过药，担心因此被追责", socialStance: "愿意合作，但厌恶无意义的盘查", memoryAnchors: ["药箱封签", "病房班次", "消毒水气味"], stressResponse: "被质疑时先解释病人风险，随后才意识到自己说多了", disclosureArc: "起初简短务实，中段会因药品细节变得激动，最后愿意接受正式核验" },
+  mechanic: { temperament: "寡言、固执、对机器比对人更有耐心", immediateGoal: "赶回车辆段完成夜间检修", privateBurden: "为补贴家用私下接过一次不在登记内的维修活", socialStance: "不信任文书人员，但尊重真正懂技术的人", memoryAnchors: ["轴承异响", "扳手盒编号", "检修坑位置"], stressResponse: "面对空泛威吓会沉默，遇到专业追问反而说得过多", disclosureArc: "前段显得可疑地冷淡，技术核验后逐渐建立可信度" },
+  courier: { temperament: "机敏、礼貌、善于观察他人反应", immediateGoal: "确认联络点是否安全并把设备送入城内", privateBurden: "掩护身份曾真实做过维修工作，所以掌握大量可信细节", socialStance: "把任何人都当成潜在风险，但会伪装出合作姿态", memoryAnchors: ["无线电呼号", "岗亭换岗", "旧检查棚"], stressResponse: "会用具体技术事实回应，却绕开人与人的关系", disclosureArc: "开场合作而具体，中段开始把重点转去设备，末段在同伴与时间问题上出现选择性遗忘" },
+  teacher: { temperament: "温和、敏锐、有一点不合时宜的倔强", immediateGoal: "带着作业回校并避开政治麻烦", privateBurden: "曾替一名学生隐瞒家庭背景", socialStance: "礼貌但不愿让权力介入学生生活", memoryAnchors: ["学生姓名", "校舍后门", "批改日期"], stressResponse: "谈学生时自然，谈机构和政治时明显收紧", disclosureArc: "能给出许多可核验日常细节，也会留下一个令人误判的保留" },
+  merchant: { temperament: "精明、焦虑、习惯先算风险", immediateGoal: "让一批药品账目在交割前对上", privateBurden: "账本中有一笔为避税做过的模糊处理", socialStance: "愿配合程序，只要程序能给出明确边界", memoryAnchors: ["箱号", "税票顺序", "货站窗口"], stressResponse: "会主动给材料，但会在无关账目上变得异常紧张", disclosureArc: "证据很多却不够干净，容易成为误捕对象" },
+  actor: { temperament: "外向、即兴能力强、害怕沉默", immediateGoal: "借演出身份完成一次短暂的情报转交", privateBurden: "真正的替补演员临时失踪，他借此占用了身份", socialStance: "习惯讨好陌生人并根据对方语气调整说辞", memoryAnchors: ["后台走廊", "台词本", "演出单"], stressResponse: "越紧张越说得多，细节之间会互相打架", disclosureArc: "开场讨喜可信，中段因过度表演暴露后台生活细节不足" },
+  surveyor: { temperament: "冷静、观察细致、略显疏离", immediateGoal: "把潮位记录送回水务部门", privateBurden: "和一位被怀疑的旧同学保持过书信往来，但与任务无关", socialStance: "不喜欢解释私生活，愿意解释数据", memoryAnchors: ["潮位刻度", "河堤泥土", "巡测时间"], stressResponse: "面对私人问题会显得回避，面对现场数据则非常准确", disclosureArc: "有真实可疑点但并非目标，需要玩家区分私人秘密与任务关联" },
+  archivist: { temperament: "谨慎、怀旧、对分类秩序有近乎偏执的执念", immediateGoal: "将空白文件夹送入指定地点并确认无人跟踪", privateBurden: "曾在旧档案中发现不该看到的名单，因此熟悉多个机关旧称", socialStance: "对档案人员有亲近感，对现场检查人员不耐烦", memoryAnchors: ["入库章", "旧分类号", "东郊档案库"], stressResponse: "会给出丰富的制度知识，却难以解释当天最普通的行程", disclosureArc: "前段专业可信，中段关系与物品来源逐步暴露破绽" },
+  botanist: { temperament: "好奇、散漫、容易被感兴趣的事带走", immediateGoal: "带回一批湿润标本并赶上下一班车", privateBurden: "采集时越过过一次封闭地带，只是不想被没收样本", socialStance: "认为检查站不理解野外工作的麻烦", memoryAnchors: ["叶片编号", "雨后土壤", "林场岔路"], stressResponse: "遇到植物问题异常流畅，遇到路线问题会先讲环境再回答", disclosureArc: "行为有违规感但证据链最终能自洽" },
+};
+
 const INSTITUTION_TOOLS = {
   gestapo: { label: "档案比对", description: "调取铁路警察档案室的岗位、证件和交接记录。" },
   kgb: { label: "许可核验", description: "比对封闭城市登记处的出入许可和换乘记录。" },
@@ -137,11 +153,13 @@ const TOPICS = [
   { id: "pressure", label: "压力测试", keys: ["如果", "扣留", "害怕", "紧张", "隐瞒", "最后"] },
 ];
 
+const MAX_INTERROGATION_ROUNDS = 8;
+
 const ordinaryLines = [
   (d, c) => `我叫${d.name}，是${d.role}。这次进城的事不复杂，${d.public}，东西都在这里。`,
-  (d, c) => `我从${d.origin}过来，先走${c.route}，在旧检查棚换了一次车。大约是傍晚六点以后。`,
+  (d, c) => `我从${d.origin}过来，先走${c.route}，在旧检查棚换了一次车。大约是傍晚六点以后；夜里路况乱，我不敢保证每分钟都记得。`,
   (d, c) => `证件在这儿。你可以记下编号，至于那只箱子，里面是工作用品，封条没有动过。`,
-  (d, c) => `我昨天还在原来的地方值班，交接的人是同一班的老同事。你们若要核对，找${c.office}就能查到。`,
+  (d, c) => `我昨天还在原来的地方值班，交接的人是同一班的老同事。名字我得看记录才敢确认，你们若要核对，找${c.office}就能查到。`,
   (d, c) => `我要见的是${d.id === "nurse" ? "疗养院的值班医生" : d.id === "merchant" ? "商行掌柜" : "我所在单位的负责人"}，不是秘密接头。时间晚了，只是怕耽误工作。`,
   (d, c) => `来这里是为了把事情办完。${d.role}的工作没有什么戏剧性，按清单来，按手续回去。`,
   (d, c) => `这座城的地名我能说清，但我不靠背口号过日子。要是你问${c.setting}附近的路，我只知道我真正走过的那一段。`,
@@ -151,16 +169,16 @@ const ordinaryLines = [
 ];
 
 const targetLines = [
-  (d, c) => `姓名和职业都在证件上。${d.public}，只是例行运送，不值得让你们浪费时间。`,
-  (d, c) => `我从${d.origin}过来，路线很直，先走${c.route}。具体换车点我记不清，夜里看什么都差不多。`,
-  (d, c) => `证件没有问题，箱子也只是工具。编号这种细节你们可以自己抄，我不想在这里把东西一件件摊开。`,
-  (d, c) => `昨天的安排临时变过几次。我只负责执行，不负责记住每个交接人的名字，档案不一定跟得上现场。`,
-  (d, c) => `我会和一个熟人碰面，姓名暂时不方便说。等我到${c.setting}附近，他自然会认出我。`,
-  (d, c) => `我的目的就是办事，不需要把每一步都解释给你。越是把简单事情说复杂，越容易引来不必要的注意。`,
-  (d, c) => `本地人怎么叫这里并不重要，文件上写什么我就用什么。你若要考我地名，我没有兴趣配合。`,
-  (d, c) => `我没和${c.authority}打过交道，也不清楚你们内部的称呼。你们要的是身份，不是我的工作经历。`,
-  (d, c) => `扣留我只会耽误一件本来能按时完成的事。你们已经问了很多，答案没有必要再换一种说法。`,
-  (d, c) => `我能说的都说了。放行之后不会有人因为我来过这里而受牵连，你们也不必把今晚记得太清楚。`,
+  (d, c) => `我叫${d.name}，做${d.role}。${d.public}，证件和携带物可以登记，只是有些业务编号得等单位白天回电才能确认。`,
+  (d, c) => `我从${d.origin}过来，先走${c.route}，在旧检查棚附近换乘。那一段临时改过道，我记得是先过岗亭再找车。`,
+  (d, c) => `证件没有问题，箱子也只是工具。编号我可以报给你，封签是出发前由值班人贴的，具体是谁得查交接册。`,
+  (d, c) => `昨天的安排确实临时调整过。我记得先在原处等车，后来才接到改线通知；交接人的姓我记得，名字需要看记录。`,
+  (d, c) => `我进城后要找一位熟人处理工作上的交接。他在公开单位里做事，但夜里不方便把别人姓名挂在记录上。`,
+  (d, c) => `我的目的就是把手上的东西交到该交的人手里，再取一份回执。要查的话，回执、路线和时间总有一项能对上。`,
+  (d, c) => `我来过这附近几次，主路和岗亭的位置记得。小巷的旧称我不一定说得准，毕竟我不是住在这里。`,
+  (d, c) => `我和${c.authority}没有私人关系，只按窗口程序办过事。若登记册上有我的名字，应该是在正常业务那一栏。`,
+  (d, c) => `扣留会耽误交接，但我愿意等核验。你们最好把问题写具体，我才能把时间、物品和联系人分别说明白。`,
+  (d, c) => `我能补充的是：换乘时我看见有人也在等车，但没有同行。那人拿的是什么我没看清，不想把猜测写成事实。`,
 ];
 
 function cloneCampaign(id) {
@@ -182,7 +200,7 @@ async function requestNpcReply(controller, question, answer) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       campaign: { name: controller.campaign.name, era: controller.campaign.era, setting: controller.campaign.setting },
-      dossier: { name: controller.dossier.name, role: controller.dossier.role, origin: controller.dossier.origin, public: controller.dossier.public, signature: controller.dossier.signature, tell: controller.dossier.tell, network: controller.dossier.network, isTarget: controller.dossier.isTarget },
+      dossier: { name: controller.dossier.name, role: controller.dossier.role, origin: controller.dossier.origin, public: controller.dossier.public, signature: controller.dossier.signature, tell: controller.dossier.tell, network: controller.dossier.network, personality: controller.dossier.personality, isTarget: controller.dossier.isTarget },
       round: answer.round,
       question,
       history: controller.logs,
@@ -227,11 +245,11 @@ async function requestInterrogationReply(campaign, dossier, history, question, r
   return payload;
 }
 
-async function requestInterrogationEvaluation(mode, priorHistory, history) {
+async function requestInterrogationEvaluation(mode, priorHistory, history, caseContext = {}) {
   const response = await fetch("/api/interrogation/evaluate", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ mode, priorHistory, history }),
+    body: JSON.stringify({ mode, priorHistory, history, caseContext }),
   });
   if (!response.ok) throw new Error(`Interrogation evaluation ${response.status}`);
   return response.json();
@@ -240,6 +258,7 @@ async function requestInterrogationEvaluation(mode, priorHistory, history) {
 function makeDossier(campaign, blueprint, index) {
   const persona = { ...blueprint, name: campaign.names[index] };
   const network = NETWORKS[blueprint.id] || {};
+  const personality = CHARACTER_MODELS[blueprint.id] || {};
   const lines = (blueprint.target ? targetLines : ordinaryLines).map((line) => line(persona, campaign));
   const cautionRounds = blueprint.target ? [1, 2, 4, 5, 7, 9] : [2, 4, 6, 8];
   const observations = lines.map((_, roundIndex) => {
@@ -338,6 +357,7 @@ function makeDossier(campaign, blueprint, index) {
     signature: blueprint.signature,
     tell: blueprint.tell,
     network,
+    personality,
     isTarget: blueprint.target,
     lines,
     observations,
@@ -490,7 +510,7 @@ class WorldController {
     if (this.status !== "complete" || this.interrogation || !this.decisions[index] || this.decisions[index].action !== "detain") return false;
     const agent = this.agents[index];
     const priorHistory = agent.memory.flatMap((item) => [{ speaker: "执行官", text: item.question }, { speaker: "候选人", text: item.answer }]);
-    this.interrogation = { mode: "officer", targetIndex: index, round: 0, logs: [{ speaker: "审问记录", text: `对象已转入后续审问。请围绕其先前陈述中的身份、路线、关系和物品继续追问。` }], priorHistory, evaluation: null };
+    this.interrogation = { mode: "officer", targetIndex: index, round: 0, logs: [{ speaker: "审问记录", text: `对象已转入后续核验。请围绕其先前陈述中的身份、路线、关系和物品继续追问。` }], priorHistory, evaluation: null, notice: "" };
     this.status = "interrogation";
     this.save();
     return true;
@@ -498,8 +518,14 @@ class WorldController {
 
   async askInterrogation(question) {
     const phase = this.interrogation;
-    if (!phase || this.pending || phase.round >= 5 || !String(question || "").trim()) return false;
+    if (!phase || this.pending || phase.round >= MAX_INTERROGATION_ROUNDS || !String(question || "").trim()) return false;
     const cleanQuestion = String(question).trim();
+    if (/(上刑|受罪|派兵|招供|折磨|打死|威胁|家人)/.test(cleanQuestion)) {
+      phase.notice = "这项记录不能形成可复核的线索。请改问身份、路线、物品或关系中的具体事实。";
+      this.save();
+      return false;
+    }
+    phase.notice = "";
     const agent = this.agents[phase.targetIndex];
     const dossier = agent.dossier;
     this.pending = true;
@@ -513,8 +539,8 @@ class WorldController {
     } catch (error) { console.warn("[TeWu Interrogation] 使用本地降级", error); }
     phase.logs.push({ speaker: "扣留对象", text: speech, provider });
     phase.round += 1;
-    if (phase.round >= 5) {
-      try { phase.evaluation = await requestInterrogationEvaluation("officer", phase.priorHistory, phase.logs); }
+    if (phase.round >= MAX_INTERROGATION_ROUNDS) {
+      try { phase.evaluation = await requestInterrogationEvaluation("officer", phase.priorHistory, phase.logs, { dossier: dossier.network, caseClues: this.caseClues }); }
       catch { phase.evaluation = { score: Math.min(100, 25 + phase.round * 10), summary: "审问记录已形成，但评价 Agent 暂不可用。", clues: [] }; }
     }
     this.pending = false;
@@ -720,7 +746,7 @@ class InfiltratorController {
   async askInterrogation(answer) {
     const phase = this.interrogation;
     const cleanAnswer = String(answer || "").trim();
-    if (!phase || this.pending || phase.round >= 5 || !cleanAnswer) return false;
+    if (!phase || this.pending || phase.round >= MAX_INTERROGATION_ROUNDS || !cleanAnswer) return false;
     this.pending = true;
     phase.logs.push({ speaker: "你", text: cleanAnswer });
     let provider = "fallback";
@@ -732,7 +758,7 @@ class InfiltratorController {
     } catch (error) { console.warn("[TeWu Interrogation] 使用本地降级", error); }
     phase.logs.push({ speaker: "执行官 Agent", text: speech, provider });
     phase.round += 1;
-    if (phase.round >= 5) {
+    if (phase.round >= MAX_INTERROGATION_ROUNDS) {
       try { phase.evaluation = await requestInterrogationEvaluation("infiltrator", phase.priorHistory, phase.logs); }
       catch { phase.evaluation = { score: 50, summary: "审问记录已形成，但评价 Agent 暂不可用。", clues: [] }; }
     }
@@ -982,7 +1008,7 @@ function renderSettlement() {
 
 function renderOfficerComplete() {
   const detained = controller.decisions.map((decision, index) => ({ ...decision, index })).filter((decision) => decision.action === "detain");
-  const panel = controller.interrogation ? `<section class="interrogation-select"><p class="eyebrow">后续审问 · 已完成</p><h2>审问评价已归档</h2><p>你已完成对 ${escapeHtml(controller.interrogation.targetIndex !== undefined ? controller.agents[controller.interrogation.targetIndex].dossier.name : "扣留对象")} 的后续审问。</p></section>` : detained.length ? `<section class="interrogation-select"><p class="eyebrow">后续审问 · 选择对象</p><h2>从扣留对象中选择一人</h2><p>十名候选人已处理完毕。选择一名扣留对象进行五轮后续审问，审问评价 Agent 会结合两阶段记录评估关联线索。</p><div class="interrogation-targets">${detained.map((item) => `<button class="interrogation-target" data-interrogation-target="${item.index}"><strong>${escapeHtml(item.name)}</strong><span>${item.isTarget ? "目标对象" : "扣留对象"}</span></button>`).join("")}</div></section>` : `<section class="interrogation-select"><p class="eyebrow">后续审问</p><h2>没有扣留对象</h2><p>本局没有可进入后续审问的对象。</p></section>`;
+  const panel = controller.interrogation ? `<section class="interrogation-select"><p class="eyebrow">后续核验 · 已完成</p><h2>核验评价已归档</h2><p>你已完成对 ${escapeHtml(controller.interrogation.targetIndex !== undefined ? controller.agents[controller.interrogation.targetIndex].dossier.name : "扣留对象")} 的后续核验。</p></section>` : detained.length ? `<section class="interrogation-select"><p class="eyebrow">后续核验 · 选择对象</p><h2>从扣留对象中选择一人</h2><p>十名候选人已处理完毕。选择一名扣留对象进行八轮后续核验；评价 Agent 会结合两阶段记录和案件线索板评估关联线索。</p><div class="interrogation-targets">${detained.map((item) => `<button class="interrogation-target" data-interrogation-target="${item.index}"><strong>${escapeHtml(item.name)}</strong><span>${item.isTarget ? "目标对象" : "扣留对象"}</span></button>`).join("")}</div></section>` : `<section class="interrogation-select"><p class="eyebrow">后续核验</p><h2>没有扣留对象</h2><p>本局没有可进入后续核验的对象。</p></section>`;
   return renderSettlement().replace("</section></main>", `${panel}</section></main>`);
 }
 
@@ -992,8 +1018,9 @@ function renderInterrogationScreen() {
   const title = officerMode ? `后续审问 · ${escapeHtml(controller.agents[phase.targetIndex].dossier.name)}` : "后续审问 · 执行官 Agent";
   const lines = phase.logs.map((line) => `<div class="dialogue-line ${line.speaker === "执行官" || line.speaker === "你" ? "player" : ""}"><span class="line-label">${escapeHtml(line.speaker)}${agentSourceLabel(line.provider)}</span>${escapeHtml(line.text)}</div>`).join("");
   const waiting = controller.pending ? `<div class="dialogue-line waiting"><span class="line-label">审问 Agent · 正在回应</span><i></i><i></i><i></i></div>` : "";
-  const result = phase.evaluation ? `<div class="interrogation-score"><strong>${phase.evaluation.score} 分</strong><div><h2>审问评价</h2><p>${escapeHtml(phase.evaluation.summary || "审问记录已归档。")}</p>${(phase.evaluation.clues || []).map((clue) => `<span>${escapeHtml(clue)}</span>`).join("")}</div></div><button class="primary-button" data-action="finish-interrogation">查看结算</button>` : controller.pending ? `<div class="response-status"><i></i><i></i><i></i><span>审问 Agent 正在整理回应。</span></div>` : `<form class="question-form" data-interrogation-form><input class="question-input" name="question" autocomplete="off" maxlength="220" placeholder="${officerMode ? "输入追问，尝试建立关联线索……" : "以掩护身份回答执行官的追问……"}" /><button class="send-button" type="submit">${officerMode ? "继续审问" : "回答"}</button></form>`;
-  return `<div class="app-shell">${renderHeader(true)}<main class="page"><section class="interrogation-screen"><p class="eyebrow">第二阶段 · ${officerMode ? "关联线索审问" : "身份维持审问"}</p><h1>${title}</h1><p class="briefing-copy">第 ${phase.round} / 5 轮。${officerMode ? "围绕前一阶段的矛盾、路线和关系链追问。" : "执行官 Agent 会依据你的回答继续施压与核验。"}</p><div class="dialogue-log interrogation-log">${lines}${waiting}</div><div class="question-area">${result}</div></section></main></div>`;
+  const missed = (phase.evaluation?.missedClues || []).map((clue) => `<span class="missed-clue">未追查：${escapeHtml(clue)}</span>`).join("");
+  const result = phase.evaluation ? `<div class="interrogation-score"><strong>${phase.evaluation.score} 分</strong><div><h2>后续核验评价</h2><p>${escapeHtml(phase.evaluation.summary || "核验记录已归档。")}</p>${(phase.evaluation.clues || []).map((clue) => `<span>${escapeHtml(clue)}</span>`).join("")}${missed}</div></div><button class="primary-button" data-action="finish-interrogation">查看结算</button>` : controller.pending ? `<div class="response-status"><i></i><i></i><i></i><span>核验 Agent 正在整理回应。</span></div>` : `${phase.notice ? `<p class="decision-unlock">${escapeHtml(phase.notice)}</p>` : ""}<form class="question-form" data-interrogation-form><input class="question-input" name="question" autocomplete="off" maxlength="220" placeholder="${officerMode ? "输入追问，尝试建立关联线索……" : "以掩护身份回答执行官的追问……"}" /><button class="send-button" type="submit">${officerMode ? "继续核验" : "回答"}</button></form>`;
+  return `<div class="app-shell">${renderHeader(true)}<main class="page"><section class="interrogation-screen"><p class="eyebrow">第二阶段 · ${officerMode ? "关联线索核验" : "身份维持核验"}</p><h1>${title}</h1><p class="briefing-copy">第 ${phase.round} / ${MAX_INTERROGATION_ROUNDS} 轮。${officerMode ? "围绕前一阶段的矛盾、路线和关系链追问；每轮都应取得一项可复核的新事实。" : "执行官 Agent 会依据你的回答继续施压与核验。"}</p><div class="dialogue-log interrogation-log">${lines}${waiting}</div><div class="question-area">${result}</div></section></main></div>`;
 }
 
 function bindEvents() {
