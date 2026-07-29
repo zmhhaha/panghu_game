@@ -164,7 +164,16 @@ const server = http.createServer(async (request, response) => {
       if (request.method === "PUT") {
         const payload = await readJson(request);
         if (!payload.state || typeof payload.state !== "object") return send(response, 400, { error: "缺少游戏状态" });
+        const resumable = ["active", "selection"].includes(payload.state.status) && !payload.state.awaitingNext;
+        if (!resumable) {
+          await pool.query("DELETE FROM tewu.sessions WHERE user_id = $1", [user]);
+          return send(response, 204, {});
+        }
         await pool.query("INSERT INTO tewu.sessions (user_id, state, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (user_id) DO UPDATE SET state = EXCLUDED.state, updated_at = now()", [user, JSON.stringify(payload.state)]);
+        return send(response, 204, {});
+      }
+      if (request.method === "DELETE") {
+        await pool.query("DELETE FROM tewu.sessions WHERE user_id = $1", [user]);
         return send(response, 204, {});
       }
     } catch (error) {

@@ -987,7 +987,8 @@ function restoreController() {
     const raw = localStorage.getItem("tewu-session");
     if (raw) {
       const snapshot = JSON.parse(raw);
-      return snapshot.mode === "infiltrator" ? InfiltratorController.restore(snapshot) : WorldController.restore(snapshot);
+      if (isResumableSession(snapshot)) return snapshot.mode === "infiltrator" ? InfiltratorController.restore(snapshot) : WorldController.restore(snapshot);
+      localStorage.removeItem("tewu-session");
     }
   } catch (error) {
     localStorage.removeItem("tewu-session");
@@ -995,9 +996,22 @@ function restoreController() {
   return new WorldController();
 }
 
+function isResumableSession(snapshot) {
+  return ["active", "selection"].includes(snapshot?.status) && !snapshot?.awaitingNext;
+}
+
 function persistSession(snapshot) {
+  if (!isResumableSession(snapshot)) {
+    clearPersistedSession();
+    return;
+  }
   localStorage.setItem("tewu-session", JSON.stringify(snapshot));
   fetch("/api/session", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ state: snapshot }) }).catch(() => {});
+}
+
+function clearPersistedSession() {
+  localStorage.removeItem("tewu-session");
+  fetch("/api/session", { method: "DELETE" }).catch(() => {});
 }
 
 async function hydrateUserSession() {
@@ -1006,6 +1020,10 @@ async function hydrateUserSession() {
     if (!response.ok) return;
     const { state } = await response.json();
     if (!state) return;
+    if (!isResumableSession(state)) {
+      clearPersistedSession();
+      return;
+    }
     localStorage.setItem("tewu-session", JSON.stringify(state));
     controller = state.mode === "infiltrator" ? InfiltratorController.restore(state) : WorldController.restore(state);
     selectedCampaignId = controller.campaign.id;
@@ -1239,8 +1257,8 @@ function bindEvents() {
   document.querySelector('[data-action="verify-current"]')?.addEventListener("click", () => { if (controller.verifyCurrent()) render(); });
   document.querySelector("[data-action=\"next\"]")?.addEventListener("click", () => { controller.next(); render(); });
   document.querySelector("[data-action=\"restart\"]")?.addEventListener("click", () => { controller = controller.mode === "infiltrator" ? new InfiltratorController(controller.campaign.id) : new WorldController(controller.campaign.id); selectedMode = controller.mode; controller.start(); render(); });
-  document.querySelector("[data-action=\"exit\"]")?.addEventListener("click", () => { localStorage.removeItem("tewu-session"); controller = new WorldController(); selectedMode = "officer"; selectedCampaignId = CAMPAIGNS[0].id; render(); });
-  document.querySelector("[data-action=\"back\"]")?.addEventListener("click", () => { localStorage.removeItem("tewu-session"); controller = new WorldController(); selectedMode = "officer"; selectedCampaignId = CAMPAIGNS[0].id; render(); });
+  document.querySelector("[data-action=\"exit\"]")?.addEventListener("click", () => { clearPersistedSession(); controller = new WorldController(); selectedMode = "officer"; selectedCampaignId = CAMPAIGNS[0].id; render(); });
+  document.querySelector("[data-action=\"back\"]")?.addEventListener("click", () => { clearPersistedSession(); controller = new WorldController(); selectedMode = "officer"; selectedCampaignId = CAMPAIGNS[0].id; render(); });
 }
 
 render();
