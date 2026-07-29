@@ -50,6 +50,11 @@ spec:
                 secretKeyRef: { name: tewu-agent, key: CUSTOM_MODEL, optional: true }
             - name: LLM_TIMEOUT_MS
               value: "20000"
+            - name: TRUST_PROXY_AUTH_HEADERS
+              value: "true"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: tewu-database, key: url }
           readinessProbe:
             httpGet: { path: /api/health, port: http }
             initialDelaySeconds: 5

@@ -5,5 +5,8 @@
   "description": "特务：四条历史战役线的十人盘查对话游戏原型",
   "scripts": {
     "dev": "python -m http.server 4173"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
   }
 }

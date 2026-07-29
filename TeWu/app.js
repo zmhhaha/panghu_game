@@ -104,6 +104,29 @@ const NPC_BLUEPRINTS = [
   { id: "botanist", role: "植物标本采集员", origin: "西坡林场", target: false, public: "手提箱里有湿润泥土和压好的叶片", signature: "说起植物时会忘记保持警惕", tell: "采集许可、天气和绕行路线相互印证" },
 ];
 
+// These are shared facts, not hidden answers. They only enter the board after
+// the player asks about the relevant subject or runs the institution check.
+const NETWORKS = {
+  printer: { node: "旧检查棚", relation: "曾有人看见一名校样员在旧检查棚与电台技师短暂停留。", verify: "档案室核到：校样员的岗位交接登记比其自述晚了四十分钟。" },
+  nurse: { node: "南郊疗养院", relation: "疗养院值班表和药箱封签可互相核验。", verify: "值班登记与药箱封签编号一致。" },
+  mechanic: { node: "北线车辆段", relation: "车辆段的检修记录可对应到其扳手盒上的编号。", verify: "检修记录确认了他提到的小故障。" },
+  courier: { node: "旧检查棚", relation: "电台技师与一名携带文件夹的人都在旧检查棚附近出现过。", verify: "岗亭交接簿显示他熟悉不属于修理工职责的无线电呼号。" },
+  teacher: { node: "城南学校", relation: "城南学校的作业册上留有当天的批改日期。", verify: "校舍值班员确认其下午仍在学校。" },
+  merchant: { node: "东线货站", relation: "货站税票与商行账本可按箱号串联。", verify: "箱号、税票和货运记录顺序一致。" },
+  actor: { node: "南门剧院区", relation: "剧团后台名单里少了一名替补演员的签名。", verify: "剧团演出单显示当晚并没有安排该角色上台。" },
+  surveyor: { node: "河堤巡测线", relation: "河堤潮位记录可对应测绘簿的湿痕与时间。", verify: "水务公开记录与测绘数据一致。" },
+  archivist: { node: "旧检查棚", relation: "一只无编号文件夹曾和校样纸、修理工具出现在同一条换乘线。", verify: "档案库入库册中没有这只文件夹的登记或印章。" },
+  botanist: { node: "西坡林场", relation: "林场采集许可会记录当天的天气和绕行路线。", verify: "采集许可与当日天气记录相符。" },
+};
+
+const INSTITUTION_TOOLS = {
+  gestapo: { label: "档案比对", description: "调取铁路警察档案室的岗位、证件和交接记录。" },
+  kgb: { label: "许可核验", description: "比对封闭城市登记处的出入许可和换乘记录。" },
+  juntong: { label: "交通复核", description: "核对交通线的交接单、船车时刻和通行凭据。" },
+  zhongtong: { label: "关系核查", description: "比对介绍信、公开职务和担保关系。" },
+  cia: { label: "背景核查", description: "检索安全许可、公开履历和联络记录。" },
+};
+
 const TOPICS = [
   { id: "identity", label: "身份与职责", keys: ["身份", "职业", "做什么", "姓名", "工作"] },
   { id: "route", label: "路线与时间", keys: ["路线", "从哪里", "几点", "车", "站", "路"] },
@@ -159,7 +182,7 @@ async function requestNpcReply(controller, question, answer) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       campaign: { name: controller.campaign.name, era: controller.campaign.era, setting: controller.campaign.setting },
-      dossier: { name: controller.dossier.name, role: controller.dossier.role, origin: controller.dossier.origin, public: controller.dossier.public, signature: controller.dossier.signature, tell: controller.dossier.tell, isTarget: controller.dossier.isTarget },
+      dossier: { name: controller.dossier.name, role: controller.dossier.role, origin: controller.dossier.origin, public: controller.dossier.public, signature: controller.dossier.signature, tell: controller.dossier.tell, network: controller.dossier.network, isTarget: controller.dossier.isTarget },
       round: answer.round,
       question,
       history: controller.logs,
@@ -172,8 +195,51 @@ async function requestNpcReply(controller, question, answer) {
   return payload;
 }
 
+async function requestJudgeReply(controller, answer, result) {
+  const response = await fetch("/api/judge/respond", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      campaign: { name: controller.campaign.name, setting: controller.campaign.setting },
+      profile: controller.profile,
+      round: result.round,
+      answer,
+      nextTopic: result.topic,
+      history: controller.logs,
+      fallback: result.reaction,
+    }),
+  });
+  if (!response.ok) throw new Error(`Judge API ${response.status}`);
+  const payload = await response.json();
+  if (!payload.speech) throw new Error("Judge API 返回为空");
+  return payload;
+}
+
+async function requestInterrogationReply(campaign, dossier, history, question, round, interrogationMode, fallback) {
+  const response = await fetch("/api/npc/respond", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ campaign: { name: campaign.name, era: campaign.era, setting: campaign.setting }, dossier, history, question, round, interrogationMode, fallback }),
+  });
+  if (!response.ok) throw new Error(`Interrogation API ${response.status}`);
+  const payload = await response.json();
+  if (!payload.speech) throw new Error("Interrogation API 返回为空");
+  return payload;
+}
+
+async function requestInterrogationEvaluation(mode, priorHistory, history) {
+  const response = await fetch("/api/interrogation/evaluate", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mode, priorHistory, history }),
+  });
+  if (!response.ok) throw new Error(`Interrogation evaluation ${response.status}`);
+  return response.json();
+}
+
 function makeDossier(campaign, blueprint, index) {
   const persona = { ...blueprint, name: campaign.names[index] };
+  const network = NETWORKS[blueprint.id] || {};
   const lines = (blueprint.target ? targetLines : ordinaryLines).map((line) => line(persona, campaign));
   const cautionRounds = blueprint.target ? [1, 2, 4, 5, 7, 9] : [2, 4, 6, 8];
   const observations = lines.map((_, roundIndex) => {
@@ -271,6 +337,7 @@ function makeDossier(campaign, blueprint, index) {
     public: blueprint.public,
     signature: blueprint.signature,
     tell: blueprint.tell,
+    network,
     isTarget: blueprint.target,
     lines,
     observations,
@@ -327,10 +394,12 @@ class WorldController {
     this.currentIndex = 0;
     this.logs = [];
     this.observations = [];
+    this.caseClues = [];
     this.decisions = [];
     this.lastDecision = null;
     this.awaitingNext = false;
     this.pending = false;
+    this.interrogation = null;
   }
 
   start() {
@@ -352,18 +421,43 @@ class WorldController {
     this.pending = true;
     const answer = this.agent.respond(cleanQuestion);
     this.logs.push({ speaker: "player", text: cleanQuestion, round: answer.round });
+    let provider = "fallback";
     try {
       const remote = await requestNpcReply(this, cleanQuestion, answer);
       answer.text = remote.speech;
+      provider = remote.provider || "model";
       this.agent.memory[this.agent.memory.length - 1].answer = answer.text;
     } catch (error) {
       console.warn("[TeWu Agent] 使用本地降级回答", error);
     }
-    this.logs.push({ speaker: "npc", text: answer.text, round: answer.round });
+    this.logs.push({ speaker: "npc", text: answer.text, round: answer.round, provider });
     this.observations.push(answer.observation);
+    this.recordNetworkClue(answer.observation.topic);
     this.pending = false;
     this.save();
     return true;
+  }
+
+  recordNetworkClue(topic) {
+    const network = this.dossier.network;
+    if (!network?.relation || !["route", "contact", "document", "local"].includes(topic)) return;
+    const key = `${this.dossier.id}:network`;
+    if (!this.caseClues.some((item) => item.key === key)) this.caseClues.push({ key, label: network.node, text: network.relation, source: this.dossier.name });
+  }
+
+  verifyCurrent() {
+    if (this.status !== "active" || this.pending || this.awaitingNext) return false;
+    const network = this.dossier.network;
+    const key = `${this.dossier.id}:verify`;
+    if (!network?.verify || this.caseClues.some((item) => item.key === key)) return false;
+    this.caseClues.push({ key, label: this.campaignTool.label, text: network.verify, source: this.dossier.name });
+    this.observations.push({ topic: "document", label: `${this.campaignTool.label}已归档`, level: "neutral" });
+    this.save();
+    return true;
+  }
+
+  get campaignTool() {
+    return INSTITUTION_TOOLS[this.campaign.id] || { label: "档案核验", description: "核验公开记录。" };
   }
 
   decide(action) {
@@ -392,6 +486,42 @@ class WorldController {
     return true;
   }
 
+  beginInterrogation(index) {
+    if (this.status !== "complete" || this.interrogation || !this.decisions[index] || this.decisions[index].action !== "detain") return false;
+    const agent = this.agents[index];
+    const priorHistory = agent.memory.flatMap((item) => [{ speaker: "执行官", text: item.question }, { speaker: "候选人", text: item.answer }]);
+    this.interrogation = { mode: "officer", targetIndex: index, round: 0, logs: [{ speaker: "审问记录", text: `对象已转入后续审问。请围绕其先前陈述中的身份、路线、关系和物品继续追问。` }], priorHistory, evaluation: null };
+    this.status = "interrogation";
+    this.save();
+    return true;
+  }
+
+  async askInterrogation(question) {
+    const phase = this.interrogation;
+    if (!phase || this.pending || phase.round >= 5 || !String(question || "").trim()) return false;
+    const cleanQuestion = String(question).trim();
+    const agent = this.agents[phase.targetIndex];
+    const dossier = agent.dossier;
+    this.pending = true;
+    phase.logs.push({ speaker: "执行官", text: cleanQuestion });
+    let provider = "fallback";
+    let speech = "我能补充的都已经写在前面的记录里了。你若要核对，请按程序查档。";
+    try {
+      const remote = await requestInterrogationReply(this.campaign, dossier, phase.logs, cleanQuestion, phase.round + 1, "officer", speech);
+      speech = remote.speech;
+      provider = remote.provider || "model";
+    } catch (error) { console.warn("[TeWu Interrogation] 使用本地降级", error); }
+    phase.logs.push({ speaker: "扣留对象", text: speech, provider });
+    phase.round += 1;
+    if (phase.round >= 5) {
+      try { phase.evaluation = await requestInterrogationEvaluation("officer", phase.priorHistory, phase.logs); }
+      catch { phase.evaluation = { score: Math.min(100, 25 + phase.round * 10), summary: "审问记录已形成，但评价 Agent 暂不可用。", clues: [] }; }
+    }
+    this.pending = false;
+    this.save();
+    return true;
+  }
+
   accuracy() {
     return this.decisions.length ? (this.decisions.filter((decision) => decision.correct).length / this.decisions.length) * 100 : 0;
   }
@@ -404,12 +534,14 @@ class WorldController {
       currentIndex: this.currentIndex,
       logs: this.logs,
       observations: this.observations,
+      caseClues: this.caseClues,
       decisions: this.decisions,
       lastDecision: this.lastDecision,
       awaitingNext: this.awaitingNext,
+      interrogation: this.interrogation,
       agentStates: this.agents.map((agent) => agent.snapshot()),
     };
-    localStorage.setItem("tewu-session", JSON.stringify(snapshot));
+    persistSession(snapshot);
   }
 
   static restore(snapshot) {
@@ -421,9 +553,11 @@ class WorldController {
       text: String(line.text || "").replaceAll("undefined", controller.dossier.name),
     }));
     controller.observations = snapshot.observations || [];
+    controller.caseClues = snapshot.caseClues || [];
     controller.decisions = snapshot.decisions || [];
     controller.lastDecision = snapshot.lastDecision || null;
     controller.awaitingNext = Boolean(snapshot.awaitingNext);
+    controller.interrogation = snapshot.interrogation || null;
     controller.agents.forEach((agent, index) => agent.restore(snapshot.agentStates?.[index]));
     return controller;
   }
@@ -522,6 +656,8 @@ class InfiltratorController {
     this.logs = [];
     this.lastDecision = null;
     this.awaitingNext = false;
+    this.pending = false;
+    this.interrogation = null;
   }
 
   start() {
@@ -534,16 +670,27 @@ class InfiltratorController {
     return this.judge.currentQuestion();
   }
 
-  ask(answer) {
+  async ask(answer) {
     const cleanAnswer = String(answer || "").trim();
-    if (this.status !== "active" || this.awaitingNext || !cleanAnswer || this.judge.round >= 10) return false;
+    if (this.status !== "active" || this.awaitingNext || this.pending || !cleanAnswer || this.judge.round >= 10) return false;
+    this.pending = true;
     const result = this.judge.evaluate(cleanAnswer);
     this.logs.push({ speaker: "player", text: cleanAnswer, round: result.round });
-    this.logs.push({ speaker: "judge", text: result.reaction, round: result.round });
+    let provider = "fallback";
+    try {
+      const remote = await requestJudgeReply(this, cleanAnswer, result);
+      result.reaction = remote.speech;
+      provider = remote.provider || "model";
+      this.judge.responses[this.judge.responses.length - 1].reaction = result.reaction;
+    } catch (error) {
+      console.warn("[TeWu Judge] 使用本地降级回答", error);
+    }
+    this.logs.push({ speaker: "judge", text: result.reaction, round: result.round, provider });
     if (this.judge.round >= 10) {
       this.lastDecision = { ...this.judge.verdict(), name: this.profile.name };
       this.awaitingNext = true;
     }
+    this.pending = false;
     this.save();
     return true;
   }
@@ -558,22 +705,54 @@ class InfiltratorController {
 
   next() {
     if (!this.awaitingNext) return false;
+    if (this.lastDecision?.action === "detain" && !this.interrogation) {
+      this.interrogation = { mode: "infiltrator", round: 0, logs: [{ speaker: "执行官 Agent", text: "你的身份暂时不能放行。现在开始第二阶段审问：请解释你先前陈述中每一个无法核验的地方。" }], priorHistory: [...this.logs], evaluation: null };
+      this.status = "interrogation";
+      this.awaitingNext = false;
+      this.save();
+      return true;
+    }
     this.status = "complete";
     this.save();
     return true;
   }
 
+  async askInterrogation(answer) {
+    const phase = this.interrogation;
+    const cleanAnswer = String(answer || "").trim();
+    if (!phase || this.pending || phase.round >= 5 || !cleanAnswer) return false;
+    this.pending = true;
+    phase.logs.push({ speaker: "你", text: cleanAnswer });
+    let provider = "fallback";
+    let speech = "执行官把你的回答记入记录，没有立刻表态，只要求你继续解释其中可核验的细节。";
+    try {
+      const remote = await requestInterrogationReply(this.campaign, { ...this.profile, signature: "保持掩护身份的一致性", tell: "前后陈述中的矛盾" , isTarget: true }, phase.logs, cleanAnswer, phase.round + 1, "infiltrator", speech);
+      speech = remote.speech;
+      provider = remote.provider || "model";
+    } catch (error) { console.warn("[TeWu Interrogation] 使用本地降级", error); }
+    phase.logs.push({ speaker: "执行官 Agent", text: speech, provider });
+    phase.round += 1;
+    if (phase.round >= 5) {
+      try { phase.evaluation = await requestInterrogationEvaluation("infiltrator", phase.priorHistory, phase.logs); }
+      catch { phase.evaluation = { score: 50, summary: "审问记录已形成，但评价 Agent 暂不可用。", clues: [] }; }
+    }
+    this.pending = false;
+    this.save();
+    return true;
+  }
+
   save() {
-    localStorage.setItem("tewu-session", JSON.stringify({
+    persistSession({
       mode: this.mode,
       campaignId: this.campaign.id,
       status: this.status,
       logs: this.logs,
       lastDecision: this.lastDecision,
       awaitingNext: this.awaitingNext,
+      interrogation: this.interrogation,
       profile: this.profile,
       judge: this.judge.snapshot(),
-    }));
+    });
   }
 
   static restore(snapshot) {
@@ -582,6 +761,7 @@ class InfiltratorController {
     controller.logs = snapshot.logs || [];
     controller.lastDecision = snapshot.lastDecision || null;
     controller.awaitingNext = Boolean(snapshot.awaitingNext);
+    controller.interrogation = snapshot.interrogation || null;
     controller.profile = snapshot.profile || controller.profile;
     controller.judge.profile = controller.profile;
     controller.judge.restore(snapshot.judge);
@@ -608,12 +788,33 @@ function restoreController() {
   return new WorldController();
 }
 
+function persistSession(snapshot) {
+  localStorage.setItem("tewu-session", JSON.stringify(snapshot));
+  fetch("/api/session", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ state: snapshot }) }).catch(() => {});
+}
+
+async function hydrateUserSession() {
+  try {
+    const response = await fetch("/api/session", { cache: "no-store" });
+    if (!response.ok) return;
+    const { state } = await response.json();
+    if (!state) return;
+    localStorage.setItem("tewu-session", JSON.stringify(state));
+    controller = state.mode === "infiltrator" ? InfiltratorController.restore(state) : WorldController.restore(state);
+    selectedCampaignId = controller.campaign.id;
+    selectedMode = controller.mode;
+    render();
+  } catch {}
+}
+
 function render() {
   if (controller.status === "briefing") app.innerHTML = renderBriefing();
+  else if (controller.status === "interrogation") app.innerHTML = renderInterrogationScreen();
   else if (controller.mode === "infiltrator") app.innerHTML = controller.status === "complete" ? renderInfiltratorSettlement() : renderInfiltratorGame();
-  else if (controller.status === "complete") app.innerHTML = renderSettlement();
+  else if (controller.status === "complete") app.innerHTML = renderOfficerComplete();
   else app.innerHTML = renderGame();
   bindEvents();
+  document.querySelectorAll(".dialogue-log").forEach((log) => { log.scrollTop = log.scrollHeight; });
 }
 
 function renderHeader(showStats = false) {
@@ -656,13 +857,23 @@ function renderRightRail() {
   const accuracy = Math.round(controller.accuracy());
   const round = controller.agent.round;
   const alert = Math.min(100, 22 + round * 7 + controller.decisions.filter((item) => !item.correct).length * 5);
-  return `<aside><div class="panel"><div class="panel-title">案件状态</div><div class="meter-wrap"><div class="meter-row"><span>本轮警戒</span><strong>${alert}%</strong></div><div class="meter"><div class="alert" style="width:${alert}%"></div></div><div class="meter-row" style="margin-top:13px"><span>行动准确率</span><strong>${accuracy}%</strong></div><div class="meter"><div class="${accuracy >= 70 ? "teal" : "amber"}" style="width:${accuracy}%"></div></div><div class="meter-row" style="margin-top:13px"><span>已完成候选人</span><strong>${controller.decisions.length} / 10</strong></div><div class="meter"><div class="teal" style="width:${controller.decisions.length * 10}%"></div></div></div></div><div class="panel"><div class="panel-title">对话线索</div>${renderFacts()}</div><div class="panel"><div class="panel-title">历史资料</div><div class="facts"><div class="fact"><div class="fact-head"><span>当前地点</span><strong>${escapeHtml(controller.campaign.setting)}</strong></div><p>${escapeHtml(controller.campaign.historical)}</p></div><div class="fact"><div class="fact-head"><span>关键词</span></div><p>${controller.campaign.terms.map((term) => `#${escapeHtml(term)}`).join(" ")}</p></div></div></div></aside>`;
+  const tool = controller.campaignTool;
+  const clues = controller.caseClues.slice(-5);
+  const verified = controller.caseClues.some((item) => item.key === `${controller.dossier.id}:verify`);
+  return `<aside><div class="panel"><div class="panel-title">案件状态</div><div class="meter-wrap"><div class="meter-row"><span>本轮警戒</span><strong>${alert}%</strong></div><div class="meter"><div class="alert" style="width:${alert}%"></div></div><div class="meter-row" style="margin-top:13px"><span>行动准确率</span><strong>${accuracy}%</strong></div><div class="meter"><div class="${accuracy >= 70 ? "teal" : "amber"}" style="width:${accuracy}%"></div></div><div class="meter-row" style="margin-top:13px"><span>已完成候选人</span><strong>${controller.decisions.length} / 10</strong></div><div class="meter"><div class="teal" style="width:${controller.decisions.length * 10}%"></div></div></div></div><div class="panel"><div class="panel-title">机构核验</div><div class="facts"><div class="fact"><div class="fact-head"><span>${escapeHtml(tool.label)}</span><strong>当前对象</strong></div><p>${escapeHtml(tool.description)}</p><button class="prompt-chip" data-action="verify-current" ${verified ? "disabled" : ""}>${verified ? "核验已归档" : "执行核验"}</button></div></div></div><div class="panel"><div class="panel-title">案件线索板</div><div class="facts">${clues.length ? clues.map((clue) => `<div class="fact"><div class="fact-head"><span>${escapeHtml(clue.label)}</span><strong>${escapeHtml(clue.source)}</strong></div><p>${escapeHtml(clue.text)}</p></div>`).join("") : `<div class="fact"><p>从路线、关系、物品和本地细节中寻找可以串联的人与地点。</p></div>`}</div></div><div class="panel"><div class="panel-title">对话线索</div>${renderFacts()}</div><div class="panel"><div class="panel-title">历史资料</div><div class="facts"><div class="fact"><div class="fact-head"><span>当前地点</span><strong>${escapeHtml(controller.campaign.setting)}</strong></div><p>${escapeHtml(controller.campaign.historical)}</p></div><div class="fact"><div class="fact-head"><span>关键词</span></div><p>${controller.campaign.terms.map((term) => `#${escapeHtml(term)}`).join(" ")}</p></div></div></div></aside>`;
 }
 
 function renderDialogueLog() {
   const initial = `<div class="dialogue-line"><span class="line-label">候选人 · 初始陈述</span>${escapeHtml(controller.dossier.public)}。${escapeHtml(controller.dossier.role)}，${escapeHtml(controller.dossier.origin)}。</div>`;
-  const lines = controller.logs.map((line) => `<div class="dialogue-line ${line.speaker === "player" ? "player" : ""}"><span class="line-label">${line.speaker === "player" ? `你 · 第 ${line.round} 轮` : `候选人 · 第 ${line.round} 轮`}</span>${escapeHtml(line.text)}</div>`).join("");
-  return `${initial}${lines}`;
+  const lines = controller.logs.map((line) => `<div class="dialogue-line ${line.speaker === "player" ? "player" : ""}"><span class="line-label">${line.speaker === "player" ? `你 · 第 ${line.round} 轮` : `候选人 · 第 ${line.round} 轮${agentSourceLabel(line.provider)}`}</span>${escapeHtml(line.text)}</div>`).join("");
+  const waiting = controller.pending ? `<div class="dialogue-line waiting"><span class="line-label">候选人 Agent · 正在回应</span><i></i><i></i><i></i></div>` : "";
+  return `${initial}${lines}${waiting}`;
+}
+
+function agentSourceLabel(provider) {
+  if (!provider) return "";
+  if (provider === "fallback") return " · 本地降级";
+  return ` · 模型：${provider === "deepseek" ? "DeepSeek" : provider}`;
 }
 
 function renderObservationRow() {
@@ -674,6 +885,7 @@ function renderObservationRow() {
 function renderQuestionArea() {
   const round = controller.agent.round;
   if (controller.awaitingNext) return "";
+  if (controller.pending) return `<div class="question-area waiting-area"><div class="question-head"><strong>候选人正在回应</strong><span>模型正在整理本轮回答</span></div><div class="response-status"><i></i><i></i><i></i><span>请稍候，对话记录已保存。</span></div></div>`;
   const decision = round >= 2 ? `<div class="decision-area"><p class="decision-unlock">${round >= 10 ? "十轮回答已完成。" : `已完成 ${round} 轮问答，可根据现有证据提前处置，也可以继续追问。`}请选择放行或扣留。</p><div class="decision-grid"><button class="decision-button release" data-decision="release">放行 · 让他通过</button><button class="decision-button detain" data-decision="detain">扣留 · 交由复核</button></div></div>` : "";
   if (round >= 10) return decision;
   const hints = ["证件和编号怎么核对？", "你从哪里来，几点出发？", "进城后准备和谁见面？", "你对这里的地名熟悉吗？"];
@@ -690,8 +902,8 @@ function renderResult() {
 
 function renderInterview() {
   const d = controller.dossier;
-  const badge = controller.awaitingNext ? "result" : controller.agent.round >= 10 ? "ready" : "";
-  const badgeText = controller.awaitingNext ? "已处置" : controller.agent.round >= 10 ? "等待处置" : "对话中";
+  const badge = controller.awaitingNext ? "result" : controller.pending ? "pending" : controller.agent.round >= 10 ? "ready" : "";
+  const badgeText = controller.awaitingNext ? "已处置" : controller.pending ? "回应中" : controller.agent.round >= 10 ? "等待处置" : "对话中";
   return `<section class="interview"><div class="scene"><img src="assets/city-gate.svg" alt="夜间城市入口检查站"/><div class="scene-overlay"></div><span class="scene-caption">${escapeHtml(controller.campaign.sceneCaption)}</span></div><div class="candidate-header"><div><p class="eyebrow">当前候选人 / ${String(controller.currentIndex + 1).padStart(2, "0")}</p><h2>${escapeHtml(d.name)}</h2><p class="candidate-meta">${escapeHtml(d.role)} · 自称来自 ${escapeHtml(d.origin)}</p></div><span class="candidate-badge ${badge}">${badgeText}</span></div><div class="dialogue-log">${renderDialogueLog()}</div>${renderObservationRow()}${controller.awaitingNext ? renderResult() : renderQuestionArea()}</section>`;
 }
 
@@ -712,12 +924,15 @@ function renderInfiltratorRight() {
 }
 
 function renderInfiltratorLog() {
-  return controller.logs.map((line) => `<div class="dialogue-line ${line.speaker === "player" ? "player" : ""}"><span class="line-label">${line.speaker === "player" ? `你 · 第 ${line.round} 轮` : `审查官 · ${line.round ? `第 ${line.round} 轮` : "开始"}`}</span>${escapeHtml(line.text)}</div>`).join("");
+  const lines = controller.logs.map((line) => `<div class="dialogue-line ${line.speaker === "player" ? "player" : ""}"><span class="line-label">${line.speaker === "player" ? `你 · 第 ${line.round} 轮` : `审查官 · ${line.round ? `第 ${line.round} 轮` : "开始"}${agentSourceLabel(line.provider)}`}</span>${escapeHtml(line.text)}</div>`).join("");
+  const waiting = controller.pending ? `<div class="dialogue-line waiting"><span class="line-label">审查官 Agent · 正在审阅</span><i></i><i></i><i></i></div>` : "";
+  return `${lines}${waiting}`;
 }
 
 function renderInfiltratorQuestionArea() {
   const round = controller.judge.round;
   if (controller.awaitingNext) return "";
+  if (controller.pending) return `<div class="question-area waiting-area"><div class="question-head"><strong>审查官正在审阅</strong><span>模型正在形成下一轮追问</span></div><div class="response-status"><i></i><i></i><i></i><span>请稍候，回答已写入审查记录。</span></div></div>`;
   return `<div class="question-area"><div class="question-head"><strong>审查官提问</strong><span>已回答 ${round} / 10 轮</span></div><div class="judge-prompt">${escapeHtml(controller.currentQuestion())}</div><form class="question-form" data-infiltrator-form><input class="question-input" name="answer" autocomplete="off" placeholder="以你的掩护身份回答……" maxlength="220" /><button class="send-button" type="submit">回答</button></form></div>`;
 }
 
@@ -730,8 +945,8 @@ function renderInfiltratorResult() {
 
 function renderInfiltratorInterview() {
   const profile = controller.profile;
-  const badge = controller.awaitingNext ? "result" : "";
-  const badgeText = controller.awaitingNext ? "已判定" : "接受审查";
+  const badge = controller.awaitingNext ? "result" : controller.pending ? "pending" : "";
+  const badgeText = controller.awaitingNext ? "已判定" : controller.pending ? "审阅中" : "接受审查";
   return `<section class="interview"><div class="scene"><img src="assets/city-gate.svg" alt="夜间城市入口检查站"/><div class="scene-overlay"></div><span class="scene-caption">${escapeHtml(controller.campaign.sceneCaption)}</span></div><div class="candidate-header"><div><p class="eyebrow">潜伏者模式 / 掩护身份</p><h2>${escapeHtml(profile.name)}</h2><p class="candidate-meta">${escapeHtml(profile.role)} · 自称来自 ${escapeHtml(profile.origin)}</p></div><span class="candidate-badge ${badge}">${badgeText}</span></div><div class="dialogue-log">${renderInfiltratorLog()}</div>${controller.awaitingNext ? renderInfiltratorResult() : renderInfiltratorQuestionArea()}</section>`;
 }
 
@@ -759,7 +974,26 @@ function renderSettlement() {
   const grade = accuracy === 100 ? "S" : accuracy >= 90 ? "A" : accuracy >= 80 ? "B" : accuracy >= 70 ? "C" : accuracy >= 60 ? "D" : "E";
   const summary = grade === "S" ? "十名候选人的处置全部正确，主控将本次行动记为无误判断。" : grade === "A" ? "大部分判断稳健，但仍有少数证据没有及时连成闭环。" : grade === "B" ? "你抓住了部分异常，不过行动记录显示还有明显的复核空档。" : "这次行动留下了较大判断风险，建议回到简报重新检查问题路径。";
   const rows = controller.decisions.map((decision, index) => `<div class="review-row"><b>${String(index + 1).padStart(2, "0")}</b><span>${escapeHtml(decision.name)} · ${decision.action === "detain" ? "扣留" : "放行"}</span><strong class="review-result ${decision.correct ? "correct" : "wrong"}">${decision.correct ? "正确" : decision.action === "detain" ? "误捕" : "漏网"}</strong></div>`).join("");
-  return `<div class="app-shell">${renderHeader(true)}<main class="page"><section class="settlement"><div class="settlement-head"><p class="eyebrow">行动报告 · 已结案</p><h1>行动结算</h1><p>${summary} 当前机构：${escapeHtml(controller.campaign.name)} · ${escapeHtml(controller.campaign.era)}。</p></div><div class="score-panel"><div class="grade">${grade}</div><div><div class="score-line"><strong>${accuracy}%</strong><span>十次处置的综合准确率</span></div><div class="score-track"><div style="width:${accuracy}%"></div></div><p class="score-note">正确 ${correct} · 错误 ${wrong} · 扣留 ${detained} · 漏网 ${leaked}</p></div></div><div class="stat-grid"><div class="stat-card"><span>正确判断</span><strong>${correct}</strong></div><div class="stat-card"><span>误捕</span><strong>${controller.decisions.filter((item) => !item.correct && item.action === "detain").length}</strong></div><div class="stat-card"><span>漏网</span><strong>${leaked}</strong></div><div class="stat-card"><span>完成对话</span><strong>100</strong></div></div><div class="review"><h2>逐人复盘</h2>${rows}</div><div class="settlement-actions"><button class="secondary-button" data-action="back">返回机构选择</button><button class="primary-button" data-action="restart">重新执行本局</button></div></section></main></div>`;
+  const totalRounds = controller.agents.reduce((sum, agent) => sum + agent.round, 0);
+  const clues = controller.caseClues.slice(-6);
+  const archive = `<div class="review case-archive"><h2>案件档案</h2><p>本次行动中，${escapeHtml(controller.campaign.name)}记录了 ${clues.length} 条可串联线索。${detained ? "被扣留者的供述与前期记录将继续归档复核。" : "没有对象被转入后续审问。"}</p>${clues.length ? clues.map((clue) => `<div class="review-row"><b>线</b><span>${escapeHtml(clue.text)}</span><strong>${escapeHtml(clue.source)}</strong></div>`).join("") : "<p>没有形成足够的跨人物线索链。</p>"}</div>`;
+  return `<div class="app-shell">${renderHeader(true)}<main class="page"><section class="settlement"><div class="settlement-head"><p class="eyebrow">行动报告 · 已结案</p><h1>行动结算</h1><p>${summary} 当前机构：${escapeHtml(controller.campaign.name)} · ${escapeHtml(controller.campaign.era)}。</p></div><div class="score-panel"><div class="grade">${grade}</div><div><div class="score-line"><strong>${accuracy}%</strong><span>十次处置的综合准确率</span></div><div class="score-track"><div style="width:${accuracy}%"></div></div><p class="score-note">正确 ${correct} · 错误 ${wrong} · 扣留 ${detained} · 漏网 ${leaked}</p></div></div><div class="stat-grid"><div class="stat-card"><span>正确判断</span><strong>${correct}</strong></div><div class="stat-card"><span>误捕</span><strong>${controller.decisions.filter((item) => !item.correct && item.action === "detain").length}</strong></div><div class="stat-card"><span>漏网</span><strong>${leaked}</strong></div><div class="stat-card"><span>完成对话</span><strong>${totalRounds}</strong></div></div><div class="review"><h2>逐人复盘</h2>${rows}</div>${archive}<div class="settlement-actions"><button class="secondary-button" data-action="back">返回机构选择</button><button class="primary-button" data-action="restart">重新执行本局</button></div></section></main></div>`;
+}
+
+function renderOfficerComplete() {
+  const detained = controller.decisions.map((decision, index) => ({ ...decision, index })).filter((decision) => decision.action === "detain");
+  const panel = controller.interrogation ? `<section class="interrogation-select"><p class="eyebrow">后续审问 · 已完成</p><h2>审问评价已归档</h2><p>你已完成对 ${escapeHtml(controller.interrogation.targetIndex !== undefined ? controller.agents[controller.interrogation.targetIndex].dossier.name : "扣留对象")} 的后续审问。</p></section>` : detained.length ? `<section class="interrogation-select"><p class="eyebrow">后续审问 · 选择对象</p><h2>从扣留对象中选择一人</h2><p>十名候选人已处理完毕。选择一名扣留对象进行五轮后续审问，审问评价 Agent 会结合两阶段记录评估关联线索。</p><div class="interrogation-targets">${detained.map((item) => `<button class="interrogation-target" data-interrogation-target="${item.index}"><strong>${escapeHtml(item.name)}</strong><span>${item.isTarget ? "目标对象" : "扣留对象"}</span></button>`).join("")}</div></section>` : `<section class="interrogation-select"><p class="eyebrow">后续审问</p><h2>没有扣留对象</h2><p>本局没有可进入后续审问的对象。</p></section>`;
+  return renderSettlement().replace("</section></main>", `${panel}</section></main>`);
+}
+
+function renderInterrogationScreen() {
+  const phase = controller.interrogation;
+  const officerMode = phase.mode === "officer";
+  const title = officerMode ? `后续审问 · ${escapeHtml(controller.agents[phase.targetIndex].dossier.name)}` : "后续审问 · 执行官 Agent";
+  const lines = phase.logs.map((line) => `<div class="dialogue-line ${line.speaker === "执行官" || line.speaker === "你" ? "player" : ""}"><span class="line-label">${escapeHtml(line.speaker)}${agentSourceLabel(line.provider)}</span>${escapeHtml(line.text)}</div>`).join("");
+  const waiting = controller.pending ? `<div class="dialogue-line waiting"><span class="line-label">审问 Agent · 正在回应</span><i></i><i></i><i></i></div>` : "";
+  const result = phase.evaluation ? `<div class="interrogation-score"><strong>${phase.evaluation.score} 分</strong><div><h2>审问评价</h2><p>${escapeHtml(phase.evaluation.summary || "审问记录已归档。")}</p>${(phase.evaluation.clues || []).map((clue) => `<span>${escapeHtml(clue)}</span>`).join("")}</div></div><button class="primary-button" data-action="finish-interrogation">查看结算</button>` : controller.pending ? `<div class="response-status"><i></i><i></i><i></i><span>审问 Agent 正在整理回应。</span></div>` : `<form class="question-form" data-interrogation-form><input class="question-input" name="question" autocomplete="off" maxlength="220" placeholder="${officerMode ? "输入追问，尝试建立关联线索……" : "以掩护身份回答执行官的追问……"}" /><button class="send-button" type="submit">${officerMode ? "继续审问" : "回答"}</button></form>`;
+  return `<div class="app-shell">${renderHeader(true)}<main class="page"><section class="interrogation-screen"><p class="eyebrow">第二阶段 · ${officerMode ? "关联线索审问" : "身份维持审问"}</p><h1>${title}</h1><p class="briefing-copy">第 ${phase.round} / 5 轮。${officerMode ? "围绕前一阶段的矛盾、路线和关系链追问。" : "执行官 Agent 会依据你的回答继续施压与核验。"}</p><div class="dialogue-log interrogation-log">${lines}${waiting}</div><div class="question-area">${result}</div></section></main></div>`;
 }
 
 function bindEvents() {
@@ -773,22 +1007,32 @@ function bindEvents() {
   document.querySelector("[data-question-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = event.currentTarget.elements.question;
-    const button = event.currentTarget.querySelector("button");
-    if (button) button.disabled = true;
-    if (await controller.ask(input.value)) render();
+    const request = controller.ask(input.value);
+    render();
+    if (await request) render();
   });
   document.querySelector("[data-infiltrator-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = event.currentTarget.elements.answer;
-    const button = event.currentTarget.querySelector("button");
-    if (button) button.disabled = true;
-    if (await controller.ask(input.value)) render();
+    const request = controller.ask(input.value);
+    render();
+    if (await request) render();
   });
   document.querySelectorAll("[data-prompt]").forEach((button) => button.addEventListener("click", () => {
     const input = document.querySelector(".question-input");
     if (input) { input.value = button.dataset.prompt; input.focus(); }
   }));
   document.querySelectorAll("[data-decision]").forEach((button) => button.addEventListener("click", () => { if (controller.decide(button.dataset.decision)) render(); }));
+  document.querySelector('[data-action="verify-current"]')?.addEventListener("click", () => { if (controller.verifyCurrent()) render(); });
+  document.querySelectorAll("[data-interrogation-target]").forEach((button) => button.addEventListener("click", () => { if (controller.beginInterrogation(Number(button.dataset.interrogationTarget))) render(); }));
+  document.querySelector("[data-interrogation-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = event.currentTarget.elements.question;
+    const request = controller.askInterrogation(input.value);
+    render();
+    if (await request) render();
+  });
+  document.querySelector("[data-action=\"finish-interrogation\"]")?.addEventListener("click", () => { controller.status = "complete"; controller.save(); render(); });
   document.querySelector("[data-action=\"next\"]")?.addEventListener("click", () => { controller.next(); render(); });
   document.querySelector("[data-action=\"restart\"]")?.addEventListener("click", () => { controller = controller.mode === "infiltrator" ? new InfiltratorController(controller.campaign.id) : new WorldController(controller.campaign.id); selectedMode = controller.mode; controller.start(); render(); });
   document.querySelector("[data-action=\"exit\"]")?.addEventListener("click", () => { localStorage.removeItem("tewu-session"); controller = new WorldController(); selectedMode = "officer"; selectedCampaignId = CAMPAIGNS[0].id; render(); });
@@ -796,3 +1040,4 @@ function bindEvents() {
 }
 
 render();
+hydrateUserSession();
