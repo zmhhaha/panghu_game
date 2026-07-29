@@ -351,6 +351,15 @@ export class CampaignEngine {
         const contact = next.pendingContact;
         if (!contact || contact.id !== action.contactId) throw new Error("主动接触已经失效");
         if (Date.parse(next.currentTime) >= Date.parse(contact.expiresAt)) throw new Error("对方已经离开，无法再回应这次接触");
+        const sourceEvent = this.campaign.narrativeEvents?.find((event) => event.id === contact.eventId);
+        const missingRequiredLead = sourceEvent?.trigger.requiredLeadIds?.some((id) => !next.resolvedLeadIds?.includes(id)) ?? false;
+        if (missingRequiredLead) {
+          next.pendingContact = null;
+          next.resolvedNarrativeEventIds = next.resolvedNarrativeEventIds?.filter((id) => id !== contact.eventId) ?? [];
+          append("director.contact_invalidated", { contactId: contact.id, eventId: contact.eventId, characterId: contact.characterId, reason: "required_public_lead_missing" });
+          narration = "你很快确认这是一次信息错位：对方并没有理由就这件事来找你，本次接触已取消。";
+          break;
+        }
         const definition = this.campaign.characters.find((item) => item.id === contact.characterId);
         const character = next.characters[contact.characterId];
         if (!definition || !character) throw new Error("主动接触人物不存在");
