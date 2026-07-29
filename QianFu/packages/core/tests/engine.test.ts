@@ -285,8 +285,45 @@ describe("public cover identity", () => {
     expect(worked.state.cover.credibility).toBe(73);
     expect(worked.state.cover.observations.at(-1)?.type).toBe("work_completed");
     const endOfShift = engine.execute({ type: "wait", durationMinutes: 480, idempotencyKey: "cover-wait-shift" });
-    expect(endOfShift.state.cover.consecutiveAbsences).toBe(0);
+    expect(endOfShift.state.cover.consecutiveRecordGaps).toBe(0);
     expect(endOfShift.events.some((event) => event.type === "cover.absence_recorded")).toBe(false);
+  });
+
+  it("evaluates a travelling merchant by verifiable business records instead of office attendance", () => {
+    const merchantCampaign: CampaignDefinition = {
+      ...coverCampaign,
+      locations: [
+        { id: "jianghai-hotel", name: "Hotel", district: "Trade", travelMinutes: {} },
+        { id: "safe-flat", name: "Safe Flat", district: "B", travelMinutes: {}, radioSite: { baseRisk: 5, initiallyAvailable: true } },
+      ],
+    };
+    const state = createInitialWorld(merchantCampaign, "merchant-record-gap", "user-1", "undercover", "travelling_merchant");
+    const result = new CampaignEngine(merchantCampaign, state).execute({ type: "wait", durationMinutes: 670, idempotencyKey: "merchant-no-business" });
+    const gap = result.events.find((event) => event.type === "cover.absence_recorded");
+    expect(result.state.cover.recordStatus).toBe("gap");
+    expect(result.state.cover.consecutiveRecordGaps).toBe(1);
+    expect(result.state.cover.scrutiny).toBeGreaterThan(0);
+    expect(gap?.payload).toMatchObject({ eventLabel: "经营断档" });
+    expect(JSON.stringify(gap?.payload)).toContain("货账");
+    expect(JSON.stringify(gap?.payload)).not.toMatch(/档案科|上级|缺勤|到岗/);
+  });
+
+  it("lets merchant business records prevent scrutiny and rejects employee leave", () => {
+    const merchantCampaign: CampaignDefinition = {
+      ...coverCampaign,
+      locations: [
+        { id: "jianghai-hotel", name: "Hotel", district: "Trade", travelMinutes: {} },
+        { id: "safe-flat", name: "Safe Flat", district: "B", travelMinutes: {}, radioSite: { baseRisk: 5, initiallyAvailable: true } },
+      ],
+    };
+    const state = createInitialWorld(merchantCampaign, "merchant-business-record", "user-1", "undercover", "travelling_merchant");
+    const engine = new CampaignEngine(merchantCampaign, state);
+    expect(() => engine.execute({ type: "request_leave", reason: "official", durationMinutes: 10, idempotencyKey: "merchant-leave" })).toThrow("没有固定考勤");
+    engine.execute({ type: "cover_work", workKind: "settle_accounts", durationMinutes: 60, idempotencyKey: "merchant-settle-accounts" });
+    const result = engine.execute({ type: "wait", durationMinutes: 610, idempotencyKey: "merchant-close-business" });
+    expect(result.state.cover.recordStatus).toBe("recorded");
+    expect(result.state.cover.consecutiveRecordGaps).toBe(0);
+    expect(result.events.some((event) => event.type === "cover.absence_recorded")).toBe(false);
   });
 
   it("counts sustained workplace dialogue as a verifiable public attendance record", () => {
@@ -307,8 +344,8 @@ describe("public cover identity", () => {
       const result = engine.execute({ type: "dialogue_turn", sessionId: "cover-dialogue-start", playerText: `Review record ${turn}`, durationMinutes: 2, idempotencyKey: `cover-dialogue-turn-${turn}` });
       credited ||= result.events.some((event) => event.type === "cover.activity_credited");
     }
-    expect(engine.getState().cover.workCreditMinutesByDate?.["1942-05-12"]).toBe(60);
-    expect(engine.getState().cover.completedWorkDates).toContain("1942-05-12");
+    expect(engine.getState().cover.recordCreditMinutesByDate?.["1942-05-12"]).toBe(60);
+    expect(engine.getState().cover.completedRecordDates).toContain("1942-05-12");
     expect(credited).toBe(true);
   });
 
@@ -347,9 +384,9 @@ describe("public cover identity", () => {
   it("does not retroactively mark the opening day absent when a campaign starts after work", () => {
     const lateOpeningCampaign = { ...coverCampaign, startTime: "1942-05-12T09:00:00.000Z" };
     const state = createInitialWorld(lateOpeningCampaign, "late-opening", "user-1", "undercover", "archive_clerk");
-    expect(state.cover.lastAttendanceEvaluatedDate).toBe("1942-05-12");
+    expect(state.cover.lastRecordEvaluatedDate).toBe("1942-05-12");
     const result = new CampaignEngine(lateOpeningCampaign, state).execute({ type: "wait", durationMinutes: 10, idempotencyKey: "late-opening-wait" });
-    expect(result.state.cover.consecutiveAbsences).toBe(0);
+    expect(result.state.cover.consecutiveRecordGaps).toBe(0);
     expect(result.events.some((event) => event.type === "cover.absence_recorded")).toBe(false);
   });
 
@@ -452,17 +489,17 @@ describe("public cover identity", () => {
   it("accepts leave as a public record instead of treating it as an unexplained absence", () => {
     const engine = new CampaignEngine(coverCampaign, createInitialWorld(coverCampaign, "cover-leave", "user-1"));
     const leave = engine.execute({ type: "request_leave", reason: "family", durationMinutes: 10, idempotencyKey: "cover-leave-request" });
-    expect(leave.state.cover.workStatus).toBe("on_leave");
+    expect(leave.state.cover.recordStatus).toBe("excused");
     const endOfShift = engine.execute({ type: "wait", durationMinutes: 530, idempotencyKey: "cover-leave-wait" });
-    expect(endOfShift.state.cover.consecutiveAbsences).toBe(0);
+    expect(endOfShift.state.cover.consecutiveRecordGaps).toBe(0);
     expect(endOfShift.events.some((event) => event.type === "cover.absence_recorded")).toBe(false);
   });
 
   it("escalates repeated unexplained absences into a supervisor check", () => {
     const engine = new CampaignEngine(coverCampaign, createInitialWorld(coverCampaign, "cover-absence", "user-1"));
     const result = engine.execute({ type: "wait", durationMinutes: 1980, idempotencyKey: "cover-two-days" });
-    expect(result.state.cover.consecutiveAbsences).toBe(2);
-    expect(result.state.cover.supervisorSuspicion).toBeGreaterThanOrEqual(32);
+    expect(result.state.cover.consecutiveRecordGaps).toBe(2);
+    expect(result.state.cover.scrutiny).toBeGreaterThanOrEqual(32);
     expect(result.events.some((event) => event.type === "cover.supervisor_check")).toBe(true);
     expect(result.state.personalSuspicion).toBeGreaterThan(0);
   });
@@ -470,12 +507,12 @@ describe("public cover identity", () => {
   it("migrates missing cover records and includes cover state in the score", () => {
     const legacy = createInitialWorld(coverCampaign, "cover-legacy", "user-1");
     delete (legacy as Partial<WorldState>).cover;
-    expect(new CampaignEngine(coverCampaign, legacy).getState().cover.workStatus).toBe("awaiting_shift");
+    expect(new CampaignEngine(coverCampaign, legacy).getState().cover.recordStatus).toBe("pending");
     expect(toPublicWorldState(legacy).cover.credibility).toBe(65);
     const baseline = createInitialWorld(coverCampaign, "cover-score-base", "user-1");
     const damaged = structuredClone(baseline);
     damaged.cover.credibility = 0;
-    damaged.cover.supervisorSuspicion = 100;
+    damaged.cover.scrutiny = 100;
     expect(calculateScore(coverCampaign, damaged).cover).toBeLessThan(calculateScore(coverCampaign, baseline).cover);
   });
 });
@@ -1063,10 +1100,10 @@ describe("director contacts and counterintelligence", () => {
     expect(shaken.state.investigation.locationHeat["archive-office"]).toBeLessThan(14);
 
     const cover = createInitialWorld(counterCampaign, "counter-cover", "user-1");
-    cover.personalSuspicion = 20; cover.cover.supervisorSuspicion = 20; cover.investigation.pressure = 20;
+    cover.personalSuspicion = 20; cover.cover.scrutiny = 20; cover.investigation.pressure = 20;
     const covered = new CampaignEngine(counterCampaign, cover).execute({ type: "countermeasure", kind: "reinforce_cover", durationMinutes: 60, idempotencyKey: "counter-cover-work" });
     expect(covered.state.personalSuspicion).toBeLessThan(20);
-    expect(covered.state.cover.supervisorSuspicion).toBeLessThan(20);
+    expect(covered.state.cover.scrutiny).toBeLessThan(20);
 
     const decoy = createInitialWorld(counterCampaign, "counter-decoy", "user-1");
     decoy.investigation.pressure = 30; decoy.investigation.locationHeat["archive-office"] = 10;

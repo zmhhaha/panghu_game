@@ -63,6 +63,7 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
     "counterintelligence.completed": "反侦察行动",
   };
   const title = labels[event.type] ?? "行动记录";
+  const projectedTitle = typeof payload.eventLabel === "string" ? payload.eventLabel : title;
   const text = event.type === "player.moved" ? `你前往了${location ?? "未知地点"}。`
     : event.type === "player.rested" ? `你休息了 ${formatRestDuration(Number(payload.durationMinutes ?? 0))}，恢复了 ${Number(payload.recovery ?? 0)} 点精力。`
     : event.type === "intel.recorded" ? `你记录了${intel ?? "一项情报"}。`
@@ -91,7 +92,7 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
     const outcome = payload.outcome === "cleared" ? "暂时洗清嫌疑" : payload.outcome === "watched" ? "被列入继续观察名单" : "公开身份出现明显破绽";
     return { title, text: `盘问结束：${outcome}。` };
   }
-  return { title, text };
+  return { title: projectedTitle, text };
 }
 
 function formatTime(value: string) {

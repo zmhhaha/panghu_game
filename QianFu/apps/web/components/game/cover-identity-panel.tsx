@@ -18,8 +18,6 @@ const workOptions: Array<{ kind: CoverWorkKind; label: string; minutes: number; 
   { kind: "proofread_copy", label: "校对稿样", minutes: 30, detail: "在编辑部留下可见工作痕迹", icon: FileStack },
 ];
 
-const statusLabels = { awaiting_shift: "待岗", working: "正常工作", on_leave: "请假中", unexcused_absence: "异常缺勤" } as const;
-
 export function CoverIdentityPanel({ state, busy, onAction }: { state: PublicWorldState; busy: boolean; onAction: (action: GameAction) => void }) {
   const [reason, setReason] = useState<LeaveReason>("family");
   const cover = state.cover;
@@ -27,20 +25,21 @@ export function CoverIdentityPanel({ state, busy, onAction }: { state: PublicWor
   const atOffice = profile.workLocationIds.includes(state.currentLocationId);
   const now = minuteOfDay(state.currentTime);
   const today = campaignDate(state.currentTime);
-  const attendanceCredit = Math.min(60, cover.workCreditMinutesByDate?.[today] ?? 0);
+  const recordCredit = Math.min(60, cover.recordCreditMinutesByDate?.[today] ?? 0);
   const workingHours = Boolean(profile.workHours && now >= profile.workHours.startMinute && now < profile.workHours.endMinute);
-  const actionDisabled = busy || !atOffice || !workingHours || cover.workStatus === "on_leave" || cover.completedWorkDates.includes(today);
-  const leaveDisabled = busy || !atOffice || !workingHours || cover.workStatus === "on_leave";
+  const actionDisabled = busy || !atOffice || !workingHours || cover.recordStatus === "excused" || cover.completedRecordDates.includes(today);
+  const leaveDisabled = busy || !atOffice || !workingHours || cover.recordStatus === "excused";
+  const statusLabel = cover.recordStatus === "recorded" ? profile.accountability.activeLabel : cover.recordStatus === "excused" ? profile.accountability.excusedLabel : cover.recordStatus === "gap" ? profile.accountability.lapseLabel : profile.accountability.awaitingLabel;
   return <section className="mt-5 border-t border-line pt-4">
-    <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs font-medium text-muted"><BriefcaseBusiness size={15} />公开身份：{profile.title}</p><span className={cover.workStatus === "unexcused_absence" ? "text-[10px] text-alert" : cover.workStatus === "working" ? "text-[10px] text-safe" : "text-[10px] text-muted"}>{statusLabels[cover.workStatus]}</span></div>
-    <div className="mt-3 grid grid-cols-2 gap-3"><Metric label="公开信誉" value={cover.credibility} color="bg-safe" /><Metric label="上级怀疑" value={cover.supervisorSuspicion} color="bg-alert" /></div>
-    <p className="mt-3 text-xs leading-5 text-muted">连续缺勤 {cover.consecutiveAbsences} 天 · 请假 {cover.leaveCount} 次{cover.leaveUntil ? ` · 已登记至 ${formatTime(cover.leaveUntil)}` : ""}</p>
-    {workingHours && atOffice && !cover.completedWorkDates.includes(today) && <p className="mt-2 text-[10px] text-muted">今日可核验在岗记录 {attendanceCredit}/60 分钟</p>}
+    <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs font-medium text-muted"><BriefcaseBusiness size={15} />公开身份：{profile.title}</p><span className={cover.recordStatus === "gap" ? "text-[10px] text-alert" : cover.recordStatus === "recorded" ? "text-[10px] text-safe" : "text-[10px] text-muted"}>{statusLabel}</span></div>
+    <div className="mt-3 grid grid-cols-2 gap-3"><Metric label="公开信誉" value={cover.credibility} color="bg-safe" /><Metric label={profile.accountability.riskLabel} value={cover.scrutiny} color="bg-alert" /></div>
+    <p className="mt-3 text-xs leading-5 text-muted">{profile.accountability.lapseCountLabel} {cover.consecutiveRecordGaps} 天{profile.accountability.allowsLeave ? ` · 请假 ${cover.leaveCount} 次${cover.leaveUntil ? ` · 已登记至 ${formatTime(cover.leaveUntil)}` : ""}` : ""}</p>
+    {workingHours && atOffice && !cover.completedRecordDates.includes(today) && <p className="mt-2 text-[10px] text-muted">{profile.accountability.recordProgressLabel} {recordCredit}/60 分钟</p>}
     <div className="mt-4 space-y-2">{workOptions.filter((option) => profile.workKinds.includes(option.kind)).map((option) => { const Icon = option.icon; return <button key={option.kind} disabled={actionDisabled} onClick={() => onAction({ type: "cover_work", workKind: option.kind, durationMinutes: option.minutes, idempotencyKey: crypto.randomUUID() })} className="flex w-full items-center gap-3 border border-line px-3 py-2.5 text-left text-xs text-paper/85 hover:border-copper disabled:cursor-not-allowed disabled:opacity-40"><Icon size={15} className="shrink-0 text-copper" /><span className="min-w-0 flex-1"><span className="block">{option.label} · {option.minutes} 分钟</span><span className="mt-0.5 block text-[10px] text-muted">{option.detail}</span></span></button>; })}</div>
-    <div className="mt-3 flex gap-2"><select value={reason} disabled={leaveDisabled} onChange={(event) => setReason(event.target.value as LeaveReason)} className="h-9 min-w-0 flex-1 border border-line bg-ink px-2 text-xs text-paper disabled:opacity-40"><option value="family">家庭事务</option><option value="health">身体不适</option><option value="official">公务外出</option></select><Button variant="outline" disabled={leaveDisabled} onClick={() => onAction({ type: "request_leave", reason, durationMinutes: 10, idempotencyKey: crypto.randomUUID() })}><HeartPulse size={14} />请假</Button></div>
+    {profile.accountability.allowsLeave && <div className="mt-3 flex gap-2"><select value={reason} disabled={leaveDisabled} onChange={(event) => setReason(event.target.value as LeaveReason)} className="h-9 min-w-0 flex-1 border border-line bg-ink px-2 text-xs text-paper disabled:opacity-40"><option value="family">家庭事务</option><option value="health">身体不适</option><option value="official">公务外出</option></select><Button variant="outline" disabled={leaveDisabled} onClick={() => onAction({ type: "request_leave", reason, durationMinutes: 10, idempotencyKey: crypto.randomUUID() })}><HeartPulse size={14} />请假</Button></div>}
     {!atOffice ? <p className="mt-3 text-[10px] text-muted">需要在公开身份合理的活动地点处理{profile.routineLabel}。</p> : !workingHours ? <p className="mt-3 text-[10px] text-muted">当前不在{profile.routineLabel}的合理活动时段。</p> : null}
-    {cover.observations.length > 0 && <div className="mt-4 border-t border-line pt-3"><p className="flex items-center gap-2 text-[10px] text-muted"><UserRoundCheck size={12} />同事与上级观察</p><ol className="mt-2 space-y-2">{cover.observations.slice(-3).reverse().map((item) => <li key={item.id} className="text-[10px] leading-5 text-muted"><span className={item.type === "absence_recorded" || item.type === "supervisor_check" ? "text-alert" : "text-paper/80"}>{item.summary}</span><time className="ml-2 text-muted/70">{formatTime(item.observedAt)}</time></li>)}</ol></div>}
-    {cover.workStatus === "unexcused_absence" && <p className="mt-3 flex gap-2 border-l-2 border-alert bg-alert/10 px-3 py-2 text-[10px] leading-5 text-[#efaaa4]"><ShieldAlert size={13} className="mt-0.5 shrink-0" />异常缺勤会增加个人怀疑，并可能引来上级核查。</p>}
+    {cover.observations.length > 0 && <div className="mt-4 border-t border-line pt-3"><p className="flex items-center gap-2 text-[10px] text-muted"><UserRoundCheck size={12} />{profile.accountability.observerLabel}</p><ol className="mt-2 space-y-2">{cover.observations.slice(-3).reverse().map((item) => <li key={item.id} className="text-[10px] leading-5 text-muted"><span className={item.type === "absence_recorded" || item.type === "supervisor_check" ? "text-alert" : "text-paper/80"}>{item.summary}</span><time className="ml-2 text-muted/70">{formatTime(item.observedAt)}</time></li>)}</ol></div>}
+    {cover.recordStatus === "gap" && <p className="mt-3 flex gap-2 border-l-2 border-alert bg-alert/10 px-3 py-2 text-[10px] leading-5 text-[#efaaa4]"><ShieldAlert size={13} className="mt-0.5 shrink-0" />{profile.accountability.lapseWarning}</p>}
   </section>;
 }
 

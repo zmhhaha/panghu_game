@@ -38,17 +38,17 @@ export function toPublicWorldState(state: WorldState): PublicWorldState {
   );
   const clonedState = structuredClone(state);
   clonedState.cover ??= {
-    profileId: "archive_clerk", workStatus: "awaiting_shift", credibility: 65, supervisorSuspicion: 0, consecutiveAbsences: 0, leaveCount: 0,
-    completedWorkDates: [], workCreditMinutesByDate: {}, lastAttendanceEvaluatedDate: null, leaveUntil: null, leaveReason: null, lastWorkAt: null, observations: [],
+    profileId: "archive_clerk", recordStatus: "pending", credibility: 65, scrutiny: 0, consecutiveRecordGaps: 0, leaveCount: 0,
+    completedRecordDates: [], recordCreditMinutesByDate: {}, lastRecordEvaluatedDate: null, leaveUntil: null, leaveReason: null, lastRecordAt: null, observations: [],
   };
   clonedState.cover.profileId ??= "archive_clerk";
-  clonedState.cover.completedWorkDates ??= [];
-  clonedState.cover.workCreditMinutesByDate ??= {};
+  clonedState.cover.completedRecordDates ??= [];
+  clonedState.cover.recordCreditMinutesByDate ??= {};
   clonedState.cover.observations ??= [];
-  clonedState.cover.lastAttendanceEvaluatedDate ??= null;
+  clonedState.cover.lastRecordEvaluatedDate ??= null;
   clonedState.cover.leaveUntil ??= null;
   clonedState.cover.leaveReason ??= null;
-  clonedState.cover.lastWorkAt ??= null;
+  clonedState.cover.lastRecordAt ??= null;
   if (clonedState.activeDialogue) {
     clonedState.activeDialogue.initiatedBy ??= clonedState.activeDialogue.transcript[0]?.speaker === "npc" ? "npc" : "player";
   }

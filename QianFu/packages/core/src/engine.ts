@@ -15,17 +15,17 @@ const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max,
 function createInitialCoverState(profileId: WorldState["cover"]["profileId"] = "archive_clerk"): WorldState["cover"] {
   return {
     profileId,
-    workStatus: "awaiting_shift",
+    recordStatus: "pending",
     credibility: 65,
-    supervisorSuspicion: 0,
-    consecutiveAbsences: 0,
+    scrutiny: 0,
+    consecutiveRecordGaps: 0,
     leaveCount: 0,
-    completedWorkDates: [],
-    workCreditMinutesByDate: {},
-    lastAttendanceEvaluatedDate: null,
+    completedRecordDates: [],
+    recordCreditMinutesByDate: {},
+    lastRecordEvaluatedDate: null,
     leaveUntil: null,
     leaveReason: null,
-    lastWorkAt: null,
+    lastRecordAt: null,
     observations: [],
   };
 }
@@ -74,7 +74,7 @@ export function createInitialWorld(
   const cover = createInitialCoverState(coverProfile.id);
   if (coverProfile.workHours && minuteOfDay(campaign.startTime) >= coverProfile.workHours.endMinute) {
     // A campaign that opens after the shift cannot retroactively punish the player for that day.
-    cover.lastAttendanceEvaluatedDate = coverDate(campaign.startTime);
+    cover.lastRecordEvaluatedDate = coverDate(campaign.startTime);
   }
 
   return {
@@ -203,13 +203,13 @@ export class CampaignEngine {
     this.state.interrogation ??= null;
     this.state.network.tasks ??= [];
     this.state.cover ??= createInitialCoverState();
-    this.state.cover.completedWorkDates ??= [];
-    this.state.cover.workCreditMinutesByDate ??= {};
+    this.state.cover.completedRecordDates ??= [];
+    this.state.cover.recordCreditMinutesByDate ??= {};
     this.state.cover.observations ??= [];
-    this.state.cover.lastAttendanceEvaluatedDate ??= null;
+    this.state.cover.lastRecordEvaluatedDate ??= null;
     this.state.cover.leaveUntil ??= null;
     this.state.cover.leaveReason ??= null;
-    this.state.cover.lastWorkAt ??= null;
+    this.state.cover.lastRecordAt ??= null;
     this.state.radio ??= {
       codebooks: [
         { id: "one_time_pad", usageCount: 0, usesRemaining: 2, lastUsedAt: null },
@@ -406,7 +406,7 @@ export class CampaignEngine {
           narration = wasWatched ? "你借橱窗反光和两次折返确认了尾巴，并在人群换向时甩开对方。" : "你绕行核对了几处视线，没有发现稳定跟踪者，但这段路耗费了时间。";
         } else if (action.kind === "reinforce_cover") {
           next.cover.credibility = clamp(next.cover.credibility + 6);
-          next.cover.supervisorSuspicion = clamp(next.cover.supervisorSuspicion - 8);
+          next.cover.scrutiny = clamp(next.cover.scrutiny - 8);
           next.personalSuspicion = clamp(next.personalSuspicion - 4);
           next.investigation.pressure = clamp(next.investigation.pressure - 4);
           const summary = "你补齐了公开工作记录、往来凭据和可供同事复核的时间线。";
@@ -725,15 +725,15 @@ export class CampaignEngine {
         const requiredDuration = coverWorkMinutes(action.workKind);
         if (action.durationMinutes !== requiredDuration) throw new Error("公开工作耗时不符合规则");
         const date = coverDate(next.currentTime);
-        if (next.cover.completedWorkDates.includes(date)) throw new Error("今天已经完成过公开工作");
-        next.cover.completedWorkDates.push(date);
-        next.cover.completedWorkDates = next.cover.completedWorkDates.slice(-30);
-        next.cover.workStatus = "working";
-        next.cover.consecutiveAbsences = 0;
-        next.cover.lastWorkAt = addMinutes(next.currentTime, action.durationMinutes);
+        if (next.cover.completedRecordDates.includes(date)) throw new Error("今天已经形成过公开记录");
+        next.cover.completedRecordDates.push(date);
+        next.cover.completedRecordDates = next.cover.completedRecordDates.slice(-30);
+        next.cover.recordStatus = "recorded";
+        next.cover.consecutiveRecordGaps = 0;
+        next.cover.lastRecordAt = addMinutes(next.currentTime, action.durationMinutes);
         const benefit = coverWorkBenefit(action.workKind);
         next.cover.credibility = clamp(next.cover.credibility + benefit);
-        next.cover.supervisorSuspicion = clamp(next.cover.supervisorSuspicion - (action.workKind === "submit_report" ? 8 : 4));
+        next.cover.scrutiny = clamp(next.cover.scrutiny - (action.workKind === "submit_report" ? 8 : 4));
         next.personalSuspicion = clamp(next.personalSuspicion - 1);
         const summary = coverWorkSummary(action.workKind);
         addCoverObservation(next, "work_completed", summary);
@@ -744,6 +744,7 @@ export class CampaignEngine {
       }
       case "request_leave": {
         const profile = getCoverProfile(next.cover.profileId);
+        if (!profile.accountability.allowsLeave) throw new Error(`${profile.title}没有固定考勤，不需要办理请假；请通过${profile.routineLabel}留下可核验的公开记录`);
         if (!profile.workLocationIds.includes(next.currentLocationId)) throw new Error("需要在公开身份的活动范围内安排请假");
         if (!isCoverWorkHours(next.currentTime, next.cover.profileId)) throw new Error("当前无法办理请假");
         if (action.durationMinutes !== 10) throw new Error("办理请假需要 10 分钟");
@@ -751,9 +752,9 @@ export class CampaignEngine {
         next.cover.leaveUntil = endOfCoverShift(next.currentTime, next.cover.profileId);
         next.cover.leaveReason = action.reason;
         next.cover.leaveCount += 1;
-        next.cover.workStatus = "on_leave";
+        next.cover.recordStatus = "excused";
         next.cover.credibility = clamp(next.cover.credibility - 2);
-        next.cover.supervisorSuspicion = clamp(next.cover.supervisorSuspicion + (next.cover.leaveCount > 1 ? 2 : 0));
+        next.cover.scrutiny = clamp(next.cover.scrutiny + (next.cover.leaveCount > 1 ? 2 : 0));
         const summary = `你的${leaveReasonLabel(action.reason)}请假已登记，今天的缺席将有公开记录。`;
         addCoverObservation(next, "leave_approved", summary);
         append("cover.leave_approved", { reason: action.reason, leaveUntil: next.cover.leaveUntil, summary });
@@ -799,7 +800,7 @@ export class CampaignEngine {
             narration = "韩世杰没有抓住明确破绽，却将你的名字留在了继续观察的名单上。";
           } else {
             next.personalSuspicion = clamp(next.personalSuspicion + 15 * next.difficulty.enemyResponseSpeed);
-            next.cover.supervisorSuspicion = clamp(next.cover.supervisorSuspicion + 12);
+            next.cover.scrutiny = clamp(next.cover.scrutiny + 12);
             next.investigation.pressure = clamp(next.investigation.pressure + 10);
             narration = "前后说法出现明显漏洞。韩世杰要求补查你的考勤、来往和近期出入记录。";
           }
@@ -1708,14 +1709,19 @@ function advanceEnemyInvestigation(
     notice = "窗外同一道人影再次出现。你意识到自己的停留可能被人记下了。";
   } else if (investigation.pressure >= 80 && escalationReady) {
     state.personalSuspicion = clamp(state.personalSuspicion + 5 * state.difficulty.enemyResponseSpeed);
-    state.cover.supervisorSuspicion = clamp(state.cover.supervisorSuspicion + 6 * state.difficulty.enemyResponseSpeed);
+    state.cover.scrutiny = clamp(state.cover.scrutiny + 6 * state.difficulty.enemyResponseSpeed);
     state.network.exposure = clamp(state.network.exposure + 2 * state.difficulty.enemyResponseSpeed);
     responseAction = "coordinated_review";
     notice = "敌方把零散记录并案审查，公开身份、近期出入和无线电异常开始被交叉核对。";
   } else if (fresh.length > 0 && investigation.pressure >= 30) {
     state.personalSuspicion = clamp(state.personalSuspicion + 1 * state.difficulty.enemyResponseSpeed);
     responseAction = "records_reviewed";
-    notice = "机关里开始核对近期出入和调阅记录，几个人被叫去补填说明。";
+    const accountability = getCoverProfile(state.cover.profileId).accountability;
+    notice = accountability.mode === "business"
+      ? "商会和货栈开始核对近期账册、客户与走货记录，几家往来商号被要求补齐凭据。"
+      : accountability.mode === "editorial"
+        ? "编辑部和警备处开始核对近期选题、采访与来稿记录，几名记者被要求说明行踪。"
+        : "机关里开始核对近期出入和调阅记录，几个人被叫去补填说明。";
   }
 
   for (const locationId of Object.keys(investigation.locationHeat)) {
@@ -1740,36 +1746,36 @@ function advanceCoverIdentity(state: WorldState, append: (type: string, payload:
     cover.leaveReason = null;
   }
 
-  if (profile.workHours && minute >= profile.workHours.endMinute && cover.lastAttendanceEvaluatedDate !== date) {
-    cover.lastAttendanceEvaluatedDate = date;
-    if (!cover.completedWorkDates.includes(date) && !leaveActive) {
-      cover.workStatus = "unexcused_absence";
-      cover.consecutiveAbsences += 1;
+  if (profile.workHours && minute >= profile.workHours.endMinute && cover.lastRecordEvaluatedDate !== date) {
+    cover.lastRecordEvaluatedDate = date;
+    if (!cover.completedRecordDates.includes(date) && !leaveActive) {
+      cover.recordStatus = "gap";
+      cover.consecutiveRecordGaps += 1;
       cover.credibility = clamp(cover.credibility - 16);
-      cover.supervisorSuspicion = clamp(cover.supervisorSuspicion + 12);
+      cover.scrutiny = clamp(cover.scrutiny + 12);
       state.personalSuspicion = clamp(state.personalSuspicion + 4 * state.difficulty.enemyResponseSpeed);
       recordInvestigationEvidence(state, "sensitive_notes", state.currentLocationId, 4, append);
-      const summary = "档案科登记了你今天的异常缺勤，同事开始留意你的行踪。";
+      const summary = profile.accountability.lapseSummary;
       addCoverObservation(state, "absence_recorded", summary);
-      append("cover.absence_recorded", { date, consecutiveAbsences: cover.consecutiveAbsences, summary });
+      append("cover.absence_recorded", { date, consecutiveRecordGaps: cover.consecutiveRecordGaps, eventLabel: profile.accountability.lapseLabel, summary });
       const notices = [summary];
-      if (cover.consecutiveAbsences >= 2 || cover.supervisorSuspicion >= 30) {
-        cover.supervisorSuspicion = clamp(cover.supervisorSuspicion + 8);
+      if (cover.consecutiveRecordGaps >= 2 || cover.scrutiny >= 30) {
+        cover.scrutiny = clamp(cover.scrutiny + 8);
         state.personalSuspicion = clamp(state.personalSuspicion + 3 * state.difficulty.enemyResponseSpeed);
-        const checkSummary = "上级要求你在下次到岗时说明近期缺勤和异常出入。";
+        const checkSummary = profile.accountability.reviewSummary;
         addCoverObservation(state, "supervisor_check", checkSummary);
-        append("cover.supervisor_check", { date, summary: checkSummary });
+        append("cover.supervisor_check", { date, eventLabel: profile.accountability.mode === "business" ? "商会核查" : profile.accountability.mode === "editorial" ? "编辑部追问" : "上级核查", summary: checkSummary });
         notices.push(checkSummary);
       }
       return notices;
     }
   }
 
-  if (leaveActive) cover.workStatus = "on_leave";
-  else if (cover.completedWorkDates.includes(date) && isCoverWorkHours(state.currentTime, cover.profileId)) cover.workStatus = "working";
-  else if (profile.workHours && minute >= profile.workHours.startMinute + 120 && minute < profile.workHours.endMinute && !cover.completedWorkDates.includes(date)) cover.workStatus = "unexcused_absence";
-  else if (!profile.workHours || minute < profile.workHours.endMinute) cover.workStatus = "awaiting_shift";
-  else if (cover.workStatus === "on_leave") cover.workStatus = "awaiting_shift";
+  if (leaveActive) cover.recordStatus = "excused";
+  else if (cover.completedRecordDates.includes(date) && isCoverWorkHours(state.currentTime, cover.profileId)) cover.recordStatus = "recorded";
+  else if (profile.workHours && minute >= profile.workHours.startMinute + 120 && minute < profile.workHours.endMinute && !cover.completedRecordDates.includes(date)) cover.recordStatus = "gap";
+  else if (!profile.workHours || minute < profile.workHours.endMinute) cover.recordStatus = "pending";
+  else if (cover.recordStatus === "excused") cover.recordStatus = "pending";
   return [];
 }
 
@@ -1785,20 +1791,20 @@ function recordCoverConversationCredit(
 ) {
   const profile = getCoverProfile(state.cover.profileId);
   if (!profile.workLocationIds.includes(state.currentLocationId) || !isCoverWorkHours(state.currentTime, state.cover.profileId)) return;
-  if (state.cover.workStatus === "on_leave") return;
+  if (state.cover.recordStatus === "excused") return;
   const date = coverDate(state.currentTime);
-  if (state.cover.completedWorkDates.includes(date)) return;
-  state.cover.workCreditMinutesByDate ??= {};
-  const total = (state.cover.workCreditMinutesByDate[date] ?? 0) + minutes;
-  state.cover.workCreditMinutesByDate[date] = total;
+  if (state.cover.completedRecordDates.includes(date)) return;
+  state.cover.recordCreditMinutesByDate ??= {};
+  const total = (state.cover.recordCreditMinutesByDate[date] ?? 0) + minutes;
+  state.cover.recordCreditMinutesByDate[date] = total;
   if (total < 60) return;
-  state.cover.completedWorkDates.push(date);
-  state.cover.workStatus = "working";
-  state.cover.lastWorkAt = state.currentTime;
+  state.cover.completedRecordDates.push(date);
+  state.cover.recordStatus = "recorded";
+  state.cover.lastRecordAt = state.currentTime;
   state.cover.credibility = clamp(state.cover.credibility + 2);
-  const summary = "你在公开岗位与同事持续处理事务，形成了可被核对的在岗记录。";
+  const summary = profile.accountability.conversationCreditSummary;
   addCoverObservation(state, "work_completed", summary);
-  append("cover.activity_credited", { date, minutes: total, source: "workplace_dialogue", summary });
+  append("cover.activity_credited", { date, minutes: total, source: "workplace_dialogue", eventLabel: profile.accountability.recordProgressLabel, summary });
 }
 
 function coverDate(iso: string) {
@@ -2093,7 +2099,7 @@ export function calculateScore(campaign: CampaignDefinition, state: WorldState):
   const intelligence = confidenceValues.length ? Math.round(confidenceValues.reduce((a, b) => a + b, 0) / confidenceValues.length * 15) : 0;
   const network = Math.round((1 - state.network.exposure / 100) * 20);
   const pressureFactor = 1 - state.investigation.pressure / 100;
-  const cover = Math.round((((1 - state.personalSuspicion / 100) * 0.35) + (state.cover.credibility / 100 * 0.3) + ((1 - state.cover.supervisorSuspicion / 100) * 0.2) + (pressureFactor * 0.15)) * 15);
+  const cover = Math.round((((1 - state.personalSuspicion / 100) * 0.35) + (state.cover.credibility / 100 * 0.3) + ((1 - state.cover.scrutiny / 100) * 0.2) + (pressureFactor * 0.15)) * 15);
   const efficiency = Math.round(((state.playerEnergy / 100) * 0.7 + pressureFactor * 0.3) * 10);
   const total = clamp(mission + intelligence + network + cover + efficiency);
   const grade = total >= 90 ? "S" : total >= 80 ? "A" : total >= 70 ? "B" : total >= 60 ? "C" : total >= 40 ? "D" : "E";

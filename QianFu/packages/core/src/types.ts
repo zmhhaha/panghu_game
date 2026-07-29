@@ -9,7 +9,7 @@ export type EndingType =
   | "player_terminated";
 
 export type AgentTier = "focus" | "active" | "background" | "dormant";
-export type CoverWorkStatus = "awaiting_shift" | "working" | "on_leave" | "unexcused_absence";
+export type CoverRecordStatus = "pending" | "recorded" | "excused" | "gap";
 export type CoverProfileId = "archive_clerk" | "travelling_merchant" | "freelance_writer";
 export type CoverWorkKind = "file_sorting" | "duty_shift" | "submit_report" | "settle_accounts" | "visit_clients" | "stock_check" | "submit_column" | "street_research" | "proofread_copy";
 export type LeaveReason = "family" | "health" | "official";
@@ -48,17 +48,17 @@ export interface CoverObservation {
 
 export interface CoverState {
   profileId: CoverProfileId;
-  workStatus: CoverWorkStatus;
+  recordStatus: CoverRecordStatus;
   credibility: number;
-  supervisorSuspicion: number;
-  consecutiveAbsences: number;
+  scrutiny: number;
+  consecutiveRecordGaps: number;
   leaveCount: number;
-  completedWorkDates: string[];
-  workCreditMinutesByDate?: Record<string, number>;
-  lastAttendanceEvaluatedDate: string | null;
+  completedRecordDates: string[];
+  recordCreditMinutesByDate?: Record<string, number>;
+  lastRecordEvaluatedDate: string | null;
   leaveUntil: string | null;
   leaveReason: LeaveReason | null;
-  lastWorkAt: string | null;
+  lastRecordAt: string | null;
   observations: CoverObservation[];
 }
 
@@ -298,6 +298,22 @@ export interface CoverProfileDefinition {
   workHours: { startMinute: number; endMinute: number } | null;
   workKinds: CoverWorkKind[];
   initialContactCharacterIds: string[];
+  accountability: {
+    mode: "attendance" | "business" | "editorial";
+    awaitingLabel: string;
+    activeLabel: string;
+    excusedLabel: string;
+    lapseLabel: string;
+    riskLabel: string;
+    lapseCountLabel: string;
+    recordProgressLabel: string;
+    observerLabel: string;
+    allowsLeave: boolean;
+    lapseSummary: string;
+    reviewSummary: string;
+    conversationCreditSummary: string;
+    lapseWarning: string;
+  };
 }
 
 export type IntelEvidenceAssessment = "unverified" | "corroborates" | "contradicts" | "dependent";
@@ -551,9 +567,10 @@ export interface CampaignReport {
     investigationPressure: number;
   };
   coverRecord?: {
+    profileId: CoverProfileId;
     credibility: number;
-    supervisorSuspicion: number;
-    consecutiveAbsences: number;
+    scrutiny: number;
+    consecutiveRecordGaps: number;
     leaveCount: number;
   };
   timeline: CampaignReportTimelineEntry[];
