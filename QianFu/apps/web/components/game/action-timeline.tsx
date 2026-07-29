@@ -55,7 +55,7 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
     "intel.transmitted": "传递情报", "radio.message_sent": "发出电报", "radio.receipt_received": "收到回执",
     "comrade.task_completed": "同志任务完成", "comrade.task_failed": "同志任务失败", "character.recruited": "正式招募",
     "investigation.action_taken": "敌方调查行动", "character.schedule_advanced": "人物行程变化",
-    "mission.objective_completed": "任务完成", "mission.objective_unlocked": "后续任务",
+    "mission.objective_completed": "任务完成", "mission.objective_failed": "任务未完成", "mission.objective_unlocked": "后续任务",
     "interrogation.scheduled": "收到传唤", "interrogation.started": "盘问开始", "interrogation.resolved": "盘问结束",
     "narrative.event_resolved": "剧情事件", "narrative.thread_updated": "调查线程更新", "location.discovered": "解锁地点", "location.stage_changed": "地点认知变化",
     "cover.work_completed": "完成公开工作", "cover.activity_credited": "形成在岗记录", "cover.leave_approved": "请假登记", "cover.absence_recorded": "异常缺勤", "cover.supervisor_check": "上级核查",
@@ -70,6 +70,7 @@ function describeEvent(event: GameEvent, payload: Record<string, unknown>, conte
         : event.type === "dialogue.started" || event.type === "dialogue.ended" ? `${character ?? "目标人物"}${event.type === "dialogue.started" ? "开始与你交谈" : "的对话结束"}。`
           : reports || (typeof payload.summary === "string" ? payload.summary : typeof payload.notice === "string" ? payload.notice : title);
   if (event.type === "mission.objective_completed") return { title, text: `${objective ?? String(payload.title ?? "当前任务")}已经完成。` };
+  if (event.type === "mission.objective_failed") return { title, text: `${objective ?? String(payload.title ?? "当前任务")}未能按时完成，但后续任务仍会继续。` };
   if (event.type === "mission.objective_unlocked") return { title, text: `组织下达了${objective ?? String(payload.title ?? "后续任务")}。` };
   if (event.type === "location.discovered") return { title, text: `已解锁地点：${String(payload.locationName ?? location ?? "未知地点")}。${hintText(payload)}` };
   if (event.type === "location.stage_changed") {

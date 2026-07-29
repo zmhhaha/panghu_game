@@ -49,7 +49,7 @@ export interface GameContext {
     deadline: string;
     minimumConfidence: number;
     acceptedDeliveryMethods: string[];
-    status: "locked" | "in_progress" | "ready_to_transmit" | "completed" | "overdue";
+    status: "locked" | "in_progress" | "ready_to_transmit" | "completed" | "failed" | "overdue";
     remainingMinutes: number;
     intel: Array<{
       id: string;

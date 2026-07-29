@@ -57,7 +57,7 @@ describe("GameStore", () => {
     const game = await store.createGame(owner.id, "undercover");
 
     expect(await store.getReport(game.gameInstanceId, owner.id)).toBeNull();
-    const result = await store.execute(game.gameInstanceId, owner.id, { type: "wait", durationMinutes: 6000, idempotencyKey: "finish-shared-report" });
+    const result = await store.execute(game.gameInstanceId, owner.id, { type: "wait", durationMinutes: 16000, idempotencyKey: "finish-shared-report" });
     expect(result?.state.status).toBe("finished");
 
     const report = await store.getReport(game.gameInstanceId, owner.id);

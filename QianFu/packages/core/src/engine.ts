@@ -98,6 +98,7 @@ export function createInitialWorld(
     resolvedNarrativeEventIds: [],
     narrativeThreads: [],
     completedObjectiveIds: [],
+    failedObjectiveIds: [],
     status: "active",
     stateVersion: 0,
     lastEventSeq: 0,
@@ -187,6 +188,7 @@ export class CampaignEngine {
     this.state.completedObjectiveIds ??= campaign.objectives
       .filter((objective) => objectiveSatisfied(campaign, this.state, objective))
       .map((objective) => objective.id);
+    this.state.failedObjectiveIds ??= [];
     this.state.investigation ??= {
       pressure: 0,
       locationHeat: Object.fromEntries(campaign.locations.map((location) => [location.id, 0])),
@@ -1196,12 +1198,21 @@ function advanceMissionObjectives(
   append: (type: string, payload: unknown) => void,
 ): string[] {
   const completedIds = state.completedObjectiveIds ?? (state.completedObjectiveIds = []);
+  const failedIds = state.failedObjectiveIds ?? (state.failedObjectiveIds = []);
   const notices: string[] = [];
   for (const objective of campaign.objectives
     .filter((item) => item.required)
     .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))) {
-    if (completedIds.includes(objective.id) || !isObjectiveUnlocked(state, objective)) continue;
-    if (!objectiveSatisfied(campaign, state, objective)) continue;
+    if (completedIds.includes(objective.id) || failedIds.includes(objective.id) || !isObjectiveUnlocked(state, objective)) continue;
+    if (!objectiveSatisfied(campaign, state, objective)) {
+      if (Date.parse(state.currentTime) < Date.parse(objective.deadline) || hasOnTimePendingTransmission(state, objective)) continue;
+      failedIds.push(objective.id);
+      const reason = "任务超过截止时间，组织未能收到满足要求的完整情报";
+      append("mission.objective_failed", { objectiveId: objective.id, title: objective.title ?? objective.id, deadline: objective.deadline, reason });
+      notices.push(`${objective.title ?? objective.id}未能按时完成，但战役仍会继续。组织正在调整后续任务。`);
+      appendUnlockedObjectives(campaign, state, objective.id, append, notices);
+      continue;
+    }
     completedIds.push(objective.id);
     const effects = objective.completionEffects;
     if (effects) {
@@ -1240,19 +1251,40 @@ function advanceMissionObjectives(
       notices.push(effects.notice);
     }
     append("mission.objective_completed", { objectiveId: objective.id, title: objective.title ?? objective.id, effects });
-    for (const unlocked of campaign.objectives.filter((candidate) =>
-      !completedIds.includes(candidate.id)
-      && (candidate.unlockAfterObjectiveIds ?? []).includes(objective.id)
-      && isObjectiveUnlocked(state, candidate))) {
-      append("mission.objective_unlocked", { objectiveId: unlocked.id, title: unlocked.title ?? unlocked.id, deadline: unlocked.deadline });
-      notices.push(`组织下达后续任务：${unlocked.title ?? unlocked.id}`);
-    }
+    appendUnlockedObjectives(campaign, state, objective.id, append, notices);
   }
   return notices;
 }
 
+function appendUnlockedObjectives(
+  campaign: CampaignDefinition,
+  state: WorldState,
+  resolvedObjectiveId: string,
+  append: (type: string, payload: unknown) => void,
+  notices: string[],
+) {
+  const resolvedIds = new Set([...(state.completedObjectiveIds ?? []), ...(state.failedObjectiveIds ?? [])]);
+  for (const unlocked of campaign.objectives.filter((candidate) =>
+    !resolvedIds.has(candidate.id)
+    && (candidate.unlockAfterObjectiveIds ?? []).includes(resolvedObjectiveId)
+    && isObjectiveUnlocked(state, candidate))) {
+    append("mission.objective_unlocked", { objectiveId: unlocked.id, title: unlocked.title ?? unlocked.id, deadline: unlocked.deadline });
+    notices.push(`组织下达后续任务：${unlocked.title ?? unlocked.id}`);
+  }
+}
+
+function hasOnTimePendingTransmission(state: WorldState, objective: MissionObjective): boolean {
+  const requiredIntelIds = new Set(objective.requiredIntelIds);
+  return state.radio.transmissions.some((transmission) =>
+    transmission.receiptStatus === "pending"
+    && Date.parse(transmission.completedAt) <= Date.parse(objective.deadline)
+    && transmission.items.some((item) => requiredIntelIds.has(item.intelId)),
+  );
+}
+
 export function isObjectiveUnlocked(state: WorldState, objective: MissionObjective): boolean {
-  return (objective.unlockAfterObjectiveIds ?? []).every((id) => state.completedObjectiveIds?.includes(id));
+  const resolvedIds = new Set([...(state.completedObjectiveIds ?? []), ...(state.failedObjectiveIds ?? [])]);
+  return (objective.unlockAfterObjectiveIds ?? []).every((id) => resolvedIds.has(id));
 }
 
 export function isIntelUnlocked(campaign: CampaignDefinition, state: WorldState, intelId: string): boolean {
@@ -2079,16 +2111,17 @@ export function evaluateEnding(campaign: CampaignDefinition, state: WorldState):
     if (state.investigation.pressure >= 80) reasons.push("敌方调查压力过高，行动网络留下了重大风险");
     return { type: costly ? "costly_success" : "complete_success", title: costly ? "代价成功" : "完整成功", reasons, score };
   }
-  const activeObjectives = requiredObjectives.filter((objective) => isObjectiveUnlocked(state, objective) && !objectiveSatisfied(campaign, state, objective));
-  if (activeObjectives.length === 0) return null;
-  const deadline = Math.min(...activeObjectives.map((item) => new Date(item.deadline).getTime()));
-  if (Date.parse(state.currentTime) >= deadline) {
-    const pendingBeforeDeadline = state.radio.transmissions.some((transmission) =>
-      transmission.receiptStatus === "pending" && Date.parse(transmission.completedAt) <= deadline,
-    );
-    if (pendingBeforeDeadline) return null;
+  const failedIds = new Set(state.failedObjectiveIds ?? []);
+  const allResolved = requiredObjectives.every((objective) =>
+    completed.some((item) => item.id === objective.id) || failedIds.has(objective.id),
+  );
+  if (allResolved) {
     const sentFalseIntel = campaign.intel.some((definition) => definition.truth === "false" && state.intel[definition.id]?.deliveredAt);
-    return { type: sentFalseIntel ? "intelligence_failure" : "mission_failure", title: sentFalseIntel ? "情报失败" : "任务失败", reasons: [sentFalseIntel ? "错误情报已经送达组织" : "核心任务超过截止时间"], score };
+    if (sentFalseIntel) return { type: "intelligence_failure", title: "情报失败", reasons: ["错误情报已经送达组织"], score };
+    if (completed.length > 0) {
+      return { type: "partial_success", title: "部分成功", reasons: [`完成 ${completed.length} 项任务，${failedIds.size} 项任务未能按时完成`], score };
+    }
+    return { type: "mission_failure", title: "任务失败", reasons: ["所有核心任务均未能在截止时间前完成"], score };
   }
   return null;
 }

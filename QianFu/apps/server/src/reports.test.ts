@@ -14,7 +14,7 @@ function finishedFixture(campaign: CampaignDefinition = LINJIANG_1942) {
     summary: "韩世杰提供了“仓库编号：七码头二号仓”线索，尚缺独立来源核验。", collectedAt: state.currentTime,
   });
   const engine = new CampaignEngine(campaign, state);
-  const result = engine.execute({ type: "wait", durationMinutes: 6000, idempotencyKey: "finish-report-test" });
+  const result = engine.execute({ type: "wait", durationMinutes: 16000, idempotencyKey: "finish-report-test" });
   return { state: result.state, events: result.events as GameEvent[] };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CampaignEngine, calculateScore, createInitialWorld, getCountermeasureOptions, getRadioSites, toPublicGameEvents, toPublicWorldState, type CampaignDefinition, type WorldState } from "../src/index.js";
+import { CampaignEngine, calculateScore, createInitialWorld, getCountermeasureOptions, getRadioSites, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type CampaignDefinition, type WorldState } from "../src/index.js";
 
 const campaign: CampaignDefinition = {
   id: "test", version: "1.0.0", engineVersion: "1.0.0", name: "Test",
@@ -602,6 +602,33 @@ describe("sequential missions, interrogation, and radio sites", () => {
     expect(result.state.ending?.type).toMatch(/success/);
   });
 
+  it("fails an overdue mission but unlocks the next mission and keeps the campaign active", () => {
+    const state = createInitialWorld(sequentialCampaign, "sequential-missed-first", "user-1");
+    state.currentTime = sequentialCampaign.objectives[0].deadline;
+    const result = new CampaignEngine(sequentialCampaign, state).execute({
+      type: "wait", durationMinutes: 10, idempotencyKey: "settle-missed-first",
+    });
+    expect(result.state.status).toBe("active");
+    expect(result.state.failedObjectiveIds).toEqual(["mission-1"]);
+    expect(result.events.some((event) => event.type === "mission.objective_failed")).toBe(true);
+    expect(result.events.some((event) => event.type === "mission.objective_unlocked" && (event.payload as { objectiveId?: string }).objectiveId === "mission-2")).toBe(true);
+    expect(isObjectiveUnlocked(result.state, sequentialCampaign.objectives[1])).toBe(true);
+    expect(isIntelUnlocked(sequentialCampaign, result.state, "second")).toBe(true);
+  });
+
+  it("settles as a partial success after later missions continue beyond an earlier failure", () => {
+    const state = createInitialWorld(sequentialCampaign, "sequential-partial", "user-1");
+    state.currentTime = sequentialCampaign.objectives[0].deadline;
+    const engine = new CampaignEngine(sequentialCampaign, state);
+    engine.execute({ type: "wait", durationMinutes: 10, idempotencyKey: "fail-first-before-recovery" });
+    completeIntel(engine, "second");
+    const result = completeIntel(engine, "third");
+    expect(result.state.failedObjectiveIds).toEqual(["mission-1"]);
+    expect(result.state.completedObjectiveIds).toEqual(["mission-2", "mission-3"]);
+    expect(result.state.status).toBe("finished");
+    expect(result.state.ending?.type).toBe("partial_success");
+  });
+
   it("starts with one usable radio safehouse and unlocks an ally site only after recruitment", () => {
     const state = createInitialWorld(sequentialCampaign, "radio-sites", "user-1");
     expect(state.discoveredLocationIds).toContain("safe-flat");
@@ -695,12 +722,14 @@ describe("sequential missions, interrogation, and radio sites", () => {
   it("migrates old saves without mission and interrogation state", () => {
     const state = createInitialWorld(sequentialCampaign, "old-sequential-save", "user-1");
     delete (state as { completedObjectiveIds?: string[] }).completedObjectiveIds;
+    delete (state as { failedObjectiveIds?: string[] }).failedObjectiveIds;
     delete (state as { interrogation?: WorldState["interrogation"] }).interrogation;
     delete state.intel.second;
     state.discoveredLocationIds = state.discoveredLocationIds.filter((id) => id !== "safe-flat");
     delete state.locationKnowledge?.["safe-flat"];
     const migrated = new CampaignEngine(sequentialCampaign, state).getState();
     expect(migrated.completedObjectiveIds).toEqual([]);
+    expect(migrated.failedObjectiveIds).toEqual([]);
     expect(migrated.interrogation).toBeNull();
     expect(migrated.intel.second).toMatchObject({ knownFields: [], deliveredFields: [], confidence: 0 });
     expect(migrated.discoveredLocationIds).toContain("safe-flat");

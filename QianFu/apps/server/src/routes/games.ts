@@ -199,7 +199,7 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
           deadline: objective.deadline,
           minimumConfidence: objective.minimumConfidence,
           acceptedDeliveryMethods: objective.acceptedDeliveryMethods,
-          status: !unlocked ? "locked" : completed ? "completed" : remainingMinutes === 0 ? "overdue" : allReady ? "ready_to_transmit" : "in_progress",
+          status: state.failedObjectiveIds?.includes(objective.id) ? "failed" : !unlocked ? "locked" : completed ? "completed" : remainingMinutes === 0 ? "overdue" : allReady ? "ready_to_transmit" : "in_progress",
           remainingMinutes,
           intel: unlocked ? intel : [],
         };

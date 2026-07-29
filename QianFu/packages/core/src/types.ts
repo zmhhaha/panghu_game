@@ -597,6 +597,7 @@ export interface WorldState {
   resolvedNarrativeEventIds?: string[];
   narrativeThreads?: NarrativeThreadState[];
   completedObjectiveIds?: string[];
+  failedObjectiveIds?: string[];
   status: GameStatus;
   stateVersion: number;
   lastEventSeq: number;

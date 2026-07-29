@@ -123,6 +123,7 @@ function reportSummary(state: WorldState): string {
   const recruited = state.network.activeMemberIds.length;
   if (state.ending?.type === "complete_success") return `任务完整达成。你在保持潜线运转的同时送出了核心情报，最终评价为 ${grade}。`;
   if (state.ending?.type === "costly_success") return `核心任务已经完成，但组织为此承担了明显代价。共送出 ${delivered} 项情报、联络 ${recruited} 名同志，最终评价为 ${grade}。`;
+  if (state.ending?.type === "partial_success") return `战役中的部分任务已经完成，其余任务未能按时达成。共送出 ${delivered} 项情报、联络 ${recruited} 名同志，最终评价为 ${grade}。`;
   return `${title}。本次行动共送出 ${delivered} 项情报、联络 ${recruited} 名同志，最终评价为 ${grade}。失败与损失已被冻结在这份档案中。`;
 }
 
@@ -132,7 +133,7 @@ function buildTimeline(campaign: CampaignDefinition, events: GameEvent[]): Campa
     "lead.resolved", "narrative.event_resolved", "location.stage_changed", "cover.work_completed", "cover.activity_credited",
     "character.recruitment_progress", "comrade.task_completed", "comrade.task_failed",
     "radio.message_sent", "radio.receipt_received", "investigation.surveillance_started", "player.moved",
-    "player.rested", "mission.objective_completed", "mission.objective_unlocked", "interrogation.scheduled",
+    "player.rested", "mission.objective_completed", "mission.objective_failed", "mission.objective_unlocked", "interrogation.scheduled",
     "interrogation.started", "interrogation.resolved",
     "director.contact_offered", "director.contact_accepted", "director.contact_refused", "counterintelligence.completed",
   ].includes(event.type));
@@ -166,6 +167,7 @@ function describeEvent(campaign: CampaignDefinition, event: GameEvent): Campaign
     "comrade.task_failed": ["委派受挫", String(payload.report ?? "一项委派任务未能完成")],
     "investigation.surveillance_started": ["敌情变化", `${location?.name ?? "一处地点"}附近出现疑似监视`],
     "mission.objective_completed": ["任务完成", `${String(payload.title ?? "当前任务")}已经完成，行动影响开始进入全局时间线`],
+    "mission.objective_failed": ["任务未完成", `${String(payload.title ?? "当前任务")}未能按时完成，但战役和后续任务仍将继续`],
     "mission.objective_unlocked": ["后续任务", `组织下达了${String(payload.title ?? "新的任务")}`],
     "interrogation.scheduled": ["敌方传唤", "警备处要求核对公开身份与近期行踪"],
     "interrogation.started": ["接受盘问", "敌方正式开始交叉核对公开记录"],
