@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
   CampaignEngine, createInitialWorld, type CampaignReportBundle, type CampaignShareSummary,
-  type DifficultyConfig, type GameAction, type GameEvent, type SharedCampaignReport, type WorldState,
+  type GameAction, type GameEvent, type SharedCampaignReport, type WorldState,
 } from "@qianfu/core";
-import { LINJIANG_1942 } from "@qianfu/content";
+import { getCampaignDefinition } from "@qianfu/content";
 import type { AuthUser } from "./middleware/auth.js";
-import type { GameRepository, PlayerSnapshotSummary, UserRecord } from "./repository.js";
+import type { CreateGameOptions, GameRepository, PlayerSnapshotSummary, UserRecord } from "./repository.js";
 import { buildCampaignReportBundle } from "./reports.js";
 
 interface StoredGame { engine: CampaignEngine; events: GameEvent[]; createdAt: string; snapshots: Map<1 | 2, { summary: PlayerSnapshotSummary; state: WorldState; eventCount: number }> }
@@ -30,10 +30,11 @@ export class InMemoryGameRepository implements GameRepository {
     return created;
   }
 
-  async createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"], coverProfileId: WorldState["cover"]["profileId"] = "archive_clerk"): Promise<WorldState> {
+  async createGame(ownerUserId: string, options: CreateGameOptions): Promise<WorldState> {
     const gameInstanceId = randomUUID();
-    const state = createInitialWorld(LINJIANG_1942, gameInstanceId, ownerUserId, difficultyId, coverProfileId);
-    this.games.set(gameInstanceId, { engine: new CampaignEngine(LINJIANG_1942, state), events: [], createdAt: new Date().toISOString(), snapshots: new Map() });
+    const campaign = getCampaignDefinition(options.campaignId, options.campaignVersion);
+    const state = createInitialWorld(campaign, gameInstanceId, ownerUserId, options.difficultyId, options.coverProfileId);
+    this.games.set(gameInstanceId, { engine: new CampaignEngine(campaign, state), events: [], createdAt: new Date().toISOString(), snapshots: new Map() });
     return state;
   }
 
@@ -64,7 +65,8 @@ export class InMemoryGameRepository implements GameRepository {
     const result = game.engine.execute(action);
     game.events.push(...result.events);
     if (result.state.status === "finished" && !this.reports.has(gameInstanceId)) {
-      this.reports.set(gameInstanceId, buildCampaignReportBundle(LINJIANG_1942, result.state, game.events, randomUUID(), new Date().toISOString()));
+      const campaign = getCampaignDefinition(result.state.campaignId, result.state.campaignVersion);
+      this.reports.set(gameInstanceId, buildCampaignReportBundle(campaign, result.state, game.events, randomUUID(), new Date().toISOString()));
     }
     return result;
   }
@@ -81,7 +83,8 @@ export class InMemoryGameRepository implements GameRepository {
     if (state.status !== "finished") return null;
     let report = this.reports.get(gameInstanceId);
     if (!report) {
-      report = buildCampaignReportBundle(LINJIANG_1942, state, game.events, randomUUID(), new Date().toISOString());
+      const campaign = getCampaignDefinition(state.campaignId, state.campaignVersion);
+      report = buildCampaignReportBundle(campaign, state, game.events, randomUUID(), new Date().toISOString());
       this.reports.set(gameInstanceId, report);
     }
     return structuredClone(report);
@@ -138,7 +141,8 @@ export class InMemoryGameRepository implements GameRepository {
     const game = this.findGame(gameInstanceId, ownerUserId); if (!game) return null;
     const saved = game.snapshots.get(slot); const current = game.engine.getState();
     if (!saved || current.status === "finished" || saved.state.campaignVersion !== current.campaignVersion || saved.state.engineVersion !== current.engineVersion) return null;
-    game.engine = new CampaignEngine(LINJIANG_1942, structuredClone(saved.state));
+    const campaign = getCampaignDefinition(saved.state.campaignId, saved.state.campaignVersion);
+    game.engine = new CampaignEngine(campaign, structuredClone(saved.state));
     game.events = game.events.slice(0, saved.eventCount);
     return { state: game.engine.getState(), events: structuredClone(game.events) };
   }

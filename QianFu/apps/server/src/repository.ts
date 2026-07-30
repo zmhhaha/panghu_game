@@ -18,9 +18,16 @@ export interface PlayerSnapshotSummary {
   lastEventSeq: number;
 }
 
+export interface CreateGameOptions {
+  campaignId: string;
+  campaignVersion: string;
+  difficultyId: DifficultyConfig["id"];
+  coverProfileId: WorldState["cover"]["profileId"];
+}
+
 export interface GameRepository {
   ensureUser(user: AuthUser): Promise<UserRecord>;
-  createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"], coverProfileId?: WorldState["cover"]["profileId"]): Promise<WorldState>;
+  createGame(ownerUserId: string, options: CreateGameOptions): Promise<WorldState>;
   listGames(ownerUserId: string): Promise<WorldState[]>;
   getGame(gameInstanceId: string, ownerUserId: string): Promise<WorldState | null>;
   deleteGame(gameInstanceId: string, ownerUserId: string): Promise<boolean>;

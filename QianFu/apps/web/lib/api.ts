@@ -1,10 +1,11 @@
 import type {
-  ActionResult, CampaignReportBundle, CampaignShareSummary, DifficultyConfig,
+  ActionResult, CampaignCatalogEntry, CampaignReportBundle, CampaignShareSummary, DifficultyConfig,
   DifficultyVisibilityPolicy, GameAction, GameEvent, PublicWorldState, RecruitmentCase, SharedCampaignReport,
   RadioMessageFormat, RadioMessageItem, RadioMinigameConfig, RadioTiming,
 } from "@qianfu/core";
 
 export type PublicActionResult = Omit<ActionResult, "state"> & { state: PublicWorldState };
+export type CampaignListItem = PublicWorldState & { campaignName: string; currentLocationName: string };
 
 export interface GameContext {
   visibility: DifficultyVisibilityPolicy;
@@ -110,8 +111,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me: () => request<{ id: string; username: string }>("/api/v1/auth/me"),
-  listGames: () => request<{ games: PublicWorldState[] }>("/api/v1/games"),
-  createGame: (difficulty: DifficultyConfig["id"], coverProfileId: PublicWorldState["cover"]["profileId"]) => request<PublicWorldState>("/api/v1/games", { method: "POST", body: JSON.stringify({ difficulty, coverProfileId }) }),
+  listCampaigns: () => request<{ campaigns: CampaignCatalogEntry[] }>("/api/v1/campaigns"),
+  listGames: () => request<{ games: CampaignListItem[] }>("/api/v1/games"),
+  createGame: (campaign: Pick<CampaignCatalogEntry, "id" | "version">, difficulty: DifficultyConfig["id"], coverProfileId: PublicWorldState["cover"]["profileId"]) => request<PublicWorldState>("/api/v1/games", {
+    method: "POST",
+    body: JSON.stringify({ campaignId: campaign.id, campaignVersion: campaign.version, difficulty, coverProfileId }),
+  }),
   getGame: (id: string) => request<PublicWorldState>(`/api/v1/games/${id}`),
   deleteGame: (id: string) => request<{ deleted: true }>(`/api/v1/games/${id}`, { method: "DELETE" }),
   getContext: (id: string) => request<GameContext>(`/api/v1/games/${id}/context`),

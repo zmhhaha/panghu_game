@@ -1,20 +1,23 @@
 import { randomUUID } from "node:crypto";
 import {
   CampaignEngine, createInitialWorld, type CampaignReport, type CampaignReportBundle,
-  type CampaignShareSummary, type DifficultyConfig, type GameAction, type GameEvent,
+  type CampaignShareSummary, type GameAction, type GameEvent,
   type SharedCampaignReport, type WorldState,
 } from "@qianfu/core";
-import { LINJIANG_1942 } from "@qianfu/content";
+import { getCampaignDefinition } from "@qianfu/content";
 import { Pool, type PoolClient } from "pg";
 import type { AuthUser } from "./middleware/auth.js";
-import type { GameRepository, PlayerSnapshotSummary, UserRecord } from "./repository.js";
+import type { CreateGameOptions, GameRepository, PlayerSnapshotSummary, UserRecord } from "./repository.js";
 import { buildCampaignReportBundle } from "./reports.js";
 
 interface GameRow {
   state: WorldState;
 }
 
-const hydrateWorldState = (state: WorldState): WorldState => new CampaignEngine(LINJIANG_1942, state).getState();
+const hydrateWorldState = (state: WorldState): WorldState => {
+  const campaign = getCampaignDefinition(state.campaignId, state.campaignVersion);
+  return new CampaignEngine(campaign, state).getState();
+};
 
 interface ReportRow {
   owner_report: CampaignReport;
@@ -78,9 +81,10 @@ export class PostgresGameRepository implements GameRepository {
     return mapUser(result.rows[0]);
   }
 
-  async createGame(ownerUserId: string, difficultyId: DifficultyConfig["id"], coverProfileId: WorldState["cover"]["profileId"] = "archive_clerk"): Promise<WorldState> {
+  async createGame(ownerUserId: string, options: CreateGameOptions): Promise<WorldState> {
     const gameInstanceId = randomUUID();
-    const state = createInitialWorld(LINJIANG_1942, gameInstanceId, ownerUserId, difficultyId, coverProfileId);
+    const campaign = getCampaignDefinition(options.campaignId, options.campaignVersion);
+    const state = createInitialWorld(campaign, gameInstanceId, ownerUserId, options.difficultyId, options.coverProfileId);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -149,7 +153,8 @@ export class PostgresGameRepository implements GameRepository {
         return { state: hydrateWorldState(state), events: [], narration: "该行动已经处理。", duplicate: true, notices: [] };
       }
 
-      const result = new CampaignEngine(LINJIANG_1942, state).execute(action);
+      const campaign = getCampaignDefinition(state.campaignId, state.campaignVersion);
+      const result = new CampaignEngine(campaign, state).execute(action);
       await client.query(
         `INSERT INTO game_actions (game_instance_id, idempotency_key, action_type, action, event_seq)
          VALUES ($1, $2, $3, $4, $5)`,
@@ -302,7 +307,8 @@ export class PostgresGameRepository implements GameRepository {
         "SELECT state, campaign_version, engine_version, last_event_seq FROM player_save_snapshots WHERE game_instance_id = $1 AND slot = $2", [gameInstanceId, slot]);
       const saved = snap.rows[0];
       if (!saved || saved.campaign_version !== current.campaignVersion || saved.engine_version !== current.engineVersion) { await client.query("ROLLBACK"); return null; }
-      const state = saved.state;
+      const campaign = getCampaignDefinition(saved.state.campaignId, saved.state.campaignVersion);
+      const state = new CampaignEngine(campaign, saved.state).getState();
       await client.query("DELETE FROM game_events WHERE game_instance_id = $1 AND event_seq > $2", [gameInstanceId, saved.last_event_seq]);
       await client.query("DELETE FROM game_actions WHERE game_instance_id = $1 AND event_seq > $2", [gameInstanceId, saved.last_event_seq]);
       await client.query("UPDATE game_instances SET status = $3, state_version = $4, last_event_seq = $5, state = $6, closed_at = NULL, updated_at = now() WHERE id = $1", [gameInstanceId, state.status, state.stateVersion, state.lastEventSeq, state]);
@@ -332,7 +338,8 @@ export class PostgresGameRepository implements GameRepository {
     );
     const events = eventRows.rows.map((event) => ({ ...event, occurredAt: new Date(event.occurredAt).toISOString() }));
     const reportId = randomUUID();
-    const bundle = buildCampaignReportBundle(LINJIANG_1942, state, events, reportId, new Date().toISOString());
+    const campaign = getCampaignDefinition(state.campaignId, state.campaignVersion);
+    const bundle = buildCampaignReportBundle(campaign, state, events, reportId, new Date().toISOString());
     await client.query(
       `INSERT INTO campaign_reports
         (id, game_instance_id, owner_user_id, report_version, owner_report, public_report)

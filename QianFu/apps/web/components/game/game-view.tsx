@@ -37,6 +37,7 @@ const tones: Array<{ id: DialogueTone; label: string }> = [
   { id: "neutral", label: "平静" }, { id: "friendly", label: "友好" },
   { id: "formal", label: "正式" }, { id: "urgent", label: "急切" }, { id: "threatening", label: "强硬" },
 ];
+const difficultyLabels = { story: "引导模式", undercover: "潜伏模式", iron_curtain: "铁幕模式" } as const;
 
 type DiscoveryNotice = {
   locations: Array<{ key: string; title: string; detail: string }>;
@@ -162,7 +163,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
       <div className="mx-auto flex h-16 max-w-[1480px] items-center justify-between px-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <Link href="/" aria-label="返回战役列表" className="grid h-9 w-9 place-items-center text-muted hover:text-paper"><ArrowLeft size={18} /></Link>
-          <div className="min-w-0"><h1 className="truncate font-serif text-lg">临江潜线</h1><p className="truncate text-[11px] text-muted">第三号电台 · {state.difficulty.id}</p></div>
+          <div className="min-w-0"><h1 className="truncate font-serif text-lg">{context.campaign.name}</h1><p className="truncate text-[11px] text-muted">{difficultyLabels[state.difficulty.id]} · 内容版本 {context.campaign.version}</p></div>
         </div>
         <div className="flex items-center gap-2 sm:gap-5">
           <a href={api.exportGame(gameInstanceId)} title="下载当前玩家档案" className="grid h-9 w-9 place-items-center text-muted hover:text-paper"><Download size={17} /></a>

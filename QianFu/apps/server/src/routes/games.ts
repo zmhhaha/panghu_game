@@ -3,7 +3,7 @@ import { z } from "zod";
 import { CampaignEngine, COVER_PROFILES, getContextualDialogueGoals, getCountermeasureOptions, getDifficultyVisibility, getRadioMinigameConfig, getRadioSites, getRestAvailability, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction, type RadioMessageItem } from "@qianfu/core";
 import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
-import { getCampaignDefinition } from "@qianfu/content";
+import { DEFAULT_CAMPAIGN_REF, getCampaignDefinition, listCampaignCatalog } from "@qianfu/content";
 import { campaignOrchestrator } from "../agents/orchestrator.js";
 import { renderReportHtml } from "../reports.js";
 import { issueRadioChallenge, scoreRadioAttempt, verifyRadioChallenge } from "../radio-challenge.js";
@@ -85,17 +85,35 @@ gamesRouter.get("/", async (req, res, next) => {
   if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
   try {
     await gameRepository.ensureUser(req.user);
-    res.json({ games: (await gameRepository.listGames(req.user.id)).map(toPublicWorldState) });
+    const games = (await gameRepository.listGames(req.user.id)).map((state) => {
+      const campaign = getCampaignDefinition(state.campaignId, state.campaignVersion);
+      const currentLocationName = campaign.locations.find((location) => location.id === state.currentLocationId)?.name ?? "未知地点";
+      return { ...toPublicWorldState(state), campaignName: campaign.name, currentLocationName };
+    });
+    res.json({ games });
   } catch (error) { next(error); }
 });
 
 gamesRouter.post("/", async (req, res, next) => {
   if (!req.user) { res.status(401).json({ error: "未登录" }); return; }
-  const parsed = z.object({ difficulty: difficultySchema.default("undercover"), coverProfileId: z.enum(["archive_clerk", "travelling_merchant", "freelance_writer"]).default("archive_clerk") }).safeParse(req.body ?? {});
+  const parsed = z.object({
+    campaignId: z.string().min(1).default(DEFAULT_CAMPAIGN_REF.id),
+    campaignVersion: z.string().min(1).default(DEFAULT_CAMPAIGN_REF.version),
+    difficulty: difficultySchema.default("undercover"),
+    coverProfileId: z.enum(["archive_clerk", "travelling_merchant", "freelance_writer"]).default("archive_clerk"),
+  }).safeParse(req.body ?? {});
   if (!parsed.success) { res.status(400).json({ error: "参数无效", detail: parsed.error.flatten() }); return; }
   try {
+    const selected = listCampaignCatalog().find((campaign) => campaign.id === parsed.data.campaignId && campaign.version === parsed.data.campaignVersion);
+    if (!selected) { res.status(400).json({ error: "战役不存在或该版本不可用" }); return; }
+    if (!selected.coverProfileIds.includes(parsed.data.coverProfileId)) { res.status(400).json({ error: "该战役不支持所选公开身份" }); return; }
     await gameRepository.ensureUser(req.user);
-    res.status(201).json(toPublicWorldState(await gameRepository.createGame(req.user.id, parsed.data.difficulty, parsed.data.coverProfileId)));
+    res.status(201).json(toPublicWorldState(await gameRepository.createGame(req.user.id, {
+      campaignId: selected.id,
+      campaignVersion: selected.version,
+      difficultyId: parsed.data.difficulty,
+      coverProfileId: parsed.data.coverProfileId,
+    })));
   } catch (error) { next(error); }
 });
 

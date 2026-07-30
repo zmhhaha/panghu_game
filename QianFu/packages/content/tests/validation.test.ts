@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { CampaignEngine, createInitialWorld } from "@qianfu/core";
-import { analyzeCampaignReachability, LINJIANG_1942, validateCampaign } from "../src/index.js";
+import { analyzeCampaignReachability, DEFAULT_CAMPAIGN_REF, getCampaignDefinition, LINJIANG_1942, listCampaignCatalog, validateCampaign } from "../src/index.js";
 
 describe("campaign content", () => {
+  it("publishes a safe campaign catalog and resolves its versioned content", () => {
+    const catalog = listCampaignCatalog();
+    expect(catalog).toEqual([expect.objectContaining({
+      ...DEFAULT_CAMPAIGN_REF,
+      name: LINJIANG_1942.name,
+      estimatedDays: 10,
+      objectiveCount: 3,
+      coverProfileIds: ["archive_clerk", "travelling_merchant", "freelance_writer"],
+    })]);
+    expect(getCampaignDefinition(catalog[0].id, catalog[0].version)).toBe(LINJIANG_1942);
+    expect(JSON.stringify(catalog)).not.toMatch(/hiddenAlignment|fieldValues|sourceCharacterIds/);
+  });
+
   it("validates the Linjiang campaign", () => {
     expect(validateCampaign(LINJIANG_1942)).toEqual({ valid: true, errors: [] });
     expect(LINJIANG_1942.locations).toHaveLength(7);
