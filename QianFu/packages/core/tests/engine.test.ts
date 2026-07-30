@@ -168,6 +168,7 @@ describe("CampaignEngine", () => {
         initialLocationId: "office", recruitable: false,
         schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
         reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 },
+        personality: { traits: ["谨慎"], speechStyle: "克制", values: ["秩序"], fears: ["牵连"], verbalHabits: [], sensitiveTopics: ["档案来源"] },
       }],
     };
     const state = createInitialWorld(dialogueCampaign, "reaction-dialogue", "user-1");
@@ -185,7 +186,10 @@ describe("CampaignEngine", () => {
       agentOutcome: { visibleSpeech: "那就先看公开登记。", privateIntent: "接受有限核对", evidenceQuote: "", requestedEffects: [], relationshipReaction: "neutral", reactionReason: "模型未识别边界", provider: "model" },
     });
     expect(respected.state.characters.contact.privateTrust).toBeGreaterThan(5);
-    expect(respected.events.find((event) => event.type === "dialogue.turn_completed")?.payload).toMatchObject({ relationshipReaction: "respected_boundary" });
+    expect(respected.events.find((event) => event.type === "dialogue.turn_completed")?.payload).toMatchObject({
+      relationshipReaction: "respected_boundary",
+      reactionReason: "玩家原话明确保留了人物的拒绝和安全边界。",
+    });
     const violated = engine.execute({
       type: "dialogue_turn", sessionId: "reaction-start", playerText: "你必须把知道的都告诉我。", durationMinutes: 2, idempotencyKey: "reaction-violation",
       agentOutcome: { visibleSpeech: "你没有资格这样问。", privateIntent: "提高戒心", evidenceQuote: "", requestedEffects: [], relationshipReaction: "boundary_violation", reactionReason: "玩家越过边界", provider: "model" },

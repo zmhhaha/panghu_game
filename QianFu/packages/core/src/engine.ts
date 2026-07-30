@@ -329,7 +329,7 @@ export class CampaignEngine {
           turnCount: session.turnCount, maxTurns: session.maxTurns,
           privateIntent: action.agentOutcome?.privateIntent,
           relationshipReaction: resolveRelationshipReaction(definition, legacyAction),
-          reactionReason: action.agentOutcome?.reactionReason,
+          reactionReason: resolveRelationshipReactionReason(definition, legacyAction),
           requestedEffects: action.agentOutcome?.requestedEffects ?? [],
         });
         recordCoverConversationCredit(next, action.durationMinutes, append);
@@ -631,7 +631,7 @@ export class CampaignEngine {
           agentProvider: action.agentOutcome?.provider ?? "fallback",
           privateIntent: action.agentOutcome?.privateIntent,
           relationshipReaction: resolveRelationshipReaction(definition, action),
-          reactionReason: action.agentOutcome?.reactionReason,
+          reactionReason: resolveRelationshipReactionReason(definition, action),
           requestedEffects: action.agentOutcome?.requestedEffects ?? [],
         });
         if (discovery) {
@@ -2085,8 +2085,8 @@ function inferFallbackRelationshipReaction(
 ): NonNullable<NonNullable<Extract<GameAction, { type: "dialogue" }>["agentOutcome"]>["relationshipReaction"]> {
   const text = action.playerText.trim();
   if (action.tone === "threatening" || /(?:不说就|后果|威胁|别逼我|必须告诉|少废话)/.test(text)) return "boundary_violation";
-  if (definition.personality?.sensitiveTopics.some((topic) => text.includes(topic))) return "boundary_violation";
   if (/(?:不方便可以不说|不必回答|以你的安全为先|不牵连|可以先核对|按规矩|尊重你的决定)/.test(text)) return "respected_boundary";
+  if (definition.personality?.sensitiveTopics.some((topic) => text.includes(topic))) return "boundary_violation";
   if (definition.personality?.values.some((value) => value.length >= 2 && text.includes(value))) return "resonated";
   if (/(?:你们这种人|这不重要|管不了那么多|随便|无所谓)/.test(text)) return "misaligned";
   return "neutral";
@@ -2102,6 +2102,21 @@ function resolveRelationshipReaction(
   if (inferred === "boundary_violation") return inferred;
   if (modelReaction === "neutral" && inferred !== "neutral") return inferred;
   return modelReaction;
+}
+
+function resolveRelationshipReactionReason(
+  definition: CampaignDefinition["characters"][number],
+  action: Extract<GameAction, { type: "dialogue" }>,
+): string | undefined {
+  const resolved = resolveRelationshipReaction(definition, action);
+  if (!action.agentOutcome?.relationshipReaction || action.agentOutcome.relationshipReaction !== resolved) {
+    return resolved === "respected_boundary"
+      ? "玩家原话明确保留了人物的拒绝和安全边界。"
+      : resolved === "boundary_violation"
+        ? "玩家原话包含明确威胁或直接触碰人物敏感边界。"
+        : "规则层从玩家原话中识别到明确的人物关系信号。";
+  }
+  return action.agentOutcome.reactionReason;
 }
 
 function addIntelEvidence(
