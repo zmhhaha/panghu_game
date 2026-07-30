@@ -109,13 +109,11 @@ h1, h2, h3, p { margin-top: 0; }
 .brief-list b { color: var(--teal); font-weight: 500; }
 .cover-identity li { grid-template-columns: 43px 1fr; }
 .cover-identity small { display: block; margin-top: 3px; color: var(--muted-deep); font-size: 9px; line-height: 1.5; }
-.cover-reference { padding: 0 15px 14px; }
-.cover-reference details { border-top: 1px solid var(--line-soft); }
-.cover-reference details:first-child { border-top: 0; }
-.cover-reference summary { padding: 9px 0; color: var(--teal); cursor: pointer; font-size: 10px; }
-.cover-reference p { margin: 0 0 10px; overflow-wrap: anywhere; color: #cbd4ca; font-size: 10px; line-height: 1.65; }
-.cover-reference.local p { padding-top: 9px; border-top: 1px solid var(--line-soft); }
-.cover-reference.local p:first-child { border-top: 0; }
+.cover-facts .fact { padding: 9px 0; }
+.cover-facts .fact-head { align-items: baseline; }
+.cover-facts .fact-head span { color: var(--muted); }
+.cover-facts .fact-head strong { color: var(--teal); font-size: 9px; }
+.cover-facts .fact p { overflow-wrap: anywhere; color: #cbd4ca; font-size: 10px; line-height: 1.6; }
 .queue { padding: 0 9px 12px; }
 .queue-row { display: grid; grid-template-columns: 25px 1fr auto; gap: 8px; align-items: center; padding: 9px 7px; border-top: 1px solid var(--line-soft); color: var(--muted-deep); font-size: 11px; }
 .queue-row:first-child { border-top: 0; }
