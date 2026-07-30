@@ -14,6 +14,8 @@ interface GameRow {
   state: WorldState;
 }
 
+const hydrateWorldState = (state: WorldState): WorldState => new CampaignEngine(LINJIANG_1942, state).getState();
+
 interface ReportRow {
   owner_report: CampaignReport;
   public_report: CampaignReport;
@@ -104,7 +106,7 @@ export class PostgresGameRepository implements GameRepository {
       "SELECT state FROM game_instances WHERE owner_user_id = $1 ORDER BY updated_at DESC",
       [ownerUserId],
     );
-    return result.rows.map((row) => row.state);
+    return result.rows.map((row) => hydrateWorldState(row.state));
   }
 
   async getGame(gameInstanceId: string, ownerUserId: string): Promise<WorldState | null> {
@@ -112,7 +114,8 @@ export class PostgresGameRepository implements GameRepository {
       "SELECT state FROM game_instances WHERE id = $1 AND owner_user_id = $2",
       [gameInstanceId, ownerUserId],
     );
-    return result.rows[0]?.state ?? null;
+    const state = result.rows[0]?.state;
+    return state ? hydrateWorldState(state) : null;
   }
 
   async deleteGame(gameInstanceId: string, ownerUserId: string): Promise<boolean> {
@@ -143,7 +146,7 @@ export class PostgresGameRepository implements GameRepository {
       );
       if (duplicate.rowCount) {
         await client.query("COMMIT");
-        return { state, events: [], narration: "该行动已经处理。", duplicate: true, notices: [] };
+        return { state: hydrateWorldState(state), events: [], narration: "该行动已经处理。", duplicate: true, notices: [] };
       }
 
       const result = new CampaignEngine(LINJIANG_1942, state).execute(action);
