@@ -180,11 +180,17 @@ describe("CampaignEngine", () => {
     });
     expect(neutral.state.characters.contact.familiarity).toBeGreaterThan(0);
     expect(neutral.state.characters.contact.privateTrust).toBe(5);
+    const respected = engine.execute({
+      type: "dialogue_turn", sessionId: "reaction-start", playerText: "档案来源不方便可以不说，我先按规矩核对公开记录。", durationMinutes: 2, idempotencyKey: "reaction-respected",
+      agentOutcome: { visibleSpeech: "那就先看公开登记。", privateIntent: "接受有限核对", evidenceQuote: "", requestedEffects: [], relationshipReaction: "neutral", reactionReason: "模型未识别边界", provider: "model" },
+    });
+    expect(respected.state.characters.contact.privateTrust).toBeGreaterThan(5);
+    expect(respected.events.find((event) => event.type === "dialogue.turn_completed")?.payload).toMatchObject({ relationshipReaction: "respected_boundary" });
     const violated = engine.execute({
       type: "dialogue_turn", sessionId: "reaction-start", playerText: "你必须把知道的都告诉我。", durationMinutes: 2, idempotencyKey: "reaction-violation",
       agentOutcome: { visibleSpeech: "你没有资格这样问。", privateIntent: "提高戒心", evidenceQuote: "", requestedEffects: [], relationshipReaction: "boundary_violation", reactionReason: "玩家越过边界", provider: "model" },
     });
-    expect(violated.state.characters.contact.privateTrust).toBeLessThan(5);
+    expect(violated.state.characters.contact.privateTrust).toBeLessThan(respected.state.characters.contact.privateTrust);
   });
 
   it("infers an old active dialogue as NPC-initiated when its first turn is an NPC opening", () => {

@@ -328,7 +328,7 @@ export class CampaignEngine {
           characterId: definition.id, goal: session.goal, playerText: action.playerText, npcReply,
           turnCount: session.turnCount, maxTurns: session.maxTurns,
           privateIntent: action.agentOutcome?.privateIntent,
-          relationshipReaction: action.agentOutcome?.relationshipReaction ?? inferFallbackRelationshipReaction(definition, legacyAction),
+          relationshipReaction: resolveRelationshipReaction(definition, legacyAction),
           reactionReason: action.agentOutcome?.reactionReason,
           requestedEffects: action.agentOutcome?.requestedEffects ?? [],
         });
@@ -630,7 +630,7 @@ export class CampaignEngine {
           memorySummary: memory?.summary,
           agentProvider: action.agentOutcome?.provider ?? "fallback",
           privateIntent: action.agentOutcome?.privateIntent,
-          relationshipReaction: action.agentOutcome?.relationshipReaction ?? inferFallbackRelationshipReaction(definition, action),
+          relationshipReaction: resolveRelationshipReaction(definition, action),
           reactionReason: action.agentOutcome?.reactionReason,
           requestedEffects: action.agentOutcome?.requestedEffects ?? [],
         });
@@ -2026,7 +2026,7 @@ function resolveDialogue(
   relationshipScale = 1,
 ): { intelId: string; field: string; verified: boolean; assessment: string } | null {
   const character = state.characters[definition.id];
-  const reaction = action.agentOutcome?.relationshipReaction ?? inferFallbackRelationshipReaction(definition, action);
+  const reaction = resolveRelationshipReaction(definition, action);
   const trustDelta = ({
     resonated: 2,
     respected_boundary: 1,
@@ -2090,6 +2090,18 @@ function inferFallbackRelationshipReaction(
   if (definition.personality?.values.some((value) => value.length >= 2 && text.includes(value))) return "resonated";
   if (/(?:你们这种人|这不重要|管不了那么多|随便|无所谓)/.test(text)) return "misaligned";
   return "neutral";
+}
+
+function resolveRelationshipReaction(
+  definition: CampaignDefinition["characters"][number],
+  action: Extract<GameAction, { type: "dialogue" }>,
+): NonNullable<NonNullable<Extract<GameAction, { type: "dialogue" }>["agentOutcome"]>["relationshipReaction"]> {
+  const inferred = inferFallbackRelationshipReaction(definition, action);
+  const modelReaction = action.agentOutcome?.relationshipReaction;
+  if (!modelReaction) return inferred;
+  if (inferred === "boundary_violation") return inferred;
+  if (modelReaction === "neutral" && inferred !== "neutral") return inferred;
+  return modelReaction;
 }
 
 function addIntelEvidence(
@@ -2299,7 +2311,7 @@ function dialogueNarration(
   if (discovered && action.goal === "verify_intel") return `${definition.name}从另一个角度印证了你掌握的细节，情报可信度有所提高。`;
   if (discovered && action.goal === "request_information") return `${definition.name}说了一段看似随意的话，其中有一个细节值得记入情报板。`;
   if (action.goal === "build_trust" || action.goal === "small_talk") {
-    const reaction = action.agentOutcome?.relationshipReaction ?? inferFallbackRelationshipReaction(definition, action);
+    const reaction = resolveRelationshipReaction(definition, action);
     if (reaction === "resonated" || reaction === "respected_boundary") return `${definition.name}认真听完了你的话，态度出现了有限但可感知的变化。`;
     if (reaction === "misaligned" || reaction === "boundary_violation" || reaction === "inconsistent") return `${definition.name}记住了你的说法，但戒心没有因此减少。`;
     return `这次交谈让${definition.name}对你更熟悉了一些，但尚不足以建立新的信任。`;
