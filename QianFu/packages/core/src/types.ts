@@ -287,17 +287,6 @@ export interface CampaignCatalogEntry {
   coverProfileIds: Array<"archive_clerk" | "travelling_merchant" | "freelance_writer">;
 }
 
-export interface CampaignCatalogEntry {
-  id: string;
-  version: string;
-  name: string;
-  setting: string;
-  summary: string;
-  estimatedDays: number;
-  objectiveCount: number;
-  coverProfileIds: Array<"archive_clerk" | "travelling_merchant" | "freelance_writer">;
-}
-
 export interface CharacterState {
   id: string;
   templateId: string;
