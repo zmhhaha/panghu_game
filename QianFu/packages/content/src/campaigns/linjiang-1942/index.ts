@@ -259,12 +259,18 @@ const draft: CampaignDefinition = {
     },
     {
       id: "director-chen-missing-register",
-      title: "陈敬文主动核对登记",
-      visibleSummary: "陈敬文注意到你正在处理设备档案，主动来确认一页缺失的登记。",
-      trigger: { type: "time", notBefore: "1942-05-12T01:00:00.000Z", requiredLeadIds: ["archive-file-crosscheck"], maxInvestigationPressure: 30 },
+      title: "陈敬文追问核对结果",
+      visibleSummary: "你从电讯科继续追查回执后，陈敬文主动来确认设备登记的缺页问题。",
+      trigger: {
+        type: "time",
+        notBefore: "1942-05-12T01:00:00.000Z",
+        requiredLeadIds: ["archive-file-crosscheck"],
+        requiredEventIds: ["equipment-receipt-rumor"],
+        maxInvestigationPressure: 30,
+      },
       effects: { contact: {
-        characterId: "chen-jingwen", reason: "设备档案缺少经办签字，他想判断你是否发现了异常。",
-        openingLine: "先停一下。你手里那本设备登记，最后一页是谁交给你的？我记得那里原本有个经办签字。",
+        characterId: "chen-jingwen", reason: "他听说你已经去电讯科核对过设备记录，想确认这次公开核对是否暴露了更多档案异常。",
+        openingLine: "电讯科回了话，说那本设备登记最后一页对不上。周启明怎么答复你的？",
         goal: "build_trust", tone: "formal", allocatedMinutes: 20, responseWindowMinutes: 90,
       } },
     },

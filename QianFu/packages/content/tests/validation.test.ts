@@ -21,7 +21,9 @@ describe("campaign content", () => {
         expect(Date.parse(LINJIANG_1942.intel.find((intel) => intel.id === intelId)!.expiresAt)).toBeGreaterThanOrEqual(Date.parse(objective.deadline));
       }
     }
-    expect(LINJIANG_1942.narrativeEvents?.find((event) => event.id === "director-chen-missing-register")?.trigger.requiredLeadIds).toEqual(["archive-file-crosscheck"]);
+    const chenFollowUp = LINJIANG_1942.narrativeEvents?.find((event) => event.id === "director-chen-missing-register");
+    expect(chenFollowUp?.trigger.requiredLeadIds).toEqual(["archive-file-crosscheck"]);
+    expect(chenFollowUp?.trigger.requiredEventIds).toEqual(["equipment-receipt-rumor"]);
     expect(LINJIANG_1942.narrativeEvents?.find((event) => event.id === "director-lin-source-check")?.trigger.requiredLeadIds).toEqual(["writer-copy-source"]);
     expect(LINJIANG_1942.narrativeEvents?.find((event) => event.id === "director-luo-account-question")?.trigger.requiredLeadIds).toEqual(["merchant-ledger-delay"]);
   });
@@ -78,5 +80,16 @@ describe("campaign content", () => {
     const atNine = engine.execute({ type: "wait", durationMinutes: 10, idempotencyKey: "writer-wait-nine" });
     expect(atNine.state.pendingContact).toBeNull();
     expect(atNine.state.resolvedNarrativeEventIds).not.toContain("director-chen-missing-register");
+  });
+
+  it("does not combine the archive filing lead with Chen's later follow-up", () => {
+    const engine = new CampaignEngine(LINJIANG_1942, createInitialWorld(LINJIANG_1942, "archive-lead-before-follow-up", "user-1", "undercover", "archive_clerk"));
+    const worked = engine.execute({ type: "cover_work", workKind: "file_sorting", durationMinutes: 60, idempotencyKey: "archive-file-sorting" });
+
+    expect(worked.state.resolvedLeadIds).toContain("archive-file-crosscheck");
+    expect(worked.state.discoveredLocationIds).toContain("radio-office");
+    expect(worked.state.knownCharacterIds).toContain("zhou-qiming");
+    expect(worked.state.pendingContact).toBeNull();
+    expect(worked.state.resolvedNarrativeEventIds).not.toContain("director-chen-missing-register");
   });
 });
