@@ -1,5 +1,6 @@
 import type { CampaignCatalogEntry, CampaignDefinition } from "@qianfu/core";
 import { LINJIANG_1942 } from "./campaigns/linjiang-1942/index.js";
+import { HAIZHOU_1943 } from "./campaigns/haizhou-1943/index.js";
 
 interface RegisteredCampaign {
   definition: CampaignDefinition;
@@ -16,6 +17,18 @@ const REGISTERED_CAMPAIGNS: RegisteredCampaign[] = [{
     summary: "十日内连续完成无线电设备运输侦察、敌方清查部署确认与地下交通线保全。",
     estimatedDays: 10,
     objectiveCount: LINJIANG_1942.objectives.length,
+    coverProfileIds: ["archive_clerk", "travelling_merchant", "freelance_writer"],
+  },
+}, {
+  definition: HAIZHOU_1943,
+  catalog: {
+    id: HAIZHOU_1943.id,
+    version: HAIZHOU_1943.version,
+    name: HAIZHOU_1943.name,
+    setting: "海州，1943年9月",
+    summary: "从一只失踪的急救药箱入手，揭开伪证诱捕计划，并在封锁前重建南汊地下交通线。",
+    estimatedDays: 10,
+    objectiveCount: HAIZHOU_1943.objectives.length,
     coverProfileIds: ["archive_clerk", "travelling_merchant", "freelance_writer"],
   },
 }];

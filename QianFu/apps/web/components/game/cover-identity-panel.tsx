@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { BriefcaseBusiness, ClipboardCheck, FileStack, HeartPulse, ShieldAlert, TimerReset, UserRoundCheck } from "lucide-react";
 import type { CoverWorkKind, GameAction, LeaveReason, PublicWorldState } from "@qianfu/core";
-import { COVER_PROFILES } from "@qianfu/core/cover-profiles";
+import type { GameContext } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 const workOptions: Array<{ kind: CoverWorkKind; label: string; minutes: number; detail: string; icon: typeof FileStack }> = [
@@ -18,11 +18,10 @@ const workOptions: Array<{ kind: CoverWorkKind; label: string; minutes: number; 
   { kind: "proofread_copy", label: "校对稿样", minutes: 30, detail: "在编辑部留下可见工作痕迹", icon: FileStack },
 ];
 
-export function CoverIdentityPanel({ state, busy, onAction }: { state: PublicWorldState; busy: boolean; onAction: (action: GameAction) => void }) {
+export function CoverIdentityPanel({ state, profile, busy, onAction }: { state: PublicWorldState; profile: GameContext["coverProfile"]; busy: boolean; onAction: (action: GameAction) => void }) {
   const [reason, setReason] = useState<LeaveReason>("family");
   const cover = state.cover;
-  const profile = COVER_PROFILES.find((item) => item.id === cover.profileId) ?? COVER_PROFILES[0];
-  const atOffice = profile.workLocationIds.includes(state.currentLocationId);
+  const atOffice = profile.currentLocationEligible;
   const now = minuteOfDay(state.currentTime);
   const today = campaignDate(state.currentTime);
   const recordCredit = Math.min(60, cover.recordCreditMinutesByDate?.[today] ?? 0);

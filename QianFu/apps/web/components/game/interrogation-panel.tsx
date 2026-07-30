@@ -12,8 +12,9 @@ const strategies = [
   { id: "counter_question", label: "反问施压", hint: "争夺主动权，高怀疑状态下风险很高" },
 ] as const;
 
-export function InterrogationPanel({ state, busy, error, onAction }: {
+export function InterrogationPanel({ state, interrogator, busy, error, onAction }: {
   state: PublicWorldState;
+  interrogator: { name: string; publicIdentity: string } | null;
   busy: boolean;
   error: string;
   onAction: (action: GameAction) => void;
@@ -29,8 +30,8 @@ export function InterrogationPanel({ state, busy, error, onAction }: {
   return <main className="min-h-screen bg-ink px-4 py-8 text-paper sm:px-6">
     <div className="mx-auto max-w-3xl border border-line bg-panel/40">
       <header className="border-b border-line bg-panel px-5 py-5 sm:px-7">
-        <p className="flex items-center gap-2 text-xs text-alert"><ShieldAlert size={14} />警备处临时问讯</p>
-        <h1 className="mt-2 font-serif text-2xl">韩世杰正在核对你的公开身份</h1>
+        <p className="flex items-center gap-2 text-xs text-alert"><ShieldAlert size={14} />{interrogator?.publicIdentity ?? "敌方调查人员"}临时问讯</p>
+        <h1 className="mt-2 font-serif text-2xl">{interrogator?.name ?? "调查员"}正在核对你的公开身份</h1>
         <p className="mt-3 text-sm leading-6 text-muted">回答会进入同一条时间线。前后说法、公开工作记录和表达策略共同决定盘问结果。</p>
       </header>
       <section className="p-5 sm:p-7">

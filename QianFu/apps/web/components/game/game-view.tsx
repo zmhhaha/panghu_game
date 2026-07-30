@@ -128,7 +128,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
   if (state.status === "finished") return <SettlementReport gameInstanceId={gameInstanceId} />;
 
   if (state.interrogation?.status === "active") {
-    return <InterrogationPanel state={state} busy={busy} error={error} onAction={(action) => void act(action)} />;
+    return <InterrogationPanel state={state} interrogator={context.interrogator} busy={busy} error={error} onAction={(action) => void act(action)} />;
   }
 
   if (state.activeDialogue) {
@@ -194,7 +194,7 @@ export function GameView({ gameInstanceId }: { gameInstanceId: string }) {
           </div>
           <p className={`mt-2 text-[10px] leading-4 ${canRest ? "text-muted" : "text-[#c99b79]"}`}>{canRest ? "当前地点安全，可以选择休息时长。" : restDisabledReason}</p>
         </div>
-        <CoverIdentityPanel state={state} busy={busy} onAction={(action) => void act(action)} />
+        <CoverIdentityPanel state={state} profile={context.coverProfile} busy={busy} onAction={(action) => void act(action)} />
         <SaveSlotsPanel gameInstanceId={gameInstanceId} state={state} disabled={busy} onLoaded={(loadedState, loadedEvents) => { setState(loadedState); setEvents(loadedEvents); void api.getContext(gameInstanceId).then(setContext); setError(""); }} />
       </aside>
 

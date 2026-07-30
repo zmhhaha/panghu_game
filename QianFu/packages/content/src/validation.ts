@@ -1,4 +1,4 @@
-import { COVER_PROFILES, type CampaignDefinition, type CoverProfileDefinition } from "@qianfu/core";
+import { COVER_PROFILES, getCampaignCoverProfile, type CampaignDefinition, type CoverProfileDefinition } from "@qianfu/core";
 
 export interface ValidationResult {
   valid: boolean;
@@ -20,7 +20,8 @@ export interface CampaignReachabilityReport {
 }
 
 export function analyzeCampaignReachability(campaign: CampaignDefinition): CampaignReachabilityReport[] {
-  return COVER_PROFILES.map((profile) => {
+  return COVER_PROFILES.map((baseProfile) => {
+    const profile = getCampaignCoverProfile(campaign, baseProfile.id);
     const report = analyzeProfileReachability(campaign, profile);
     const failureBlockedObjectives = campaign.objectives.filter((target) => {
       const targetSequence = target.sequence ?? 0;
@@ -164,7 +165,25 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
   const objectiveIds = campaign.objectives.map((item) => item.id);
   for (const id of duplicateIds(objectiveIds)) errors.push(`duplicate objective id: ${id}`);
   const objectives = new Set(objectiveIds);
+  for (const baseProfile of COVER_PROFILES) {
+    if (!campaign.coverProfiles?.[baseProfile.id]) {
+      errors.push(`campaign has no entry configuration for cover profile ${baseProfile.id}`);
+      continue;
+    }
+    const profile = getCampaignCoverProfile(campaign, baseProfile.id);
+    if (!locations.has(profile.startingLocationId)) errors.push(`cover profile ${profile.id} has unknown starting location ${profile.startingLocationId}`);
+    for (const locationId of profile.workLocationIds) {
+      if (!locations.has(locationId)) errors.push(`cover profile ${profile.id} has unknown work location ${locationId}`);
+    }
+    for (const characterId of profile.initialContactCharacterIds) {
+      if (!characters.has(characterId)) errors.push(`cover profile ${profile.id} has unknown initial contact ${characterId}`);
+    }
+  }
   for (const location of campaign.locations) {
+    if (!location.mapPosition) errors.push(`location ${location.id} has no map position`);
+    else if (location.mapPosition.x < 0 || location.mapPosition.x > 100 || location.mapPosition.y < 0 || location.mapPosition.y > 100) {
+      errors.push(`location ${location.id} has an invalid map position`);
+    }
     for (const [targetId, minutes] of Object.entries(location.travelMinutes)) {
       if (!locations.has(targetId)) errors.push(`location ${location.id} references unknown destination ${targetId}`);
       if (minutes <= 0 || minutes % 10 !== 0) errors.push(`travel time ${location.id} -> ${targetId} must be a positive multiple of 10`);
@@ -214,6 +233,12 @@ export function validateCampaign(campaign: CampaignDefinition): ValidationResult
     }
     const interrogatorId = objective.completionEffects?.interrogation?.interrogatorCharacterId;
     if (interrogatorId && !characters.has(interrogatorId)) errors.push(`objective ${objective.id} uses unknown interrogator ${interrogatorId}`);
+    const questions = objective.completionEffects?.interrogation?.questionsByCoverProfile;
+    if (questions) {
+      for (const profile of COVER_PROFILES) {
+        if (!questions[profile.id]?.length) errors.push(`objective ${objective.id} has no interrogation questions for ${profile.id}`);
+      }
+    }
   }
   for (const leadId of duplicateIds((campaign.publicLeads ?? []).map((lead) => lead.id))) {
     errors.push(`duplicate public lead id: ${leadId}`);

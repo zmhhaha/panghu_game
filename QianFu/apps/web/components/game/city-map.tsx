@@ -6,6 +6,8 @@ type Location = {
   id: string;
   name: string;
   district: string;
+  travelMinutes: Record<string, number>;
+  mapPosition?: { x: number; y: number };
   discovered: boolean;
   stage: "unknown" | "rumored" | "located" | "accessible" | "compromised";
   hint: string | null;
@@ -19,24 +21,37 @@ const stageLabel: Record<Location["stage"], string> = {
   compromised: "已封锁",
 };
 
-const positions: Record<string, { x: number; y: number }> = {
-  "archive-office": { x: 28, y: 18 },
-  "radio-office": { x: 70, y: 20 },
-  "linjiang-news": { x: 51, y: 43 },
-  "jianghai-hotel": { x: 76, y: 62 },
-  "third-dock": { x: 28, y: 81 },
-  "wu-clock-shop": { x: 20, y: 52 },
-  "safe-flat": { x: 70, y: 87 },
-};
+type PositionedLocation = Location & { position: { x: number; y: number } };
 
-const roads = [
-  ["archive-office", "radio-office"], ["archive-office", "linjiang-news"],
-  ["archive-office", "wu-clock-shop"], ["radio-office", "linjiang-news"],
-  ["radio-office", "jianghai-hotel"], ["linjiang-news", "jianghai-hotel"],
-  ["linjiang-news", "wu-clock-shop"], ["wu-clock-shop", "third-dock"],
-  ["linjiang-news", "third-dock"], ["jianghai-hotel", "third-dock"],
-  ["linjiang-news", "safe-flat"], ["jianghai-hotel", "safe-flat"],
-] as const;
+function fallbackPosition(index: number, count: number) {
+  const columns = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / columns);
+  const column = index % columns;
+  const row = Math.floor(index / columns);
+  return {
+    x: columns === 1 ? 50 : 16 + column * (68 / (columns - 1)),
+    y: rows === 1 ? 50 : 16 + row * (68 / (rows - 1)),
+  };
+}
+
+function buildRoads(locations: PositionedLocation[]) {
+  const roads = new Map<string, [PositionedLocation, PositionedLocation]>();
+  for (const location of locations) {
+    const nearest = locations
+      .filter((candidate) => candidate.id !== location.id)
+      .map((candidate) => ({
+        candidate,
+        distance: Math.hypot(candidate.position.x - location.position.x, candidate.position.y - location.position.y),
+      }))
+      .sort((left, right) => left.distance - right.distance)
+      .slice(0, 2);
+    for (const { candidate } of nearest) {
+      const key = [location.id, candidate.id].sort().join(":");
+      roads.set(key, [location, candidate]);
+    }
+  }
+  return [...roads.values()];
+}
 
 export function CityMap({ locations, currentLocationId, travelMinutes, disabled, onTravel }: {
   locations: Location[];
@@ -45,17 +60,22 @@ export function CityMap({ locations, currentLocationId, travelMinutes, disabled,
   disabled: boolean;
   onTravel: (locationId: string, minutes: number) => void;
 }) {
+  const positionedLocations: PositionedLocation[] = locations.map((location, index) => ({
+    ...location,
+    position: location.mapPosition ?? fallbackPosition(index, locations.length),
+  }));
+  const roads = buildRoads(positionedLocations);
   return <div className="relative aspect-[4/5] min-h-[320px] overflow-hidden border border-line bg-panel">
     <div className="absolute inset-0 opacity-30" style={{ backgroundImage: "linear-gradient(#343b38 1px, transparent 1px), linear-gradient(90deg, #343b38 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
     {roads.map(([from, to]) => {
-      const a = positions[from]; const b = positions[to];
+      const a = from.position; const b = to.position;
       const dx = b.x - a.x; const dy = b.y - a.y;
       const width = Math.sqrt(dx * dx + dy * dy);
       const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-      return <span key={`${from}-${to}`} className="absolute h-px origin-left bg-line" style={{ left: `${a.x}%`, top: `${a.y}%`, width: `${width}%`, transform: `rotate(${angle}deg)` }} />;
+      return <span key={`${from.id}-${to.id}`} className="absolute h-px origin-left bg-line" style={{ left: `${a.x}%`, top: `${a.y}%`, width: `${width}%`, transform: `rotate(${angle}deg)` }} />;
     })}
-    {locations.map((location) => {
-      const position = positions[location.id] ?? { x: 50, y: 50 };
+    {positionedLocations.map((location) => {
+      const position = location.position;
       const current = location.id === currentLocationId;
       const minutes = travelMinutes[location.id];
       const accessible = location.stage === "accessible";

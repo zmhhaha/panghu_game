@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { CampaignEngine, COVER_PROFILES, getContextualDialogueGoals, getCountermeasureOptions, getDifficultyVisibility, getRadioMinigameConfig, getRadioSites, getRestAvailability, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction, type RadioMessageItem } from "@qianfu/core";
+import { CampaignEngine, COVER_PROFILES, getCampaignCoverProfile, getContextualDialogueGoals, getCountermeasureOptions, getDifficultyVisibility, getRadioMinigameConfig, getRadioSites, getRestAvailability, isCharacterAvailableAt, isIntelUnlocked, isObjectiveUnlocked, toPublicGameEvents, toPublicWorldState, type GameAction, type RadioMessageItem } from "@qianfu/core";
 import { DIALOGUE_MAX_TEXT_LENGTH } from "@qianfu/core/dialogue";
 import { gameRepository } from "../game-repository.js";
 import { DEFAULT_CAMPAIGN_REF, getCampaignDefinition, listCampaignCatalog } from "@qianfu/content";
@@ -123,6 +123,7 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
     const state = await gameRepository.getGame(req.params.id, req.user.id);
     if (!state) { res.status(404).json({ error: "战役不存在" }); return; }
     const campaign = getCampaignDefinition(state.campaignId, state.campaignVersion);
+    const coverProfile = getCampaignCoverProfile(campaign, state.cover.profileId);
     const visibility = getDifficultyVisibility(state.difficulty.id);
     const visibleCharacters = campaign.characters
       .filter((character) => state.characters[character.id]?.locationId === state.currentLocationId && isCharacterAvailableAt(character, state.currentTime))
@@ -139,13 +140,26 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
       });
     res.json({
       campaign: { id: campaign.id, version: campaign.version, name: campaign.name },
+      coverProfile: {
+        id: coverProfile.id,
+        title: coverProfile.title,
+        routineLabel: coverProfile.routineLabel,
+        workHours: coverProfile.workHours,
+        workKinds: coverProfile.workKinds,
+        accountability: coverProfile.accountability,
+        currentLocationEligible: coverProfile.workLocationIds.includes(state.currentLocationId),
+      },
+      interrogator: state.interrogation ? (() => {
+        const character = campaign.characters.find((item) => item.id === state.interrogation?.interrogatorCharacterId);
+        return character ? { name: character.name, publicIdentity: character.publicIdentity } : { name: "调查员", publicIdentity: "敌方调查人员" };
+      })() : null,
       visibility,
       radioMinigame: getRadioMinigameConfig(state.difficulty.id),
       settlement: {
         ready: state.status === "finished",
         pendingReceipts: state.radio.transmissions.filter((item) => item.receiptStatus === "pending").length,
       },
-      locations: campaign.locations.map(({ id, name, district, travelMinutes }) => {
+      locations: campaign.locations.map(({ id, name, district, travelMinutes, mapPosition }) => {
         const legacyDiscovered = state.discoveredLocationIds?.includes(id) ?? id === state.currentLocationId;
         const knowledge = state.locationKnowledge?.[id];
         const stage = knowledge?.stage ?? (legacyDiscovered ? "accessible" : "unknown");
@@ -155,6 +169,7 @@ gamesRouter.get("/:id/context", async (req, res, next) => {
           name: identified ? name : "？？？",
           district: identified ? district : stage === "rumored" ? "区域传闻" : "区域未确认",
           travelMinutes,
+          mapPosition,
           discovered: stage === "accessible",
           stage,
           hint: knowledge?.hint ?? null,

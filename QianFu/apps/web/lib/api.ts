@@ -11,8 +11,10 @@ export interface GameContext {
   visibility: DifficultyVisibilityPolicy;
   radioMinigame: RadioMinigameConfig;
   campaign: { id: string; version: string; name: string };
+  coverProfile: Pick<import("@qianfu/core").CoverProfileDefinition, "id" | "title" | "routineLabel" | "workHours" | "workKinds" | "accountability"> & { currentLocationEligible: boolean };
+  interrogator: { name: string; publicIdentity: string } | null;
   settlement: { ready: boolean; pendingReceipts: number };
-  locations: { id: string; name: string; district: string; travelMinutes: Record<string, number>; discovered: boolean; stage: "unknown" | "rumored" | "located" | "accessible" | "compromised"; hint: string | null }[];
+  locations: { id: string; name: string; district: string; travelMinutes: Record<string, number>; mapPosition?: { x: number; y: number }; discovered: boolean; stage: "unknown" | "rumored" | "located" | "accessible" | "compromised"; hint: string | null }[];
   narrativeThreads: Array<{ id: string; title: string; summary: string; status: "active" | "resolved"; sourceEventId: string; updatedAt: string }>;
   rest: { available: boolean; reason: string };
   countermeasures: Array<{

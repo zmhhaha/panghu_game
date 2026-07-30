@@ -93,6 +93,7 @@ export interface LocationDefinition {
   name: string;
   district: string;
   travelMinutes: Record<string, number>;
+  mapPosition?: { x: number; y: number };
   radioSite?: {
     baseRisk: number;
     initiallyAvailable?: boolean;
@@ -194,7 +195,11 @@ export interface MissionObjective {
     networkExposure?: number;
     introduceCharacterIds?: string[];
     unlockLocationIds?: string[];
-    interrogation?: { interrogatorCharacterId: string; delayMinutes: number };
+    interrogation?: {
+      interrogatorCharacterId: string;
+      delayMinutes: number;
+      questionsByCoverProfile: Record<CoverProfileId, string[]>;
+    };
     notice: string;
   };
 }
@@ -268,12 +273,19 @@ export interface CampaignDefinition {
   engineVersion: string;
   name: string;
   startTime: string;
+  coverProfiles: Record<CoverProfileId, CampaignCoverProfileConfig>;
   locations: LocationDefinition[];
   characters: CharacterDefinition[];
   intel: IntelDefinition[];
   objectives: MissionObjective[];
   publicLeads?: CampaignLead[];
   narrativeEvents?: CampaignNarrativeEvent[];
+}
+
+export interface CampaignCoverProfileConfig {
+  startingLocationId: string;
+  workLocationIds: string[];
+  initialContactCharacterIds: string[];
 }
 
 export interface CampaignCatalogEntry {

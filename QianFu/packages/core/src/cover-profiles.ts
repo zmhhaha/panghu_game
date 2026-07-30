@@ -1,4 +1,4 @@
-import type { CoverProfileDefinition } from "./types.js";
+import type { CampaignDefinition, CoverProfileDefinition } from "./types.js";
 
 export const COVER_PROFILES: CoverProfileDefinition[] = [
   {
@@ -44,4 +44,17 @@ export const COVER_PROFILES: CoverProfileDefinition[] = [
 
 export function getCoverProfile(id: string | undefined) {
   return COVER_PROFILES.find((profile) => profile.id === id) ?? COVER_PROFILES[0];
+}
+
+export function getCampaignCoverProfile(campaign: CampaignDefinition, id: string | undefined): CoverProfileDefinition {
+  const base = id ? COVER_PROFILES.find((profile) => profile.id === id) : COVER_PROFILES[0];
+  if (!base) throw new Error(`Unknown cover profile: ${id}`);
+  const configured = campaign.coverProfiles?.[base.id];
+  if (!configured) throw new Error(`Campaign ${campaign.id} has no entry configuration for cover profile ${base.id}`);
+  return {
+    ...base,
+    startingLocationId: configured.startingLocationId,
+    workLocationIds: [...configured.workLocationIds],
+    initialContactCharacterIds: [...configured.initialContactCharacterIds],
+  };
 }

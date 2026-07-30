@@ -4,9 +4,14 @@ import { CampaignEngine, calculateScore, createInitialWorld, getContextualDialog
 const campaign: CampaignDefinition = {
   id: "test", version: "1.0.0", engineVersion: "1.0.0", name: "Test",
   startTime: "1942-05-12T00:00:00.000Z",
+  coverProfiles: {
+    archive_clerk: { startingLocationId: "office", workLocationIds: ["office"], initialContactCharacterIds: [] },
+    travelling_merchant: { startingLocationId: "office", workLocationIds: ["office"], initialContactCharacterIds: [] },
+    freelance_writer: { startingLocationId: "office", workLocationIds: ["office"], initialContactCharacterIds: [] },
+  },
   locations: [
     { id: "office", name: "Office", district: "A", travelMinutes: { station: 20 } },
-    { id: "station", name: "Station", district: "A", travelMinutes: { office: 20 } },
+    { id: "station", name: "Station", district: "A", travelMinutes: { office: 20 }, radioSite: { baseRisk: 5, initiallyAvailable: true } },
   ],
   characters: [],
   intel: [{ id: "shipment", title: "Shipment", truth: "true", requiredFields: ["time"], sourceCharacterIds: [], expiresAt: "1942-05-13T20:00:00.000Z" }],
@@ -22,6 +27,10 @@ describe("CampaignEngine", () => {
         { id: "archive-office", name: "Archive", district: "A", travelMinutes: { "radio-office": 10 } },
         { id: "radio-office", name: "Radio", district: "A", travelMinutes: { "archive-office": 10 } },
       ],
+      coverProfiles: {
+        ...campaign.coverProfiles,
+        archive_clerk: { startingLocationId: "archive-office", workLocationIds: ["archive-office"], initialContactCharacterIds: ["chen-jingwen"] },
+      },
       characters: [
         { id: "chen-jingwen", name: "Chen", publicIdentity: "Chief", hiddenAlignment: "variable", initialLocationId: "archive-office", recruitable: false, schedule: [{ startMinute: 0, endMinute: 1440, locationId: "archive-office", activity: "work" }], reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 } },
         { id: "stranger", name: "Stranger", publicIdentity: "Visitor", hiddenAlignment: "neutral", initialLocationId: "archive-office", recruitable: false, schedule: [{ startMinute: 0, endMinute: 1440, locationId: "archive-office", activity: "wait" }], reliability: { loyalty: 50, discipline: 50, pressureResistance: 50, courage: 50, competence: 50 } },
@@ -94,6 +103,10 @@ describe("CampaignEngine", () => {
   it("enforces a different per-turn text limit for each dialogue goal", () => {
     const dialogueCampaign: CampaignDefinition = {
       ...campaign,
+      coverProfiles: {
+        ...campaign.coverProfiles,
+        archive_clerk: { ...campaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["contact"] },
+      },
       characters: [{
         id: "contact", name: "Contact", publicIdentity: "Shopkeeper", hiddenAlignment: "neutral",
         initialLocationId: "office", recruitable: false,
@@ -127,6 +140,10 @@ describe("CampaignEngine", () => {
   it("keeps fallback trust dialogue contextual and avoids repeating its previous line", () => {
     const dialogueCampaign: CampaignDefinition = {
       ...campaign,
+      coverProfiles: {
+        ...campaign.coverProfiles,
+        archive_clerk: { ...campaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["contact"] },
+      },
       characters: [{
         id: "contact", name: "Contact", publicIdentity: "Clerk", hiddenAlignment: "neutral",
         initialLocationId: "office", recruitable: false,
@@ -163,6 +180,10 @@ describe("CampaignEngine", () => {
   it("changes trust from the NPC reaction instead of the selected dialogue goal", () => {
     const dialogueCampaign: CampaignDefinition = {
       ...campaign,
+      coverProfiles: {
+        ...campaign.coverProfiles,
+        archive_clerk: { ...campaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["contact"] },
+      },
       characters: [{
         id: "contact", name: "Contact", publicIdentity: "Clerk", hiddenAlignment: "neutral",
         initialLocationId: "office", recruitable: false,
@@ -211,6 +232,10 @@ describe("CampaignEngine", () => {
   it("shares a controlled intelligence fragment only after rapport is built", () => {
     const conversational: CampaignDefinition = {
       ...campaign,
+      coverProfiles: {
+        ...campaign.coverProfiles,
+        archive_clerk: { ...campaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["source"] },
+      },
       characters: [{
         id: "source", name: "Source", publicIdentity: "Clerk", hiddenAlignment: "organization",
         initialLocationId: "office", recruitable: true,
@@ -235,6 +260,10 @@ describe("CampaignEngine", () => {
   it("rewards sustained dialogue with additional intelligence opportunities", () => {
     const conversational: CampaignDefinition = {
       ...campaign,
+      coverProfiles: {
+        ...campaign.coverProfiles,
+        archive_clerk: { ...campaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["source"] },
+      },
       characters: [{
         id: "source", name: "Source", publicIdentity: "Clerk", hiddenAlignment: "organization",
         initialLocationId: "office", recruitable: false,
@@ -260,6 +289,10 @@ describe("CampaignEngine", () => {
   it("does not grant intelligence when the model reply states no evidence", () => {
     const conversational: CampaignDefinition = {
       ...campaign,
+      coverProfiles: {
+        ...campaign.coverProfiles,
+        archive_clerk: { ...campaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["source"] },
+      },
       characters: [{
         id: "source", name: "Source", publicIdentity: "Clerk", hiddenAlignment: "organization",
         initialLocationId: "office", recruitable: false,
@@ -282,6 +315,10 @@ describe("CampaignEngine", () => {
   it("requires rapport, three distinct screening tests, and an explicit recruitment decision", () => {
     const recruitCampaign: CampaignDefinition = {
       ...campaign,
+      coverProfiles: {
+        ...campaign.coverProfiles,
+        archive_clerk: { ...campaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["recruit"] },
+      },
       characters: [{
         id: "recruit", name: "Recruit", publicIdentity: "Courier", hiddenAlignment: "organization",
         initialLocationId: "office", recruitable: true,
@@ -320,6 +357,10 @@ describe("CampaignEngine", () => {
   it("migrates recruitment dossiers in an existing save", () => {
     const recruitCampaign: CampaignDefinition = {
       ...campaign,
+      coverProfiles: {
+        ...campaign.coverProfiles,
+        archive_clerk: { ...campaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["legacy-recruit"] },
+      },
       characters: [{
         id: "legacy-recruit", name: "Legacy", publicIdentity: "Clerk", hiddenAlignment: "neutral",
         initialLocationId: "office", recruitable: true,
@@ -341,6 +382,10 @@ describe("public cover identity", () => {
       { id: "archive-office", name: "Archive", district: "A", travelMinutes: {} },
       { id: "safe-flat", name: "Safe Flat", district: "B", travelMinutes: {}, radioSite: { baseRisk: 5, initiallyAvailable: true } },
     ],
+    coverProfiles: {
+      ...campaign.coverProfiles,
+      archive_clerk: { startingLocationId: "archive-office", workLocationIds: ["archive-office"], initialContactCharacterIds: [] },
+    },
     objectives: [{ ...campaign.objectives[0], deadline: "1942-05-20T20:00:00.000Z" }],
   };
 
@@ -361,6 +406,10 @@ describe("public cover identity", () => {
         { id: "jianghai-hotel", name: "Hotel", district: "Trade", travelMinutes: {} },
         { id: "safe-flat", name: "Safe Flat", district: "B", travelMinutes: {}, radioSite: { baseRisk: 5, initiallyAvailable: true } },
       ],
+      coverProfiles: {
+        ...coverCampaign.coverProfiles,
+        travelling_merchant: { startingLocationId: "jianghai-hotel", workLocationIds: ["jianghai-hotel"], initialContactCharacterIds: [] },
+      },
     };
     const state = createInitialWorld(merchantCampaign, "merchant-record-gap", "user-1", "undercover", "travelling_merchant");
     const result = new CampaignEngine(merchantCampaign, state).execute({ type: "wait", durationMinutes: 670, idempotencyKey: "merchant-no-business" });
@@ -380,6 +429,10 @@ describe("public cover identity", () => {
         { id: "jianghai-hotel", name: "Hotel", district: "Trade", travelMinutes: {} },
         { id: "safe-flat", name: "Safe Flat", district: "B", travelMinutes: {}, radioSite: { baseRisk: 5, initiallyAvailable: true } },
       ],
+      coverProfiles: {
+        ...coverCampaign.coverProfiles,
+        travelling_merchant: { startingLocationId: "jianghai-hotel", workLocationIds: ["jianghai-hotel"], initialContactCharacterIds: [] },
+      },
     };
     const state = createInitialWorld(merchantCampaign, "merchant-business-record", "user-1", "undercover", "travelling_merchant");
     const engine = new CampaignEngine(merchantCampaign, state);
@@ -394,6 +447,10 @@ describe("public cover identity", () => {
   it("counts sustained workplace dialogue as a verifiable public attendance record", () => {
     const workplaceCampaign: CampaignDefinition = {
       ...coverCampaign,
+      coverProfiles: {
+        ...coverCampaign.coverProfiles,
+        archive_clerk: { ...coverCampaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["chen-jingwen"] },
+      },
       characters: [{
         id: "chen-jingwen", name: "Chen", publicIdentity: "Chief", hiddenAlignment: "neutral", initialLocationId: "archive-office", recruitable: false,
         schedule: [{ startMinute: 0, endMinute: 1440, locationId: "archive-office", activity: "work" }],
@@ -554,6 +611,28 @@ describe("public cover identity", () => {
     expect(finalTurn?.events.find((event) => event.type === "character.introduced")?.payload).toMatchObject({ characterName: "Dispatcher", publicIdentity: "Dispatcher" });
   });
 
+  it("resolves at most one director event during a long player action", () => {
+    const pacedCampaign: CampaignDefinition = {
+      ...coverCampaign,
+      narrativeEvents: [{
+        id: "paced-one", title: "First beat", visibleSummary: "First beat resolved.",
+        trigger: { type: "time", notBefore: campaign.startTime },
+        effects: { thread: { id: "paced-thread-one", title: "First", summary: "First thread" } },
+      }, {
+        id: "paced-two", title: "Second beat", visibleSummary: "Second beat resolved.",
+        trigger: { type: "time", notBefore: campaign.startTime },
+        effects: { thread: { id: "paced-thread-two", title: "Second", summary: "Second thread" } },
+      }],
+    };
+    const engine = new CampaignEngine(pacedCampaign, createInitialWorld(pacedCampaign, "paced-events", "user-1"));
+    const longAction = engine.execute({ type: "wait", durationMinutes: 120, idempotencyKey: "paced-long-wait" });
+    expect(longAction.state.resolvedNarrativeEventIds).toEqual(["paced-one"]);
+    expect(longAction.events.filter((event) => event.type === "narrative.event_resolved")).toHaveLength(1);
+
+    const nextAction = engine.execute({ type: "wait", durationMinutes: 10, idempotencyKey: "paced-next-wait" });
+    expect(nextAction.state.resolvedNarrativeEventIds).toEqual(["paced-one", "paced-two"]);
+  });
+
   it("accepts leave as a public record instead of treating it as an unexplained absence", () => {
     const engine = new CampaignEngine(coverCampaign, createInitialWorld(coverCampaign, "cover-leave", "user-1"));
     const leave = engine.execute({ type: "request_leave", reason: "family", durationMinutes: 10, idempotencyKey: "cover-leave-request" });
@@ -588,6 +667,10 @@ describe("public cover identity", () => {
 describe("field-level intelligence evidence", () => {
   const evidenceCampaign: CampaignDefinition = {
     ...campaign,
+    coverProfiles: {
+      ...campaign.coverProfiles,
+      archive_clerk: { ...campaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["source-a", "source-b", "source-c"] },
+    },
     characters: ["source-a", "source-b", "source-c"].map((id) => ({
       id, name: id.toUpperCase(), publicIdentity: "Clerk", hiddenAlignment: "neutral" as const,
       initialLocationId: "office", recruitable: false,
@@ -656,6 +739,10 @@ describe("field-level intelligence evidence", () => {
 describe("sequential missions, interrogation, and radio sites", () => {
   const sequentialCampaign: CampaignDefinition = {
     ...campaign,
+    coverProfiles: {
+      ...campaign.coverProfiles,
+      archive_clerk: { startingLocationId: "archive-office", workLocationIds: ["archive-office"], initialContactCharacterIds: ["ally", "interrogator"] },
+    },
     locations: [
       { id: "archive-office", name: "Archive", district: "A", travelMinutes: { "safe-flat": 20, "ally-shop": 20 } },
       { id: "safe-flat", name: "Safe Flat", district: "B", travelMinutes: { "archive-office": 20, "ally-shop": 20 }, radioSite: { baseRisk: 5, initiallyAvailable: true } },
@@ -805,7 +892,19 @@ describe("sequential missions, interrogation, and radio sites", () => {
       ...sequentialCampaign,
       objectives: sequentialCampaign.objectives.map((objective) => objective.id === "mission-1" ? {
         ...objective,
-        completionEffects: { investigationPressure: 20, interrogation: { interrogatorCharacterId: "interrogator", delayMinutes: 30 }, notice: "敌方发出传唤。" },
+        completionEffects: {
+          investigationPressure: 20,
+          interrogation: {
+            interrogatorCharacterId: "interrogator",
+            delayMinutes: 30,
+            questionsByCoverProfile: {
+              archive_clerk: ["档案问题一", "档案问题二", "档案问题三"],
+              travelling_merchant: ["货账问题一", "货账问题二", "货账问题三"],
+              freelance_writer: ["稿件问题一", "稿件问题二", "稿件问题三"],
+            },
+          },
+          notice: "敌方发出传唤。",
+        },
       } : objective),
     };
     const engine = new CampaignEngine(interrogationCampaign, createInitialWorld(interrogationCampaign, "interrogation-flow", "user-1"));
@@ -845,6 +944,10 @@ describe("sequential missions, interrogation, and radio sites", () => {
 describe("enemy investigation", () => {
   const investigationCampaign: CampaignDefinition = {
     ...campaign,
+    coverProfiles: {
+      ...campaign.coverProfiles,
+      archive_clerk: { ...campaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["observer-target"] },
+    },
     characters: [{
       id: "observer-target", name: "Target", publicIdentity: "Clerk", hiddenAlignment: "neutral",
       initialLocationId: "office", recruitable: false,
@@ -916,6 +1019,10 @@ describe("enemy investigation", () => {
 describe("radio transmission workflow", () => {
   const radioCampaign: CampaignDefinition = {
     ...campaign,
+    coverProfiles: {
+      ...campaign.coverProfiles,
+      archive_clerk: { startingLocationId: "wu-clock-shop", workLocationIds: ["wu-clock-shop"], initialContactCharacterIds: [] },
+    },
     locations: [{ id: "wu-clock-shop", name: "Clock Shop", district: "A", travelMinutes: {} }],
     intel: [
       { id: "shipment", title: "Shipment", truth: "true", requiredFields: ["time"], sourceCharacterIds: [], expiresAt: "1942-05-13T20:00:00.000Z" },
@@ -1134,6 +1241,10 @@ describe("negotiated comrade cooperation", () => {
 describe("director contacts and counterintelligence", () => {
   const directorCampaign: CampaignDefinition = {
     ...campaign,
+    coverProfiles: {
+      ...campaign.coverProfiles,
+      archive_clerk: { ...campaign.coverProfiles.archive_clerk, initialContactCharacterIds: ["visitor"] },
+    },
     characters: [{
       id: "visitor", name: "Visitor", publicIdentity: "Editor", hiddenAlignment: "neutral", initialLocationId: "office", recruitable: false,
       schedule: [{ startMinute: 0, endMinute: 1440, locationId: "office", activity: "work" }],
@@ -1227,6 +1338,10 @@ describe("director contacts and counterintelligence", () => {
 
   const counterCampaign: CampaignDefinition = {
     ...campaign,
+    coverProfiles: {
+      ...campaign.coverProfiles,
+      archive_clerk: { startingLocationId: "archive-office", workLocationIds: ["archive-office"], initialContactCharacterIds: [] },
+    },
     locations: [
       { id: "archive-office", name: "Archive", district: "A", travelMinutes: { "safe-flat": 20 } },
       { id: "safe-flat", name: "Safe", district: "B", travelMinutes: { "archive-office": 20 }, radioSite: { baseRisk: 5, initiallyAvailable: true } },

@@ -12,13 +12,13 @@ const travel = (archive: number, radio: number, newspaper: number, hotel: number
 });
 
 const locations: LocationDefinition[] = [
-  { id: "archive-office", name: "机要楼档案科", district: "政务区", travelMinutes: travel(10, 10, 20, 20, 40, 30), radioSite: { baseRisk: 18, requiresRecruitedCharacterId: "chen-jingwen" } },
-  { id: "radio-office", name: "电讯科", district: "政务区", travelMinutes: travel(10, 10, 20, 20, 40, 30), radioSite: { baseRisk: 16, requiresRecruitedCharacterId: "zhou-qiming" } },
-  { id: "linjiang-news", name: "临江日报社", district: "旧城区", travelMinutes: travel(20, 20, 10, 20, 30, 20), radioSite: { baseRisk: 9, requiresRecruitedCharacterId: "lin-ruolan" } },
-  { id: "jianghai-hotel", name: "江海饭店", district: "商业区", travelMinutes: travel(20, 20, 20, 10, 30, 20), radioSite: { baseRisk: 11, requiresRecruitedCharacterId: "shen-manqiu" } },
-  { id: "third-dock", name: "三号码头", district: "码头区", travelMinutes: travel(40, 40, 30, 30, 10, 30), radioSite: { baseRisk: 14, requiresRecruitedCharacterId: "zhao-fusheng" } },
-  { id: "wu-clock-shop", name: "老吴钟表店", district: "旧城区", travelMinutes: travel(30, 30, 20, 20, 30, 10), radioSite: { baseRisk: 6, requiresRecruitedCharacterId: "old-wu" } },
-  { id: "safe-flat", name: "城南安全住处", district: "城南住宅区", travelMinutes: travel(20, 30, 20, 20, 40, 20, 10), radioSite: { baseRisk: 5, initiallyAvailable: true } },
+  { id: "archive-office", name: "机要楼档案科", district: "政务区", mapPosition: { x: 28, y: 18 }, travelMinutes: travel(10, 10, 20, 20, 40, 30), radioSite: { baseRisk: 18, requiresRecruitedCharacterId: "chen-jingwen" } },
+  { id: "radio-office", name: "电讯科", district: "政务区", mapPosition: { x: 70, y: 20 }, travelMinutes: travel(10, 10, 20, 20, 40, 30), radioSite: { baseRisk: 16, requiresRecruitedCharacterId: "zhou-qiming" } },
+  { id: "linjiang-news", name: "临江日报社", district: "旧城区", mapPosition: { x: 51, y: 43 }, travelMinutes: travel(20, 20, 10, 20, 30, 20), radioSite: { baseRisk: 9, requiresRecruitedCharacterId: "lin-ruolan" } },
+  { id: "jianghai-hotel", name: "江海饭店", district: "商业区", mapPosition: { x: 76, y: 62 }, travelMinutes: travel(20, 20, 20, 10, 30, 20), radioSite: { baseRisk: 11, requiresRecruitedCharacterId: "shen-manqiu" } },
+  { id: "third-dock", name: "三号码头", district: "码头区", mapPosition: { x: 28, y: 81 }, travelMinutes: travel(40, 40, 30, 30, 10, 30), radioSite: { baseRisk: 14, requiresRecruitedCharacterId: "zhao-fusheng" } },
+  { id: "wu-clock-shop", name: "老吴钟表店", district: "旧城区", mapPosition: { x: 20, y: 52 }, travelMinutes: travel(30, 30, 20, 20, 30, 10), radioSite: { baseRisk: 6, requiresRecruitedCharacterId: "old-wu" } },
+  { id: "safe-flat", name: "城南安全住处", district: "城南住宅区", mapPosition: { x: 70, y: 87 }, travelMinutes: travel(20, 30, 20, 20, 40, 20, 10), radioSite: { baseRisk: 5, initiallyAvailable: true } },
 ];
 
 const reliability = (loyalty: number, discipline: number, pressureResistance: number, courage: number, competence: number) => ({
@@ -69,6 +69,11 @@ const draft: CampaignDefinition = {
   engineVersion: "0.1.0",
   name: "临江潜线：第三号电台",
   startTime: "1942-05-12T00:00:00.000Z",
+  coverProfiles: {
+    archive_clerk: { startingLocationId: "archive-office", workLocationIds: ["archive-office"], initialContactCharacterIds: ["chen-jingwen"] },
+    travelling_merchant: { startingLocationId: "jianghai-hotel", workLocationIds: ["jianghai-hotel", "third-dock", "wu-clock-shop"], initialContactCharacterIds: ["luo-boan"] },
+    freelance_writer: { startingLocationId: "linjiang-news", workLocationIds: ["linjiang-news", "jianghai-hotel", "third-dock", "wu-clock-shop"], initialContactCharacterIds: ["lin-ruolan"] },
+  },
   locations,
   characters,
   publicLeads: [
@@ -350,7 +355,20 @@ const draft: CampaignDefinition = {
       id: "confirm-radio-shipment", title: "第一任务：确认无线电设备运输", sequence: 1, required: true,
       deadline: "1942-05-15T14:00:00.000Z", requiredIntelIds: ["shipment-time", "shipment-place", "shipment-cargo"], minimumConfidence: 0.7,
       acceptedDeliveryMethods: ["radio", "courier"], recipientId: "organization",
-      completionEffects: { investigationPressure: 25, personalSuspicion: 4, interrogation: { interrogatorCharacterId: "han-shijie", delayMinutes: 30 }, notice: "设备运输遭到破坏后，特务机关认定城内存在完整地下网络，开始扩大临检并倒查近期档案与货运记录。" },
+      completionEffects: {
+        investigationPressure: 25,
+        personalSuspicion: 4,
+        interrogation: {
+          interrogatorCharacterId: "han-shijie",
+          delayMinutes: 30,
+          questionsByCoverProfile: {
+            archive_clerk: ["设备运输出事前后，你调阅过哪些档案，谁能证明？", "你的出入为什么与几份异常借阅记录重合？", "现在核对值班簿和同事证词，会得到怎样的结果？"],
+            travelling_merchant: ["设备运输出事前后，你去了哪些商号和码头，账目在哪里？", "你的走货路线为什么靠近被查地点？", "现在核对客户、货栈和收据，谁能证明你的行程？"],
+            freelance_writer: ["设备运输出事前后，你采访过哪些人，稿件和笔记在哪里？", "你的选题为什么总与警备处的调查地点重合？", "现在核对编辑、校样和采访对象，他们会怎样说明？"],
+          },
+        },
+        notice: "设备运输遭到破坏后，特务机关认定城内存在完整地下网络，开始扩大临检并倒查近期档案与货运记录。",
+      },
     },
     {
       id: "trace-security-crackdown", title: "第二任务：查明特务机关清查部署", sequence: 2, required: true,

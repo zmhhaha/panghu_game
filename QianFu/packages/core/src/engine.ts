@@ -5,7 +5,7 @@ import type {
   GameEvent, IntelEvidenceSourceType, IntelState, InterrogationStrategy, LocationKnowledgeStage, MissionObjective, NarrativeThreadState, RadioMessageFormat, RecruitmentEvidenceResult, RecruitmentExecutionReport, RecruitmentTestType, ScoreBreakdown, WorldState,
 } from "./types.js";
 import { DIFFICULTIES } from "./difficulties.js";
-import { getCoverProfile } from "./cover-profiles.js";
+import { getCampaignCoverProfile, getCoverProfile } from "./cover-profiles.js";
 
 const addMinutes = (iso: string, minutes: number) =>
   new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
@@ -37,8 +37,13 @@ export function createInitialWorld(
   difficultyId: keyof typeof DIFFICULTIES = "undercover",
   coverProfileId: WorldState["cover"]["profileId"] = "archive_clerk",
 ): WorldState {
-  const coverProfile = getCoverProfile(coverProfileId);
-  const profileApplies = campaign.locations.some((location) => location.id === coverProfile.startingLocationId);
+  const coverProfile = getCampaignCoverProfile(campaign, coverProfileId);
+  if (!campaign.locations.some((location) => location.id === coverProfile.startingLocationId)) {
+    throw new Error(`Campaign cover profile ${coverProfile.id} has no valid starting location`);
+  }
+  if (coverProfile.initialContactCharacterIds.some((id) => !campaign.characters.some((character) => character.id === id))) {
+    throw new Error(`Campaign cover profile ${coverProfile.id} has an invalid initial contact`);
+  }
   const characters = Object.fromEntries(campaign.characters.map((character): [string, CharacterState] => [
     character.id,
     {
@@ -66,9 +71,9 @@ export function createInitialWorld(
     item.id,
     { id: item.id, knownFields: [], confidence: 0, collectedSourceIds: [], evidence: [], deliveredFields: [], deliveredAt: null, deliveryMethod: null },
   ]));
-  const startingLocationId = profileApplies ? coverProfile.startingLocationId : campaign.locations[0]?.id ?? "";
+  const startingLocationId = coverProfile.startingLocationId;
   const initiallyDiscovered = [...new Set([
-    ...(profileApplies ? [coverProfile.startingLocationId] : campaign.locations.slice(0, 3).map((location) => location.id)),
+    coverProfile.startingLocationId,
     ...campaign.locations.filter((location) => location.radioSite?.initiallyAvailable).map((location) => location.id),
   ])];
   const cover = createInitialCoverState(coverProfile.id);
@@ -93,7 +98,7 @@ export function createInitialWorld(
       hint: location.id === startingLocationId ? "公开身份的日常活动地点。" : null,
       updatedAt: campaign.startTime,
     }])),
-    knownCharacterIds: profileApplies ? coverProfile.initialContactCharacterIds.filter((id) => characters[id]) : Object.keys(characters),
+    knownCharacterIds: [...coverProfile.initialContactCharacterIds],
     resolvedLeadIds: [],
     resolvedNarrativeEventIds: [],
     narrativeThreads: [],
@@ -346,7 +351,7 @@ export class CampaignEngine {
           reactionReason: resolveRelationshipReactionReason(definition, legacyAction),
           requestedEffects: action.agentOutcome?.requestedEffects ?? [],
         });
-        recordCoverConversationCredit(next, action.durationMinutes, append);
+        recordCoverConversationCredit(this.campaign, next, action.durationMinutes, append);
         const contactWeight = session.goal === "apply_pressure" ? 3 : session.goal === "recruit_probe" || session.goal === "request_information" ? 2 : 1;
         recordInvestigationEvidence(next, "extended_contact", next.currentLocationId, contactWeight, append);
         if (discovery) {
@@ -778,9 +783,9 @@ export class CampaignEngine {
         break;
       }
       case "cover_work": {
-        const profile = getCoverProfile(next.cover.profileId);
+        const profile = getCampaignCoverProfile(this.campaign, next.cover.profileId);
         if (!profile.workLocationIds.includes(next.currentLocationId)) throw new Error(`公开工作需要在${profile.title}的活动范围内完成`);
-        if (!isCoverWorkHours(next.currentTime, next.cover.profileId)) throw new Error("当前不在公开工作时段");
+        if (!isCoverWorkHours(next.currentTime, profile)) throw new Error("当前不在公开工作时段");
         if (!profile.workKinds.includes(action.workKind)) throw new Error("该工作不属于当前公开身份");
         if (next.cover.leaveUntil && new Date(next.cover.leaveUntil) >= new Date(next.currentTime)) throw new Error("请假期间不能安排公开工作");
         const requiredDuration = coverWorkMinutes(action.workKind);
@@ -804,13 +809,13 @@ export class CampaignEngine {
         break;
       }
       case "request_leave": {
-        const profile = getCoverProfile(next.cover.profileId);
+        const profile = getCampaignCoverProfile(this.campaign, next.cover.profileId);
         if (!profile.accountability.allowsLeave) throw new Error(`${profile.title}没有固定考勤，不需要办理请假；请通过${profile.routineLabel}留下可核验的公开记录`);
         if (!profile.workLocationIds.includes(next.currentLocationId)) throw new Error("需要在公开身份的活动范围内安排请假");
-        if (!isCoverWorkHours(next.currentTime, next.cover.profileId)) throw new Error("当前无法办理请假");
+        if (!isCoverWorkHours(next.currentTime, profile)) throw new Error("当前无法办理请假");
         if (action.durationMinutes !== 10) throw new Error("办理请假需要 10 分钟");
         if (next.cover.leaveUntil && new Date(next.cover.leaveUntil) >= new Date(next.currentTime)) throw new Error("当前已有生效中的请假记录");
-        next.cover.leaveUntil = endOfCoverShift(next.currentTime, next.cover.profileId);
+        next.cover.leaveUntil = endOfCoverShift(next.currentTime, profile);
         next.cover.leaveReason = action.reason;
         next.cover.leaveCount += 1;
         next.cover.recordStatus = "excused";
@@ -841,6 +846,7 @@ export class CampaignEngine {
       case "interrogation_answer": {
         const interrogation = next.interrogation;
         if (!interrogation || interrogation.status !== "active" || interrogation.id !== action.interrogationId) throw new Error("当前没有对应的盘问");
+        const interrogatorName = this.campaign.characters.find((character) => character.id === interrogation.interrogatorCharacterId)?.name ?? "调查员";
         if (action.durationMinutes !== 10) throw new Error("每次盘问回答耗时 10 分钟");
         const text = action.playerText.trim();
         if (text.length < 4 || text.length > 300) throw new Error("盘问回答应为 4 至 300 个字符");
@@ -855,19 +861,19 @@ export class CampaignEngine {
           if (interrogation.outcome === "cleared") {
             next.personalSuspicion = clamp(next.personalSuspicion - 8);
             next.investigation.pressure = clamp(next.investigation.pressure - 10);
-            narration = "你的说法与公开记录基本吻合。韩世杰暂时放下笔，但仍提醒你不要离城。";
+            narration = `你的说法与公开记录基本吻合。${interrogatorName}暂时放下笔，但仍提醒你不要离城。`;
           } else if (interrogation.outcome === "watched") {
             next.personalSuspicion = clamp(next.personalSuspicion + 5 * next.difficulty.enemyResponseSpeed);
-            narration = "韩世杰没有抓住明确破绽，却将你的名字留在了继续观察的名单上。";
+            narration = `${interrogatorName}没有抓住明确破绽，却将你的名字留在了继续观察的名单上。`;
           } else {
             next.personalSuspicion = clamp(next.personalSuspicion + 15 * next.difficulty.enemyResponseSpeed);
             next.cover.scrutiny = clamp(next.cover.scrutiny + 12);
             next.investigation.pressure = clamp(next.investigation.pressure + 10);
-            narration = "前后说法出现明显漏洞。韩世杰要求补查你的考勤、来往和近期出入记录。";
+            narration = `前后说法出现明显漏洞。${interrogatorName}要求补查你的考勤、来往和近期出入记录。`;
           }
           append("interrogation.resolved", { interrogationId: interrogation.id, outcome: interrogation.outcome, consistency: interrogation.consistency });
         } else {
-          narration = `韩世杰没有评价，只翻到下一页：“${interrogation.questions[interrogation.answers.length]}”`;
+          narration = `${interrogatorName}没有评价，只翻到下一页：“${interrogation.questions[interrogation.answers.length]}”`;
         }
         break;
       }
@@ -877,6 +883,16 @@ export class CampaignEngine {
     const finalTime = addMinutes(next.currentTime, elapsedDuration);
     const previousBucket = Math.floor(new Date(previousTime).getTime() / 600_000);
     const finalBucket = Math.floor(new Date(finalTime).getTime() / 600_000);
+    const contentAlreadyProgressed = () => events.some((event) => [
+      "intel.dialogue_discovered",
+      "lead.resolved",
+      "location.discovered",
+      "location.stage_changed",
+      "character.introduced",
+      "mission.objective_completed",
+      "mission.objective_failed",
+      "narrative.event_resolved",
+    ].includes(event.type));
     // Dialogue turns use two-minute slices. Longer actions still resolve every
     // crossed ten-minute world boundary instead of collapsing them into one tick.
     for (let bucket = previousBucket + 1; bucket <= finalBucket; bucket += 1) {
@@ -887,10 +903,10 @@ export class CampaignEngine {
         ...advanceComradeTasks(this.campaign, next, append),
         ...advanceRadioReceipts(next, append),
         ...advanceMissionObjectives(this.campaign, next, append),
-        ...advanceCoverIdentity(next, append),
-        ...advanceInterrogation(next, append),
+        ...advanceCoverIdentity(this.campaign, next, append),
+        ...advanceInterrogation(this.campaign, next, append),
         ...advanceEnemyInvestigation(next, append, action),
-        ...advanceNarrativeEvents(this.campaign, next, append, true),
+        ...(contentAlreadyProgressed() ? [] : advanceNarrativeEvents(this.campaign, next, append, true)),
       ];
       notices.push(...tickNotices);
       if (next.activeDialogue && tickNotices.length > 0) {
@@ -916,7 +932,7 @@ export class CampaignEngine {
     }
     next.currentTime = finalTime;
     notices.push(...advanceMissionObjectives(this.campaign, next, append));
-    notices.push(...advanceNarrativeEvents(this.campaign, next, append, false));
+    if (!contentAlreadyProgressed()) notices.push(...advanceNarrativeEvents(this.campaign, next, append, false));
     resolveCompletedNarrativeThreads(this.campaign, next, append);
     next.playerEnergy = action.type === "rest"
       ? clamp(next.playerEnergy + energyRecovery)
@@ -1093,6 +1109,7 @@ function resolveCampaignLeads(
     resolved.push(lead.id);
     append("lead.resolved", { leadId: lead.id, trigger, hint: lead.hint, sourceCharacterId: characterId, profileId, workKind });
     hints.push(`线索：${lead.hint}`);
+    break;
   }
   return hints;
 }
@@ -1221,6 +1238,7 @@ function advanceNarrativeEvents(
     resolved.push(event.id);
     append("narrative.event_resolved", { eventId: event.id, title: event.title, summary: event.visibleSummary });
     notices.push(event.visibleSummary);
+    break;
   }
   return notices;
 }
@@ -1308,7 +1326,7 @@ function advanceMissionObjectives(
           id: `${objective.id}:interrogation`, triggerObjectiveId: objective.id,
           interrogatorCharacterId: effects.interrogation.interrogatorCharacterId,
           status: "pending", dueAt: addMinutes(state.currentTime, effects.interrogation.delayMinutes),
-          questions: buildInterrogationQuestions(state.cover.profileId), answers: [], consistency: 50, outcome: null,
+          questions: effects.interrogation.questionsByCoverProfile[state.cover.profileId], answers: [], consistency: 50, outcome: null,
         };
         append("interrogation.scheduled", { interrogationId: state.interrogation.id, dueAt: state.interrogation.dueAt, interrogatorCharacterId: state.interrogation.interrogatorCharacterId });
       }
@@ -1356,25 +1374,13 @@ export function isIntelUnlocked(campaign: CampaignDefinition, state: WorldState,
   return owners.length === 0 || owners.some((objective) => isObjectiveUnlocked(state, objective));
 }
 
-function advanceInterrogation(state: WorldState, append: (type: string, payload: unknown) => void): string[] {
+function advanceInterrogation(campaign: CampaignDefinition, state: WorldState, append: (type: string, payload: unknown) => void): string[] {
   const interrogation = state.interrogation;
   if (!interrogation || interrogation.status !== "pending" || Date.parse(state.currentTime) < Date.parse(interrogation.dueAt)) return [];
   interrogation.status = "active";
   append("interrogation.started", { interrogationId: interrogation.id, interrogatorCharacterId: interrogation.interrogatorCharacterId });
-  return [`警备处的传唤已经送到。韩世杰在临时问讯室等你回答：“${interrogation.questions[0]}”`];
-}
-
-function buildInterrogationQuestions(profileId: WorldState["cover"]["profileId"]): string[] {
-  const workQuestion = profileId === "archive_clerk"
-    ? "设备运输出事前后，你调阅过哪些档案，谁能证明？"
-    : profileId === "travelling_merchant"
-      ? "设备运输出事前后，你去了哪些商号和码头，账目在哪里？"
-      : "设备运输出事前后，你采访过哪些人，稿件和笔记在哪里？";
-  return [
-    workQuestion,
-    "你的行踪为什么多次与被查地点重合？给我一个能核对的公开理由。",
-    "如果我们现在去核对你的同事、客户或编辑，他们会怎样描述你这几天的行动？",
-  ];
+  const interrogatorName = campaign.characters.find((character) => character.id === interrogation.interrogatorCharacterId)?.name ?? "调查员";
+  return [`传唤已经送到。${interrogatorName}在临时问讯室等你回答：“${interrogation.questions[0]}”`];
 }
 
 function interrogationAnswerScore(state: WorldState, strategy: InterrogationStrategy, text: string): number {
@@ -1534,7 +1540,7 @@ export function getRestAvailability(campaign: CampaignDefinition, state: WorldSt
 }
 
 export function getCountermeasureOptions(campaign: CampaignDefinition, state: WorldState) {
-  const profile = getCoverProfile(state.cover.profileId);
+  const profile = getCampaignCoverProfile(campaign, state.cover.profileId);
   const heat = state.investigation.locationHeat[state.currentLocationId] ?? 0;
   const watched = state.investigation.surveillanceLocationIds.includes(state.currentLocationId);
   const pressure = state.investigation.pressure;
@@ -1551,8 +1557,8 @@ export function getCountermeasureOptions(campaign: CampaignDefinition, state: Wo
     {
       kind: "reinforce_cover" as const, label: "补强公开行踪", durationMinutes: 60,
       description: "补齐工作凭据和可核对的时间线，降低个人与上级怀疑。",
-      available: enoughEnergy && profile.workLocationIds.includes(state.currentLocationId) && isCoverWorkHours(state.currentTime, state.cover.profileId),
-      reason: !enoughEnergy ? "精力不足" : !profile.workLocationIds.includes(state.currentLocationId) ? "需要回到公开身份的工作地点" : !isCoverWorkHours(state.currentTime, state.cover.profileId) ? "当前不在公开工作时段" : "当前可以执行",
+      available: enoughEnergy && profile.workLocationIds.includes(state.currentLocationId) && isCoverWorkHours(state.currentTime, profile),
+      reason: !enoughEnergy ? "精力不足" : !profile.workLocationIds.includes(state.currentLocationId) ? "需要回到公开身份的工作地点" : !isCoverWorkHours(state.currentTime, profile) ? "当前不在公开工作时段" : "当前可以执行",
       requiresTarget: false,
     },
     {
@@ -1856,9 +1862,9 @@ function advanceEnemyInvestigation(
   return [notice];
 }
 
-function advanceCoverIdentity(state: WorldState, append: (type: string, payload: unknown) => void): string[] {
+function advanceCoverIdentity(campaign: CampaignDefinition, state: WorldState, append: (type: string, payload: unknown) => void): string[] {
   const cover = state.cover;
-  const profile = getCoverProfile(cover.profileId);
+  const profile = getCampaignCoverProfile(campaign, cover.profileId);
   const date = coverDate(state.currentTime);
   const minute = minuteOfDay(state.currentTime);
   const leaveActive = Boolean(cover.leaveUntil && new Date(cover.leaveUntil) >= new Date(state.currentTime));
@@ -1893,7 +1899,7 @@ function advanceCoverIdentity(state: WorldState, append: (type: string, payload:
   }
 
   if (leaveActive) cover.recordStatus = "excused";
-  else if (cover.completedRecordDates.includes(date) && isCoverWorkHours(state.currentTime, cover.profileId)) cover.recordStatus = "recorded";
+  else if (cover.completedRecordDates.includes(date) && isCoverWorkHours(state.currentTime, profile)) cover.recordStatus = "recorded";
   else if (profile.workHours && minute >= profile.workHours.startMinute + 120 && minute < profile.workHours.endMinute && !cover.completedRecordDates.includes(date)) cover.recordStatus = "gap";
   else if (!profile.workHours || minute < profile.workHours.endMinute) cover.recordStatus = "pending";
   else if (cover.recordStatus === "excused") cover.recordStatus = "pending";
@@ -1906,12 +1912,13 @@ function addCoverObservation(state: WorldState, type: WorldState["cover"]["obser
 }
 
 function recordCoverConversationCredit(
+  campaign: CampaignDefinition,
   state: WorldState,
   minutes: number,
   append: (type: string, payload: unknown) => void,
 ) {
-  const profile = getCoverProfile(state.cover.profileId);
-  if (!profile.workLocationIds.includes(state.currentLocationId) || !isCoverWorkHours(state.currentTime, state.cover.profileId)) return;
+  const profile = getCampaignCoverProfile(campaign, state.cover.profileId);
+  if (!profile.workLocationIds.includes(state.currentLocationId) || !isCoverWorkHours(state.currentTime, profile)) return;
   if (state.cover.recordStatus === "excused") return;
   const date = coverDate(state.currentTime);
   if (state.cover.completedRecordDates.includes(date)) return;
@@ -1937,14 +1944,14 @@ function coverDate(iso: string) {
   }).format(new Date(iso));
 }
 
-function isCoverWorkHours(iso: string, profileId: WorldState["cover"]["profileId"] = "archive_clerk") {
+function isCoverWorkHours(iso: string, profile: ReturnType<typeof getCoverProfile>) {
   const minute = minuteOfDay(iso);
-  const hours = getCoverProfile(profileId).workHours;
+  const hours = profile.workHours;
   return Boolean(hours && minute >= hours.startMinute && minute < hours.endMinute);
 }
 
-function endOfCoverShift(iso: string, profileId: WorldState["cover"]["profileId"]) {
-  const hour = Math.floor((getCoverProfile(profileId).workHours?.endMinute ?? 17 * 60) / 60);
+function endOfCoverShift(iso: string, profile: ReturnType<typeof getCoverProfile>) {
+  const hour = Math.floor((profile.workHours?.endMinute ?? 17 * 60) / 60);
   return `${coverDate(iso)}T${String(hour).padStart(2, "0")}:00:00.000Z`;
 }
 

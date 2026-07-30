@@ -212,6 +212,10 @@ describe("CampaignOrchestrator", () => {
       ...LINJIANG_1942,
       id: "custom-campaign",
       version: "2.0.0",
+      coverProfiles: {
+        ...LINJIANG_1942.coverProfiles,
+        archive_clerk: { ...LINJIANG_1942.coverProfiles.archive_clerk, initialContactCharacterIds: ["custom-contact"] },
+      },
       characters: [{
         id: "custom-contact", name: "许掌柜", publicIdentity: "药铺掌柜", hiddenAlignment: "neutral",
         initialLocationId: "archive-office", recruitable: false,
