@@ -1601,7 +1601,7 @@ GET /api/v1/campaigns
 ```json
 {
   "campaignId": "linjiang-1942",
-  "campaignVersion": "1.0.0",
+  "campaignVersion": "0.1.0",
   "difficulty": "undercover",
   "coverProfileId": "archive_clerk"
 }
