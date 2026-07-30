@@ -2,9 +2,10 @@
   "name": "tewu",
   "version": "0.1.0",
   "private": true,
-  "description": "特务：四条历史战役线的十人盘查对话游戏原型",
+  "description": "特务：五个历史机构的十人盘查对话游戏原型",
   "scripts": {
-    "dev": "python -m http.server 4173"
+    "dev": "python -m http.server 4173",
+    "test": "node tests/judge-state.test.js"
   },
   "dependencies": {
     "pg": "^8.13.1"

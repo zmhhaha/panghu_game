@@ -340,6 +340,7 @@ const FOLLOWUP_DETAILS = {
 const TOPICS = [
   { id: "institution", label: "机构与立场", keys: ["元首", "忠诚", "秩序", "政治", "组织", "工会", "共产主义", "冷战", "西方广播", "外国人", "外来信件", "占领", "日伪", "纪律", "介绍信", "安全许可", "集会", "读书会"] },
   { id: "identity", label: "身份与职责", keys: ["身份", "职业", "做什么", "姓名", "工作"] },
+  { id: "chronology", label: "时间与见证", keys: ["昨天", "昨晚", "交班", "时间点", "见过哪些", "见过谁"] },
   { id: "route", label: "路线与时间", keys: ["路线", "从哪里", "几点", "车", "站", "路"] },
   { id: "document", label: "证件与物品", keys: ["证件", "文件", "印章", "箱子", "行李", "票"] },
   { id: "contact", label: "接头与关系", keys: ["谁", "接头", "认识", "联络", "朋友", "见面"] },
@@ -437,7 +438,8 @@ async function requestJudgeReply(controller, answer, result) {
       answer,
       topic: result.topic,
       question: result.question,
-      history: controller.logs,
+      plannedNextTopic: result.plannedNextTopic,
+      history: controller.logs.slice(0, -1),
       fallback: result.reaction,
       fallbackEvaluation: result.localEvaluation,
     }),
@@ -806,25 +808,35 @@ class WorldController {
   }
 }
 
-const JUDGE_QUESTIONS = [
-  { topic: "identity", make: (campaign, profile) => `先说清楚：你的姓名、职业，以及你声称所属的单位。` },
-  { topic: "route", make: (campaign, profile) => `你从哪里进入这座城市？请按顺序说出经过的路线和最后一次换车。` },
-  { topic: "document", make: (campaign, profile) => `把证件和随身物品放到桌面上。编号、封签和用途分别是什么？` },
-  { topic: "chronology", make: (campaign, profile) => `从昨天晚上到现在，你见过哪些人？时间点不要用“大概”带过。` },
-  { topic: "contact", make: (campaign, profile) => `你进城后要找谁？如果对方没有出现，你会通过什么公开渠道联系他？` },
-  { topic: "purpose", make: (campaign, profile) => `你来这里真正要完成的事情是什么？说出一个可以被档案核验的结果。` },
-  { topic: "local", make: (campaign, profile) => `说一个只有真正来过${campaign.setting}的人才会注意到的细节。` },
-  { topic: "chronology", make: (campaign, profile) => `把你刚才的路线再复述一遍：哪一段最容易被记录证明，哪一段没有记录？` },
-  { topic: "pressure", make: (campaign, profile) => `如果现在暂时扣留你，你最担心哪件事被耽误？为什么？` },
-  { topic: "pressure", make: (campaign, profile) => `最后一次机会。还有什么必须主动告诉我、但你前面没有说的？` },
-];
+const JUDGE_TOPIC_ORDER = ["identity", "route", "document", "chronology", "contact", "purpose", "local", "pressure"];
+const JUDGE_TOPIC_QUESTIONS = {
+  identity: (campaign, profile) => "先说清楚：你的姓名、职业，以及你声称所属的单位。",
+  route: (campaign, profile) => "按顺序说明你的出发时间、路线、最后一次换乘和到达登记时间。",
+  document: (campaign, profile) => "把证件和随身物品放到桌面上。分别说明编号、签发或登记来源以及用途。",
+  chronology: (campaign, profile) => "从交班到抵达检查点，你在什么时刻见过哪些人？按时间顺序回答。",
+  contact: (campaign, profile) => "你进城后要找谁？如果对方没有出现，通过哪个公开渠道留下记录？",
+  purpose: (campaign, profile) => "你来这里要完成什么具体工作？办完后会留下哪一份可核验结果？",
+  local: (campaign, profile) => `公开档案不算亲眼观察。说出一个你愿意固定下来的${campaign.setting}现场细节。`,
+  pressure: (campaign, profile) => "如果现在暂时扣留你，哪项有明确时限的安排会被耽误？记录可以怎样复核？",
+};
+const JUDGE_FINAL_QUESTION = "最后一次机会。还有什么必须主动补充，或者需要修正前面哪一项陈述？";
+const JUDGE_FOLLOWUPS = {
+  identity: "姓名、职业和所属单位三项里还有一项没有说清，逐项重新回答。",
+  route: "路线仍有缺口。只补充最后一次换乘、发生时间以及哪一段没有记录。",
+  document: "编号、登记来源或用途还有一项无法核对，把缺少的部分补全。",
+  chronology: "时间线仍不完整。说清交班时刻、交班对象和此后是否见过其他人。",
+  contact: "如果公开联系人没有出现，你具体通过哪个值班窗口或登记渠道处理？",
+  purpose: "不要只说‘工作’。说出完成标志以及会留下的回执或登记。",
+  local: "给出一个具体的声音、光线、设施或值班习惯，并把它固定为此后的说法。",
+  pressure: "说清被耽误事项的截止时间，以及哪一份记录能够证明它。",
+};
 
 const COVER_SCHEDULES = [
-  { departure: "18:20", arrival: "19:10", returnAt: "21:30" },
-  { departure: "19:05", arrival: "20:00", returnAt: "22:15" },
-  { departure: "19:40", arrival: "20:35", returnAt: "22:40" },
-  { departure: "20:10", arrival: "21:05", returnAt: "23:10" },
-  { departure: "20:35", arrival: "21:30", returnAt: "23:40" },
+  { handover: "18:05", departure: "18:20", transferAt: "18:50", arrival: "19:10", returnAt: "21:30" },
+  { handover: "18:45", departure: "19:05", transferAt: "19:40", arrival: "20:00", returnAt: "22:15" },
+  { handover: "19:20", departure: "19:40", transferAt: "20:15", arrival: "20:35", returnAt: "22:40" },
+  { handover: "19:50", departure: "20:10", transferAt: "20:45", arrival: "21:05", returnAt: "23:10" },
+  { handover: "20:15", departure: "20:35", transferAt: "21:10", arrival: "21:30", returnAt: "23:40" },
 ];
 
 function dossierFact(dossier, category) {
@@ -848,32 +860,37 @@ function makeInfiltratorProfile(campaign, preferredBlueprintId = null, preferred
   const contactRole = `${blueprint.origin}工作联络员`;
   const colleagueRole = `${blueprint.origin}同班职员`;
   const receipt = `${campaign.office}工作交接回执`;
+  const transferPoint = `${campaign.setting}外侧值班换乘点`;
   const cover = {
     identity: `${dossier.name}，${dossier.role}，日常工作登记在${dossier.origin}。`,
     contactName,
     contactRole,
     colleagueName,
     colleagueRole,
-    credential: `${dossier.role}临时工作证，编号 ${credentialNumber}，由${dossier.origin}人事登记处签发，可在${campaign.office}核验。`,
-    route: `${routeFact.expected || `从${dossier.origin}进入${campaign.setting}`}；${schedule.departure} 离开${dossier.origin}，${schedule.arrival} 从${campaign.setting}公开入口登记。`,
-    timeline: `${timelineFact.expected || "按单位晚间工作安排出发"}；出发前只与${colleagueName}（${colleagueRole}）完成交班，此后未与其他人同行；计划 ${schedule.returnAt} 前取得回执并按原路线返回。`,
-    belongings: `${dossier.public}；申报内容为“${objectFact.expected || "与职业有关的工作用品"}”，物品登记号 ${packageNumber}。`,
-    contact: `${relationshipFact.expected || "只保持公开工作往来"}；公开联系人是${contactName}（${contactRole}），由${campaign.office}值班台转接。`,
-    purpose: `以${dossier.role}身份完成工作交接，取得“${receipt}”后离开，不接受没有登记的临时任务。`,
+    credential: `类型：${dossier.role}临时工作证｜编号：${credentialNumber}｜签发：${dossier.origin}人事登记处｜核验：${campaign.office}`,
+    route: `出发：${schedule.departure}，${dossier.origin}｜主路线：${routeFact.expected || `前往${campaign.setting}`}｜末次换乘：${schedule.transferAt} 在${transferPoint}下车改为步行｜到达：${schedule.arrival}，公开入口登记`,
+    timeline: `交班：${schedule.handover}，${colleagueName}（${colleagueRole}）｜离开：${schedule.departure}｜抵达：${schedule.arrival}｜返回期限：${schedule.returnAt}｜途中：未与其他人同行`,
+    belongings: `外观：${dossier.public}｜申报：${objectFact.expected || "与职业有关的工作用品"}｜登记号：${packageNumber}`,
+    contact: `关系口径：${relationshipFact.expected || "只保持公开工作往来"}｜联系人：${contactName}（${contactRole}）｜备用渠道：${campaign.office}值班台登记并转接`,
+    purpose: `任务：完成${dossier.role}工作交接｜完成标志：取得“${receipt}”｜边界：不接受没有登记的临时任务`,
     localKnowledge: [...(LOCAL_KNOWLEDGE[campaign.id] || [])],
   };
+  const freeSlots = [
+    { slotId: "free.route_gap", topic: "route", label: "无记录路段", prompt: "首次被追问时，自行确定换乘点到公开入口之间一段不超过十分钟的步行细节。", value: "" },
+    { slotId: "free.local_observation", topic: "local", label: "现场观察", prompt: "首次被问到时，自行确定一个不改变路线和制度的声音、光线、设施或值班习惯。", value: "" },
+  ];
   const coverFacts = [
     { factId: "cover.identity", topic: "identity", label: "身份与单位", statement: cover.identity, anchors: [dossier.name, dossier.role, dossier.origin] },
-    { factId: "cover.route", topic: "route", label: "路线与换乘", statement: cover.route, anchors: [dossier.origin, schedule.departure, schedule.arrival, campaign.setting] },
+    { factId: "cover.route", topic: "route", label: "路线与换乘", statement: cover.route, anchors: [dossier.origin, schedule.departure, schedule.transferAt, schedule.arrival, transferPoint] },
     { factId: "cover.document", topic: "document", label: "证件与物品", statement: `${cover.credential} ${cover.belongings}`, anchors: [credentialNumber, packageNumber, dossier.role] },
-    { factId: "cover.chronology", topic: "chronology", label: "时间线", statement: cover.timeline, anchors: [schedule.departure, schedule.arrival, schedule.returnAt, colleagueName] },
+    { factId: "cover.chronology", topic: "chronology", label: "时间线", statement: cover.timeline, anchors: [schedule.handover, schedule.departure, schedule.arrival, schedule.returnAt, colleagueName] },
     { factId: "cover.contact", topic: "contact", label: "公开联系人", statement: cover.contact, anchors: [contactName, contactRole, campaign.office] },
     { factId: "cover.purpose", topic: "purpose", label: "来访目的", statement: cover.purpose, anchors: [dossier.role, receipt, "工作交接"] },
     { factId: "cover.local", topic: "local", label: "本地知识", statement: cover.localKnowledge.join("；"), anchors: [campaign.setting, campaign.terms[0], "值班台"] },
     { factId: "cover.pressure", topic: "pressure", label: "受阻后果", statement: `若被扣留，工作交接和 ${schedule.returnAt} 前取得${receipt}的安排会被耽误；要求审查官按记录复核。`, anchors: [schedule.returnAt, receipt, "复核"] },
   ];
   return {
-    version: 2,
+    version: 3,
     blueprintId: blueprint.id,
     name: dossier.name,
     role: dossier.role,
@@ -881,14 +898,20 @@ function makeInfiltratorProfile(campaign, preferredBlueprintId = null, preferred
     public: dossier.public,
     cover,
     coverFacts,
+    freeSlots,
   };
 }
 
 function normalizeInfiltratorProfile(campaign, profile) {
-  if (profile?.cover && Array.isArray(profile.coverFacts)) return profile;
+  if (profile?.version >= 3 && profile?.cover && Array.isArray(profile.coverFacts) && Array.isArray(profile.freeSlots)) return profile;
   const blueprint = NPC_BLUEPRINTS.find((item) => item.role === profile?.role && item.origin === profile?.origin);
   const nameIndex = Math.max(0, campaign.names.indexOf(profile?.name));
-  return makeInfiltratorProfile(campaign, blueprint?.id, nameIndex);
+  const upgraded = makeInfiltratorProfile(campaign, blueprint?.id, nameIndex);
+  for (const slot of upgraded.freeSlots) {
+    const previous = (profile?.freeSlots || []).find((item) => item.slotId === slot.slotId);
+    if (previous?.value) slot.value = previous.value;
+  }
+  return upgraded;
 }
 
 function normalizeJudgeEvaluation(evaluation) {
@@ -905,8 +928,21 @@ function normalizeJudgeEvaluation(evaluation) {
     evidenceFactIds: Array.isArray(evaluation?.evidenceFactIds) ? evaluation.evidenceFactIds.slice(0, 4) : [],
     contradictions: Array.isArray(evaluation?.contradictions) ? evaluation.contradictions.slice(0, 3) : [],
     unsupportedDetails: Array.isArray(evaluation?.unsupportedDetails) ? evaluation.unsupportedDetails.slice(0, 3) : [],
+    freeSlotClaims: Array.isArray(evaluation?.freeSlotClaims) ? evaluation.freeSlotClaims.slice(0, 2).map((claim) => ({ slotId: String(claim?.slotId || ""), value: String(claim?.value || "").slice(0, 180) })) : [],
     summary: String(evaluation?.summary || "本轮回答需要与掩护档案和此前陈述继续核对。").slice(0, 220),
   };
+}
+
+function makeJudgeQuestion(topic, campaign, profile) {
+  return (JUDGE_TOPIC_QUESTIONS[topic] || (() => "把你刚才的说法落到一条可以核对的记录上。"))(campaign, profile);
+}
+
+function qualifiesFreeSlotClaim(slot, value) {
+  const text = String(value || "").trim();
+  if (text.length < 6) return false;
+  if (slot?.slotId === "free.route_gap") return /步行|走了|沿着|绕过|穿过/.test(text) && /[一二三四五六七八九十\d]+分钟|沿着|绕过|穿过|围栏|路口|巷|桥|灯/.test(text);
+  if (slot?.slotId === "free.local_observation") return /声音|灯|光|门|窗|栏|岗|台|钟|广播|脚步|气味|排队|值班|设施|标牌/.test(text);
+  return false;
 }
 
 class JudgeAgent {
@@ -914,22 +950,47 @@ class JudgeAgent {
     this.campaign = campaign;
     this.profile = profile;
     this.round = 0;
-    this.suspicion = 32;
+    this.suspicion = 38;
     this.responses = [];
+    this.topicIndex = 0;
+    this.followupUsed = false;
+    this.currentPrompt = { topic: JUDGE_TOPIC_ORDER[0], question: makeJudgeQuestion(JUDGE_TOPIC_ORDER[0], campaign, profile), source: "base" };
   }
 
   currentQuestion() {
-    const question = JUDGE_QUESTIONS[this.round];
-    return question ? question.make(this.campaign, this.profile) : "审查已经结束。";
+    return this.currentPrompt?.question || "审查已经结束。";
+  }
+
+  currentTopic() {
+    return this.currentPrompt?.topic || "pressure";
+  }
+
+  weakestTopic() {
+    let weakest = "route";
+    let weakestScore = Number.POSITIVE_INFINITY;
+    for (const topic of JUDGE_TOPIC_ORDER) {
+      const attempts = this.responses.filter((item) => item.topic === topic && item.evaluation);
+      if (!attempts.length) return topic;
+      const score = attempts.reduce((sum, item) => sum + item.evaluation.relevance + item.evaluation.specificity + item.evaluation.dossierMatch + item.evaluation.consistency - item.evaluation.evasiveness, 0) / attempts.length;
+      if (score < weakestScore) { weakest = topic; weakestScore = score; }
+    }
+    return weakest;
+  }
+
+  plannedNextTopic() {
+    if (this.round >= 9 || this.currentPrompt?.source === "final") return "final";
+    const nextIndex = Math.min(this.topicIndex + 1, JUDGE_TOPIC_ORDER.length);
+    return nextIndex < JUDGE_TOPIC_ORDER.length ? JUDGE_TOPIC_ORDER[nextIndex] : this.weakestTopic();
   }
 
   beginEvaluation(answer) {
     if (this.round >= 10) throw new Error("审查已经完成十轮");
-    const question = JUDGE_QUESTIONS[this.round];
+    const prompt = this.currentPrompt;
     const text = String(answer || "").trim();
     const normalized = text.toLowerCase();
-    const topicFacts = (this.profile.coverFacts || []).filter((fact) => fact.topic === question.topic);
-    const anchors = topicFacts.flatMap((fact) => fact.anchors || []);
+    const topicFacts = (this.profile.coverFacts || []).filter((fact) => fact.topic === prompt.topic);
+    const lockedSlotAnchors = (this.profile.freeSlots || []).filter((slot) => slot.topic === prompt.topic && slot.value).map((slot) => slot.value);
+    const anchors = [...topicFacts.flatMap((fact) => fact.anchors || []), ...lockedSlotAnchors];
     const matches = anchors.filter((anchor) => normalized.includes(String(anchor).toLowerCase())).length;
     const evasive = /不知道|不清楚|忘了|没必要|不能说|不方便|随便|无可奉告/.test(text);
     const tooShort = text.length < 8;
@@ -946,27 +1007,78 @@ class JudgeAgent {
       summary: evasive ? "回答含有明确回避措辞，需要继续核对。" : tooShort ? "回答过短，暂时无法建立事实链。" : matches ? "回答引用了当前掩护档案中的可核验细节。" : "本地规则未发现明确冲突，交由审查官结合语义和前文评价。",
     };
     const reaction = this.suspicion >= 65 ? "审查官低头重新看了一遍记录，房间里的停顿变长了。" : this.suspicion <= 28 ? "审查官在纸上做了一个简短标记，语气暂时放缓。" : "审查官没有表态，只把你的回答写进了记录。";
-    return { round: this.round + 1, topic: question.topic, question: this.currentQuestion(), answer: text, reaction, localEvaluation, localFlags: { matches, evasive, tooShort } };
+    return { round: this.round + 1, topic: prompt.topic, question: prompt.question, promptSource: prompt.source, plannedNextTopic: this.plannedNextTopic(), answer: text, reaction, localEvaluation, localFlags: { matches, evasive, tooShort } };
   }
 
-  completeEvaluation(result, remoteEvaluation) {
-    const evaluation = normalizeJudgeEvaluation(remoteEvaluation || result.localEvaluation);
+  lockFreeSlots(topic, answer, evaluation) {
+    const locked = [];
+    const canUseFallback = evaluation.relevance >= 1
+      && evaluation.specificity >= 1
+      && evaluation.dossierMatch >= 1
+      && evaluation.consistency >= 1
+      && evaluation.evasiveness < 2
+      && !evaluation.contradictions.length
+      && answer.length >= 8;
+    if (!canUseFallback) return locked;
+    for (const claim of evaluation.freeSlotClaims) {
+      const slot = (this.profile.freeSlots || []).find((item) => item.slotId === claim.slotId && item.topic === topic && !item.value);
+      if (!slot || !qualifiesFreeSlotClaim(slot, answer) || !qualifiesFreeSlotClaim(slot, claim.value)) continue;
+      slot.value = claim.value;
+      locked.push(slot);
+    }
+    const fallbackSlot = (this.profile.freeSlots || []).find((slot) => slot.topic === topic && !slot.value);
+    if (!locked.length && fallbackSlot && qualifiesFreeSlotClaim(fallbackSlot, answer)) {
+      fallbackSlot.value = answer.slice(0, 180);
+      locked.push(fallbackSlot);
+    }
+    return locked;
+  }
+
+  advancePrompt(result, remote) {
+    if (this.round >= 10) { this.currentPrompt = null; return; }
+    if (this.round === 9) {
+      this.currentPrompt = { topic: "pressure", question: JUDGE_FINAL_QUESTION, source: "final" };
+      return;
+    }
+    const evaluation = result.evaluation;
+    const needsFollowup = evaluation.relevance < 2 || evaluation.specificity === 0 || evaluation.dossierMatch === 0 || evaluation.consistency === 0 || evaluation.evasiveness >= 2;
+    if (needsFollowup && !this.followupUsed && result.promptSource !== "followup") {
+      this.followupUsed = true;
+      this.currentPrompt = { topic: result.topic, question: remote?.followupQuestion || JUDGE_FOLLOWUPS[result.topic], source: "followup" };
+      return;
+    }
+    if (this.topicIndex < JUDGE_TOPIC_ORDER.length && JUDGE_TOPIC_ORDER[this.topicIndex] === result.topic) this.topicIndex += 1;
+    const nextTopic = this.topicIndex < JUDGE_TOPIC_ORDER.length ? JUDGE_TOPIC_ORDER[this.topicIndex] : this.weakestTopic();
+    const suggested = nextTopic === result.plannedNextTopic ? remote?.nextQuestion : "";
+    this.currentPrompt = { topic: nextTopic, question: suggested || makeJudgeQuestion(nextTopic, this.campaign, this.profile), source: this.topicIndex < JUDGE_TOPIC_ORDER.length ? "base" : "verification" };
+  }
+
+  completeEvaluation(result, remoteResult) {
+    const evaluation = normalizeJudgeEvaluation(remoteResult?.evaluation || remoteResult || result.localEvaluation);
+    const lockedSlots = this.lockFreeSlots(result.topic, result.answer, evaluation);
     const quality = evaluation.relevance + evaluation.specificity + (evaluation.dossierMatch * 2) + (evaluation.consistency * 2) + (2 - evaluation.evasiveness);
-    const agentChange = quality >= 12 ? -5 : quality >= 10 ? -3 : quality >= 8 ? 0 : quality >= 6 ? 3 : 6;
+    const agentChange = evaluation.dossierMatch === 0 || evaluation.consistency === 0 ? 6
+      : evaluation.relevance === 0 ? 5
+        : evaluation.evasiveness >= 2 ? 4
+          : quality >= 12 ? -2 : quality >= 10 ? -1 : quality >= 8 ? 0 : quality >= 6 ? 3 : 5;
     const certainChange = (result.localFlags.tooShort ? 4 : 0)
       + (result.localFlags.evasive ? 3 : 0)
       + Math.min(4, evaluation.contradictions.length * 2)
       + Math.min(3, evaluation.unsupportedDetails.length)
-      - (result.localFlags.matches >= 2 ? 2 : result.localFlags.matches === 1 ? 1 : 0);
-    const change = Math.max(-7, Math.min(10, agentChange + certainChange));
+      - (result.localFlags.matches >= 2 ? 1 : 0);
+    let change = Math.max(-3, Math.min(10, agentChange + certainChange));
+    if (evaluation.relevance < 2 || evaluation.specificity === 0) change = Math.max(0, change);
+    if (evaluation.dossierMatch === 0 || evaluation.consistency === 0) change = Math.max(5, change);
     this.suspicion = Math.max(0, Math.min(100, this.suspicion + change));
     const additions = evaluation.unsupportedDetails.length ? ` 待证实：${evaluation.unsupportedDetails.join("；")}` : "";
-    const note = evaluation.contradictions.length ? `${evaluation.summary} 矛盾：${evaluation.contradictions.join("；")}${additions}` : `${evaluation.summary}${additions}`;
-    const completed = { ...result, change, note, evaluation };
+    const locks = lockedSlots.length ? ` 已锁定自由口径：${lockedSlots.map((slot) => `${slot.label}=${slot.value}`).join("；")}` : "";
+    const note = evaluation.contradictions.length ? `${evaluation.summary} 矛盾：${evaluation.contradictions.join("；")}${additions}${locks}` : `${evaluation.summary}${additions}${locks}`;
+    const completed = { ...result, change, note, evaluation, lockedSlots: lockedSlots.map((slot) => slot.slotId) };
     delete completed.localEvaluation;
     delete completed.localFlags;
     this.responses.push(completed);
     this.round += 1;
+    this.advancePrompt(completed, remoteResult);
     return completed;
   }
 
@@ -976,13 +1088,17 @@ class JudgeAgent {
   }
 
   snapshot() {
-    return { round: this.round, suspicion: this.suspicion, responses: this.responses };
+    return { round: this.round, suspicion: this.suspicion, responses: this.responses, topicIndex: this.topicIndex, followupUsed: this.followupUsed, currentPrompt: this.currentPrompt };
   }
 
   restore(snapshot) {
     this.round = snapshot?.round || 0;
-    this.suspicion = snapshot?.suspicion ?? 32;
+    this.suspicion = snapshot?.suspicion ?? 38;
     this.responses = snapshot?.responses || [];
+    this.topicIndex = snapshot?.topicIndex ?? Math.min(this.round, JUDGE_TOPIC_ORDER.length - 1);
+    this.followupUsed = Boolean(snapshot?.followupUsed);
+    const legacyTopic = this.round >= 9 ? "pressure" : JUDGE_TOPIC_ORDER[Math.min(this.topicIndex, JUDGE_TOPIC_ORDER.length - 1)];
+    this.currentPrompt = snapshot?.currentPrompt || (this.round >= 10 ? null : { topic: legacyTopic, question: this.round >= 9 ? JUDGE_FINAL_QUESTION : makeJudgeQuestion(legacyTopic, this.campaign, this.profile), source: this.round >= 9 ? "final" : "base" });
   }
 }
 
@@ -1016,16 +1132,16 @@ class InfiltratorController {
     const draft = this.judge.beginEvaluation(cleanAnswer);
     this.logs.push({ speaker: "player", text: cleanAnswer, round: draft.round });
     let provider = "fallback";
-    let evaluation = draft.localEvaluation;
+    let remoteResult = { evaluation: draft.localEvaluation };
     try {
       const remote = await requestJudgeReply(this, cleanAnswer, draft);
       draft.reaction = remote.speech;
-      evaluation = remote.evaluation || evaluation;
+      remoteResult = remote;
       provider = remote.provider || "model";
     } catch (error) {
       console.warn("[TeWu Judge] 使用本地降级回答", error);
     }
-    const result = this.judge.completeEvaluation(draft, evaluation);
+    const result = this.judge.completeEvaluation(draft, remoteResult);
     this.logs.push({ speaker: "judge", text: result.reaction, round: result.round, provider });
     if (this.judge.round >= 10) {
       this.lastDecision = { ...this.judge.verdict(), name: this.profile.name };
@@ -1171,7 +1287,9 @@ function renderInfiltratorBriefFacts(profile) {
     ["联系口径", cover.contact, "wide"],
     ["进城目的", cover.purpose, "wide"],
   ];
-  return facts.map(([label, value, size]) => `<div class="cover-brief-fact ${size === "wide" ? "wide" : ""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+  const fixed = facts.map(([label, value, size]) => `<div class="cover-brief-fact ${size === "wide" ? "wide" : ""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+  const flexible = (profile.freeSlots || []).map((slot) => `<div class="cover-brief-fact wide flexible"><span>自由口径 · ${escapeHtml(slot.label)}</span><strong>${escapeHtml(slot.value || slot.prompt)}</strong></div>`).join("");
+  return `${fixed}${flexible}`;
 }
 
 function renderBriefing() {
@@ -1180,7 +1298,7 @@ function renderBriefing() {
   const modeBriefing = infiltratorProfile ? `你将以${infiltratorProfile.role}的掩护身份进入${campaign.setting}。审查官会从机构的安全视角核对你的身份、路线、物品、关系和时间线；你需要让陈述能够经受十轮连续追问。` : campaign.briefing;
   const body = `<main class="page"><section class="briefing-grid"><div><p class="eyebrow">主控档案 · 机构选择</p><h1>十个人里，谁不该出现在这里？</h1><p class="briefing-copy">选择一个真实历史机构，进入它的目标群体、审查方式和历史参考。五个机构可以在混合时空设定中共存，十名候选人由相互隔离的角色程序连续扮演。完成十人的盘问后，你将统一提交一份扣留名单。</p></div><div class="brief-note"><strong>混合时空设定</strong>主控允许不同机构的历史参考同场出现，但会明确标记哪些内容是史实参考、哪些内容是本作的玩法设定。刷新页面会保留当前机构。</div></section><div class="section-label"><h2>选择机构</h2><span>五个机构 · 目标各不相同</span></div><section class="campaign-grid">${CAMPAIGNS.map((item) => `<button class="campaign-card ${item.id === selectedCampaignId ? "selected" : ""}" data-campaign="${item.id}"><span class="campaign-code">${item.code}</span><h3>${item.name}</h3><span class="campaign-era">${item.era}</span><p>${item.description}</p><span class="campaign-tagline">${item.setting}</span></button>`).join("")}</section><div class="section-label"><h2>选择玩法</h2><span>两种角色视角</span></div><section class="mode-grid"><button class="mode-card ${selectedMode === "officer" ? "selected" : ""}" data-mode="officer"><strong>执行官模式</strong><span>盘问十名候选人，再从十人中选出需要扣留的对象。</span></button><button class="mode-card ${selectedMode === "infiltrator" ? "selected" : ""}" data-mode="infiltrator"><strong>潜伏者模式</strong><span>你接受十轮审查，由审查官程序判定是否放行。</span></button></section><section class="historical-preview"><div class="history-box"><h3>${escapeHtml(campaign.name)} · ${infiltratorProfile ? "潜伏者简报" : "主控简报"}</h3><p>${escapeHtml(modeBriefing)}</p></div><div class="history-box"><h3>历史边界</h3><p>${escapeHtml(campaign.historical)}</p></div></section><div class="brief-footer"><p>${infiltratorProfile ? "上方掩护档案会原样带入审查。请在十轮回答中保持身份、路线和物品细节一致。" : "每名候选人至少盘问两轮、最多十轮。十人全部盘问后统一提交扣留名单，名单可以为空或包含多人。"}</p><button class="primary-button" data-action="start">进入 ${escapeHtml(campaign.name)}</button></div><div class="section-label" style="margin-top:17px"><h2>当时会听见的词</h2><span>${escapeHtml(campaign.setting)}</span></div><div class="term-row">${campaign.terms.map((term) => `<span class="term-chip">${escapeHtml(term)}</span>`).join("")}</div></main>`;
   const briefingBody = body;
-  const infiltratorBrief = infiltratorProfile ? `<section class="infiltrator-brief"><div class="infiltrator-brief-head"><p class="eyebrow">进入前资料 · 潜伏者</p><h2>你要守住的掩护档案</h2><p>以下口径会原样带入审查。本人姓名与公开联系人是两个人；临时编出的姓名、单位或编号会被记作待证实的新关系。</p></div><div class="infiltrator-brief-facts">${renderInfiltratorBriefFacts(infiltratorProfile)}</div><div class="infiltrator-local-knowledge"><strong>本地知识</strong>${infiltratorProfile.cover.localKnowledge.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div><p class="infiltrator-brief-note">你可以自由组织语言并补充不冲突的生活细节。审查官会比较完整档案、此前回答和本轮问题，不再按隐藏关键词决定放行。</p></section>` : "";
+  const infiltratorBrief = infiltratorProfile ? `<section class="infiltrator-brief"><div class="infiltrator-brief-head"><p class="eyebrow">进入前资料 · 潜伏者</p><h2>你要守住的掩护档案</h2><p>固定字段必须保持一致；两项自由口径由你在首次被问到时确定，之后会写入档案继续核对。</p></div><div class="infiltrator-brief-facts">${renderInfiltratorBriefFacts(infiltratorProfile)}</div><div class="infiltrator-local-knowledge"><strong>本地知识</strong>${infiltratorProfile.cover.localKnowledge.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div><p class="infiltrator-brief-note">本人、联系人和交班同事是不同的人。审查官会比较档案、此前口供和当前回答；未正面回答或缺少具体细节的回合不会降低警戒。</p></section>` : "";
   const finalBriefingBody = briefingBody.replace('<section class="historical-preview">', `${infiltratorBrief}<section class="historical-preview">`);
   return `<div class="app-shell">${renderHeader()}${finalBriefingBody}</div>`;
 }
@@ -1270,7 +1388,9 @@ function renderInfiltratorTop() {
 function renderInfiltratorLeft() {
   const profile = controller.profile;
   const cover = profile.cover;
-  const dossierRows = [["证件", "身份备案", cover.credential], ["路线", "公开入口", cover.route], ["时间", "行程口径", cover.timeline], ["物品", "登记清单", cover.belongings], ["关系", "公开往来", cover.contact], ["目的", "工作交接", cover.purpose]].map(([label, status, text]) => `<div class="fact"><div class="fact-head"><span>${label}</span><strong>${status}</strong></div><p>${escapeHtml(text)}</p></div>`).join("");
+  const fixedRows = [["证件", "身份备案", cover.credential], ["路线", "公开入口", cover.route], ["时间", "行程口径", cover.timeline], ["物品", "登记清单", cover.belongings], ["关系", "公开往来", cover.contact], ["目的", "工作交接", cover.purpose]];
+  const flexibleRows = (profile.freeSlots || []).map((slot) => [slot.label, slot.value ? "口径已锁定" : "首次自定", slot.value || slot.prompt]);
+  const dossierRows = [...fixedRows, ...flexibleRows].map(([label, status, text]) => `<div class="fact"><div class="fact-head"><span>${label}</span><strong>${status}</strong></div><p>${escapeHtml(text)}</p></div>`).join("");
   const localRows = cover.localKnowledge.map((item, index) => `<div class="fact"><div class="fact-head"><span>本地档案 ${String(index + 1).padStart(2, "0")}</span><strong>公开知识</strong></div><p>${escapeHtml(item)}</p></div>`).join("");
   return `<aside><div class="panel"><div class="panel-title">掩护身份</div><ul class="brief-list cover-identity"><li><b>本人</b><span>${escapeHtml(profile.name)}</span></li><li><b>职业</b><span>${escapeHtml(profile.role)}</span></li><li><b>单位</b><span>${escapeHtml(profile.origin)}</span></li><li><b>联系人</b><span>${escapeHtml(cover.contactName)}<small>${escapeHtml(cover.contactRole)}</small></span></li><li><b>同事</b><span>${escapeHtml(cover.colleagueName)}<small>${escapeHtml(cover.colleagueRole)}</small></span></li></ul></div><div class="panel cover-panel"><div class="panel-title">证件与行程</div><div class="facts cover-facts">${dossierRows}</div></div><div class="panel cover-panel"><div class="panel-title">本地知识</div><div class="facts cover-facts">${localRows}</div></div></aside>`;
 }
@@ -1279,7 +1399,7 @@ function renderInfiltratorRight() {
   const suspicion = controller.suspicion();
   const latest = controller.judge.responses.at(-1);
   const lastReview = latest ? `<div class="fact"><div class="fact-head"><span>上一轮变化</span><strong>${latest.change > 0 ? `+${latest.change}` : latest.change} 警戒</strong></div><p>${escapeHtml(latest.note)}</p></div>` : "";
-  return `<aside><div class="panel"><div class="panel-title">审查状态</div><div class="meter-wrap"><div class="meter-row"><span>审查官可疑度</span><strong>${suspicion}%</strong></div><div class="meter"><div class="${suspicion >= 56 ? "alert" : suspicion >= 40 ? "amber" : "teal"}" style="width:${suspicion}%"></div></div><div class="meter-row" style="margin-top:13px"><span>剩余回答</span><strong>${10 - controller.judge.round}</strong></div><div class="meter"><div class="teal" style="width:${controller.judge.round * 10}%"></div></div></div></div><div class="panel"><div class="panel-title">审查记录</div><div class="facts"><div class="fact"><div class="fact-head"><span>当前主题</span><strong>${controller.judge.round < 10 ? topicLabel(JUDGE_QUESTIONS[controller.judge.round].topic) : "已结束"}</strong></div><p>${controller.judge.round < 10 ? "结合左侧档案作答；合理的同义表达不会因缺词受罚。" : "审查官正在形成最终判定。"}</p></div>${lastReview}<div class="fact"><div class="fact-head"><span>审查方式</span><strong>档案 + Agent</strong></div><p>审查官会核对问题相关性、具体细节、档案吻合、前后一致和回避程度。</p></div></div></div></aside>`;
+  return `<aside><div class="panel"><div class="panel-title">审查状态</div><div class="meter-wrap"><div class="meter-row"><span>审查官可疑度</span><strong>${suspicion}%</strong></div><div class="meter"><div class="${suspicion >= 56 ? "alert" : suspicion >= 40 ? "amber" : "teal"}" style="width:${suspicion}%"></div></div><div class="meter-row" style="margin-top:13px"><span>剩余回答</span><strong>${10 - controller.judge.round}</strong></div><div class="meter"><div class="teal" style="width:${controller.judge.round * 10}%"></div></div></div></div><div class="panel"><div class="panel-title">审查记录</div><div class="facts"><div class="fact"><div class="fact-head"><span>当前主题</span><strong>${controller.judge.round < 10 ? topicLabel(controller.judge.currentTopic()) : "已结束"}</strong></div><p>${controller.judge.round < 10 ? "当前问题可能承接上一轮追问；合理同义表达不会因缺词受罚。" : "审查官正在形成最终判定。"}</p></div>${lastReview}<div class="fact"><div class="fact-head"><span>审查方式</span><strong>档案 + Agent</strong></div><p>未正面回答或没有具体细节时，本轮警戒不会下降。</p></div></div></div></aside>`;
 }
 
 function renderInfiltratorLog() {
@@ -1291,7 +1411,7 @@ function renderInfiltratorLog() {
 function renderInfiltratorQuestionArea() {
   const round = controller.judge.round;
   if (controller.awaitingNext) return "";
-  if (controller.pending) return `<div class="question-area waiting-area"><div class="question-head"><strong>审查官正在审阅</strong><span>模型正在形成下一轮追问</span></div><div class="response-status"><i></i><i></i><i></i><span>请稍候，回答已写入审查记录。</span></div></div>`;
+  if (controller.pending) return `<div class="question-area waiting-area"><div class="question-head"><strong>审查官正在审阅</strong><span>模型正在核对并形成实际下一问</span></div><div class="response-status"><i></i><i></i><i></i><span>请稍候，回答已写入审查记录。</span></div></div>`;
   return `<div class="question-area"><div class="question-head"><strong>审查官提问</strong><span>已回答 ${round} / 10 轮</span></div><div class="judge-prompt">${escapeHtml(controller.currentQuestion())}</div><form class="question-form" data-infiltrator-form><input class="question-input" name="answer" autocomplete="off" placeholder="以你的掩护身份回答……" maxlength="220" /><button class="send-button" type="submit">回答</button></form></div>`;
 }
 
