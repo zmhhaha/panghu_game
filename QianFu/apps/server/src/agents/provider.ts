@@ -82,7 +82,7 @@ class OpenAiCompatibleProvider implements AgentProvider {
       const repaired = await this.request([
         ...messages,
         { role: "assistant", content },
-        { role: "user", content: "上一次内容语义不变，只修正格式。仅输出合法JSON对象，字段必须是visibleSpeech字符串、privateIntent字符串、evidenceQuote字符串、requestedEffects数组。" },
+        { role: "user", content: "上一次内容语义不变，只修正格式。仅输出合法JSON对象，字段必须是visibleSpeech字符串、privateIntent字符串、evidenceQuote字符串、relationshipReaction字符串、reactionReason字符串、requestedEffects数组。relationshipReaction只能是resonated、respected_boundary、neutral、misaligned、boundary_violation、inconsistent之一，不得遗漏。" },
       ], 0);
       return parseModelJson(repaired);
     }

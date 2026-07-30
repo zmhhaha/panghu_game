@@ -85,13 +85,22 @@ describe("CampaignOrchestrator", () => {
     vi.stubEnv("DEEPSEEK_BASE_URL", "https://example.test");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: "{broken" } }] }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: '{"visibleSpeech":"档案科收存公文，你问这个做什么？","privateIntent":"观察来意","requestedEffects":[]}' } }] }) });
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: '{"visibleSpeech":"档案科收存公文，你问这个做什么？","privateIntent":"观察来意","evidenceQuote":"","relationshipReaction":"respected_boundary","reactionReason":"玩家没有越过档案来源边界","requestedEffects":[]}' } }] }) });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await createAgentProvider()?.complete("system", "user");
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result).toEqual({ visibleSpeech: "档案科收存公文，你问这个做什么？", privateIntent: "观察来意", requestedEffects: [] });
+    const repairRequest = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(repairRequest.messages.at(-1).content).toContain("relationshipReaction");
+    expect(result).toEqual({
+      visibleSpeech: "档案科收存公文，你问这个做什么？",
+      privateIntent: "观察来意",
+      evidenceQuote: "",
+      relationshipReaction: "respected_boundary",
+      reactionReason: "玩家没有越过档案来源边界",
+      requestedEffects: [],
+    });
   });
 
   it("gives an NPC its personality, relationship and recent private memory in one model call", async () => {
