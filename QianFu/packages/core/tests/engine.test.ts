@@ -1190,7 +1190,7 @@ describe("director contacts and counterintelligence", () => {
     expect(afterLead.state.pendingContact?.characterId).toBe("visitor");
   });
 
-  it("invalidates a persisted proactive contact when its required public lead is absent", () => {
+  it("removes a persisted proactive contact when its required public lead is absent", () => {
     const gatedCampaign: CampaignDefinition = {
       ...directorCampaign,
       publicLeads: [{ id: "public-record-work", trigger: "cover_work", profileId: "archive_clerk", workKind: "file_sorting", locationIds: [], characterIds: [], hint: "A public record was handled." }],
@@ -1199,14 +1199,30 @@ describe("director contacts and counterintelligence", () => {
     const prepared = createInitialWorld(gatedCampaign, "stale-contact", "user-1");
     prepared.resolvedLeadIds = ["public-record-work"];
     const offered = new CampaignEngine(gatedCampaign, prepared).execute({ type: "wait", durationMinutes: 10, idempotencyKey: "offer-stale-contact" }).state;
-    const contactId = offered.pendingContact!.id;
     const trustBefore = offered.characters.visitor.privateTrust;
     offered.resolvedLeadIds = [];
-    const invalidated = new CampaignEngine(gatedCampaign, offered).execute({ type: "respond_to_contact", contactId, decision: "refuse", durationMinutes: 0, idempotencyKey: "invalidate-stale-contact" });
-    expect(invalidated.state.pendingContact).toBeNull();
-    expect(invalidated.state.characters.visitor.privateTrust).toBe(trustBefore);
-    expect(invalidated.state.resolvedNarrativeEventIds).not.toContain("visitor-asks");
-    expect(invalidated.events.some((event) => event.type === "director.contact_invalidated")).toBe(true);
+    const reloaded = new CampaignEngine(gatedCampaign, offered).getState();
+    expect(reloaded.pendingContact).toBeNull();
+    expect(reloaded.characters.visitor.privateTrust).toBe(trustBefore);
+    expect(reloaded.resolvedNarrativeEventIds).not.toContain("visitor-asks");
+  });
+
+  it("removes a persisted proactive contact when a newly required earlier event is absent", () => {
+    const offered = new CampaignEngine(directorCampaign, createInitialWorld(directorCampaign, "stale-event-contact", "user-1"))
+      .execute({ type: "wait", durationMinutes: 10, idempotencyKey: "offer-before-content-update" }).state;
+    expect(offered.pendingContact?.eventId).toBe("visitor-asks");
+
+    const revisedCampaign: CampaignDefinition = {
+      ...directorCampaign,
+      narrativeEvents: directorCampaign.narrativeEvents?.map((event) => ({
+        ...event,
+        trigger: { ...event.trigger, requiredEventIds: ["earlier-investigation"] },
+      })),
+    };
+    const reloaded = new CampaignEngine(revisedCampaign, offered).getState();
+
+    expect(reloaded.pendingContact).toBeNull();
+    expect(reloaded.resolvedNarrativeEventIds).not.toContain("visitor-asks");
   });
 
   const counterCampaign: CampaignDefinition = {

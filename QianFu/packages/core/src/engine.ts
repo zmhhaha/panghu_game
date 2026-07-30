@@ -189,6 +189,20 @@ export class CampaignEngine {
       .filter((objective) => objectiveSatisfied(campaign, this.state, objective))
       .map((objective) => objective.id);
     this.state.failedObjectiveIds ??= [];
+    if (this.state.pendingContact) {
+      const resolvedLeadIds = this.state.resolvedLeadIds;
+      const resolvedEventIds = this.state.resolvedNarrativeEventIds;
+      const completedObjectiveIds = this.state.completedObjectiveIds;
+      const pendingEvent = campaign.narrativeEvents?.find((event) => event.id === this.state.pendingContact?.eventId);
+      const missingPrerequisite = !pendingEvent
+        || !(pendingEvent.trigger.requiredLeadIds ?? []).every((id) => resolvedLeadIds.includes(id))
+        || !(pendingEvent.trigger.requiredEventIds ?? []).every((id) => resolvedEventIds.includes(id))
+        || !(pendingEvent.trigger.requiredCompletedObjectiveIds ?? []).every((id) => completedObjectiveIds.includes(id));
+      if (missingPrerequisite) {
+        this.state.resolvedNarrativeEventIds = this.state.resolvedNarrativeEventIds.filter((id) => id !== this.state.pendingContact?.eventId);
+        this.state.pendingContact = null;
+      }
+    }
     this.state.investigation ??= {
       pressure: 0,
       locationHeat: Object.fromEntries(campaign.locations.map((location) => [location.id, 0])),
@@ -357,11 +371,14 @@ export class CampaignEngine {
         if (!contact || contact.id !== action.contactId) throw new Error("主动接触已经失效");
         if (Date.parse(next.currentTime) >= Date.parse(contact.expiresAt)) throw new Error("对方已经离开，无法再回应这次接触");
         const sourceEvent = this.campaign.narrativeEvents?.find((event) => event.id === contact.eventId);
-        const missingRequiredLead = sourceEvent?.trigger.requiredLeadIds?.some((id) => !next.resolvedLeadIds?.includes(id)) ?? false;
-        if (missingRequiredLead) {
+        const missingPrerequisite = !sourceEvent
+          || (sourceEvent.trigger.requiredLeadIds ?? []).some((id) => !next.resolvedLeadIds?.includes(id))
+          || (sourceEvent.trigger.requiredEventIds ?? []).some((id) => !next.resolvedNarrativeEventIds?.includes(id))
+          || (sourceEvent.trigger.requiredCompletedObjectiveIds ?? []).some((id) => !next.completedObjectiveIds?.includes(id));
+        if (missingPrerequisite) {
           next.pendingContact = null;
           next.resolvedNarrativeEventIds = next.resolvedNarrativeEventIds?.filter((id) => id !== contact.eventId) ?? [];
-          append("director.contact_invalidated", { contactId: contact.id, eventId: contact.eventId, characterId: contact.characterId, reason: "required_public_lead_missing" });
+          append("director.contact_invalidated", { contactId: contact.id, eventId: contact.eventId, characterId: contact.characterId, reason: "required_narrative_prerequisite_missing" });
           narration = "你很快确认这是一次信息错位：对方并没有理由就这件事来找你，本次接触已取消。";
           break;
         }
