@@ -435,9 +435,11 @@ async function requestJudgeReply(controller, answer, result) {
       profile: controller.profile,
       round: result.round,
       answer,
-      nextTopic: result.topic,
+      topic: result.topic,
+      question: result.question,
       history: controller.logs,
       fallback: result.reaction,
+      fallbackEvaluation: result.localEvaluation,
     }),
   });
   if (!response.ok) throw new Error(`Judge API ${response.status}`);
@@ -817,25 +819,93 @@ const JUDGE_QUESTIONS = [
   { topic: "pressure", make: (campaign, profile) => `最后一次机会。还有什么必须主动告诉我、但你前面没有说的？` },
 ];
 
-function makeInfiltratorProfile(campaign) {
-  const blueprint = { ...(NPC_BLUEPRINTS[Math.floor(Math.random() * NPC_BLUEPRINTS.length)] || NPC_BLUEPRINTS[0]), target: true };
-  const nameIndex = Math.floor(Math.random() * campaign.names.length);
+const COVER_SCHEDULES = [
+  { departure: "18:20", arrival: "19:10", returnAt: "21:30" },
+  { departure: "19:05", arrival: "20:00", returnAt: "22:15" },
+  { departure: "19:40", arrival: "20:35", returnAt: "22:40" },
+  { departure: "20:10", arrival: "21:05", returnAt: "23:10" },
+  { departure: "20:35", arrival: "21:30", returnAt: "23:40" },
+];
+
+function dossierFact(dossier, category) {
+  return (dossier.facts || []).find((fact) => fact.category === category) || {};
+}
+
+function makeInfiltratorProfile(campaign, preferredBlueprintId = null, preferredNameIndex = null) {
+  const selectedBlueprint = NPC_BLUEPRINTS.find((item) => item.id === preferredBlueprintId) || NPC_BLUEPRINTS[Math.floor(Math.random() * NPC_BLUEPRINTS.length)] || NPC_BLUEPRINTS[0];
+  const blueprint = { ...selectedBlueprint, target: true };
+  const nameIndex = Number.isInteger(preferredNameIndex) && preferredNameIndex >= 0 ? preferredNameIndex % campaign.names.length : Math.floor(Math.random() * campaign.names.length);
   const dossier = makeDossier(campaign, blueprint, nameIndex);
+  const schedule = COVER_SCHEDULES[(nameIndex + NPC_BLUEPRINTS.indexOf(selectedBlueprint)) % COVER_SCHEDULES.length];
+  const credentialNumber = `${campaign.id.toUpperCase()}-${blueprint.id.toUpperCase().slice(0, 4)}-${String(nameIndex + 1).padStart(3, "0")}`;
+  const packageNumber = `${blueprint.id.toUpperCase().slice(0, 3)}-${String((nameIndex + 1) * 17).padStart(3, "0")}`;
+  const contactName = campaign.names[(nameIndex + 3) % campaign.names.length];
+  const colleagueName = campaign.names[(nameIndex + 6) % campaign.names.length];
+  const routeFact = dossierFact(dossier, "路线");
+  const timelineFact = dossierFact(dossier, "时间线");
+  const objectFact = dossierFact(dossier, "物品");
+  const relationshipFact = dossierFact(dossier, "关系");
+  const contactRole = `${blueprint.origin}工作联络员`;
+  const colleagueRole = `${blueprint.origin}同班职员`;
+  const receipt = `${campaign.office}工作交接回执`;
+  const cover = {
+    identity: `${dossier.name}，${dossier.role}，日常工作登记在${dossier.origin}。`,
+    contactName,
+    contactRole,
+    colleagueName,
+    colleagueRole,
+    credential: `${dossier.role}临时工作证，编号 ${credentialNumber}，由${dossier.origin}人事登记处签发，可在${campaign.office}核验。`,
+    route: `${routeFact.expected || `从${dossier.origin}进入${campaign.setting}`}；${schedule.departure} 离开${dossier.origin}，${schedule.arrival} 从${campaign.setting}公开入口登记。`,
+    timeline: `${timelineFact.expected || "按单位晚间工作安排出发"}；出发前只与${colleagueName}（${colleagueRole}）完成交班，此后未与其他人同行；计划 ${schedule.returnAt} 前取得回执并按原路线返回。`,
+    belongings: `${dossier.public}；申报内容为“${objectFact.expected || "与职业有关的工作用品"}”，物品登记号 ${packageNumber}。`,
+    contact: `${relationshipFact.expected || "只保持公开工作往来"}；公开联系人是${contactName}（${contactRole}），由${campaign.office}值班台转接。`,
+    purpose: `以${dossier.role}身份完成工作交接，取得“${receipt}”后离开，不接受没有登记的临时任务。`,
+    localKnowledge: [...(LOCAL_KNOWLEDGE[campaign.id] || [])],
+  };
+  const coverFacts = [
+    { factId: "cover.identity", topic: "identity", label: "身份与单位", statement: cover.identity, anchors: [dossier.name, dossier.role, dossier.origin] },
+    { factId: "cover.route", topic: "route", label: "路线与换乘", statement: cover.route, anchors: [dossier.origin, schedule.departure, schedule.arrival, campaign.setting] },
+    { factId: "cover.document", topic: "document", label: "证件与物品", statement: `${cover.credential} ${cover.belongings}`, anchors: [credentialNumber, packageNumber, dossier.role] },
+    { factId: "cover.chronology", topic: "chronology", label: "时间线", statement: cover.timeline, anchors: [schedule.departure, schedule.arrival, schedule.returnAt, colleagueName] },
+    { factId: "cover.contact", topic: "contact", label: "公开联系人", statement: cover.contact, anchors: [contactName, contactRole, campaign.office] },
+    { factId: "cover.purpose", topic: "purpose", label: "来访目的", statement: cover.purpose, anchors: [dossier.role, receipt, "工作交接"] },
+    { factId: "cover.local", topic: "local", label: "本地知识", statement: cover.localKnowledge.join("；"), anchors: [campaign.setting, campaign.terms[0], "值班台"] },
+    { factId: "cover.pressure", topic: "pressure", label: "受阻后果", statement: `若被扣留，工作交接和 ${schedule.returnAt} 前取得${receipt}的安排会被耽误；要求审查官按记录复核。`, anchors: [schedule.returnAt, receipt, "复核"] },
+  ];
   return {
+    version: 2,
+    blueprintId: blueprint.id,
     name: dossier.name,
     role: dossier.role,
     origin: dossier.origin,
     public: dossier.public,
-    expected: {
-      identity: [dossier.name, dossier.role, "单位", "工作"],
-      route: [dossier.origin, campaign.route, "换车", "车站", "路线"],
-      document: ["证件", "编号", "封签", "用途", campaign.office],
-      chronology: ["昨天", "今天", "晚上", "傍晚", "交接", "时间"],
-      contact: [campaign.office, campaign.authority, "负责人", "联络", "公开"],
-      purpose: [dossier.role, "工作", "交接", "办事", "档案"],
-      local: [campaign.setting, "主路", "街", "岗亭", "本地"],
-      pressure: ["复核", "记录", "等候", "工作", "交接", "可以"],
-    },
+    cover,
+    coverFacts,
+  };
+}
+
+function normalizeInfiltratorProfile(campaign, profile) {
+  if (profile?.cover && Array.isArray(profile.coverFacts)) return profile;
+  const blueprint = NPC_BLUEPRINTS.find((item) => item.role === profile?.role && item.origin === profile?.origin);
+  const nameIndex = Math.max(0, campaign.names.indexOf(profile?.name));
+  return makeInfiltratorProfile(campaign, blueprint?.id, nameIndex);
+}
+
+function normalizeJudgeEvaluation(evaluation) {
+  const rating = (value, fallback = 1) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, Math.min(2, Math.round(number))) : fallback;
+  };
+  return {
+    relevance: rating(evaluation?.relevance),
+    specificity: rating(evaluation?.specificity),
+    dossierMatch: rating(evaluation?.dossierMatch),
+    consistency: rating(evaluation?.consistency),
+    evasiveness: rating(evaluation?.evasiveness),
+    evidenceFactIds: Array.isArray(evaluation?.evidenceFactIds) ? evaluation.evidenceFactIds.slice(0, 4) : [],
+    contradictions: Array.isArray(evaluation?.contradictions) ? evaluation.contradictions.slice(0, 3) : [],
+    unsupportedDetails: Array.isArray(evaluation?.unsupportedDetails) ? evaluation.unsupportedDetails.slice(0, 3) : [],
+    summary: String(evaluation?.summary || "本轮回答需要与掩护档案和此前陈述继续核对。").slice(0, 220),
   };
 }
 
@@ -853,23 +923,51 @@ class JudgeAgent {
     return question ? question.make(this.campaign, this.profile) : "审查已经结束。";
   }
 
-  evaluate(answer) {
+  beginEvaluation(answer) {
     if (this.round >= 10) throw new Error("审查已经完成十轮");
     const question = JUDGE_QUESTIONS[this.round];
     const text = String(answer || "").trim();
     const normalized = text.toLowerCase();
-    const keywords = this.profile.expected[question.topic] || [];
-    const matches = keywords.filter((keyword) => normalized.includes(String(keyword).toLowerCase())).length;
+    const topicFacts = (this.profile.coverFacts || []).filter((fact) => fact.topic === question.topic);
+    const anchors = topicFacts.flatMap((fact) => fact.anchors || []);
+    const matches = anchors.filter((anchor) => normalized.includes(String(anchor).toLowerCase())).length;
     const evasive = /不知道|不清楚|忘了|没必要|不能说|不方便|随便|无可奉告/.test(text);
     const tooShort = text.length < 8;
-    const change = evasive || tooShort ? 10 : matches >= 2 ? -7 : matches === 1 ? -2 : 7;
-    this.suspicion = Math.max(0, Math.min(100, this.suspicion + change));
-    const note = evasive ? "回答回避了可核验细节" : tooShort ? "回答过短，无法建立事实链" : matches >= 2 ? "回答包含可交叉核对的细节" : matches === 1 ? "回答只有一处可以核对" : "回答没有对上当前档案字段";
+    const hasConcreteDetail = /\d|编号|时间|点|分|入口|登记|回执|值班|路线|单位|联系人/.test(text);
+    const localEvaluation = {
+      relevance: tooShort ? 0 : matches ? 2 : 1,
+      specificity: matches >= 2 || (matches && hasConcreteDetail) ? 2 : matches || hasConcreteDetail ? 1 : 0,
+      dossierMatch: matches ? 2 : 1,
+      consistency: 1,
+      evasiveness: evasive ? 2 : tooShort ? 1 : 0,
+      evidenceFactIds: matches ? topicFacts.map((fact) => fact.factId) : [],
+      contradictions: [],
+      unsupportedDetails: [],
+      summary: evasive ? "回答含有明确回避措辞，需要继续核对。" : tooShort ? "回答过短，暂时无法建立事实链。" : matches ? "回答引用了当前掩护档案中的可核验细节。" : "本地规则未发现明确冲突，交由审查官结合语义和前文评价。",
+    };
     const reaction = this.suspicion >= 65 ? "审查官低头重新看了一遍记录，房间里的停顿变长了。" : this.suspicion <= 28 ? "审查官在纸上做了一个简短标记，语气暂时放缓。" : "审查官没有表态，只把你的回答写进了记录。";
-    const result = { round: this.round + 1, topic: question.topic, question: this.currentQuestion(), answer: text, change, note, reaction };
-    this.responses.push(result);
+    return { round: this.round + 1, topic: question.topic, question: this.currentQuestion(), answer: text, reaction, localEvaluation, localFlags: { matches, evasive, tooShort } };
+  }
+
+  completeEvaluation(result, remoteEvaluation) {
+    const evaluation = normalizeJudgeEvaluation(remoteEvaluation || result.localEvaluation);
+    const quality = evaluation.relevance + evaluation.specificity + (evaluation.dossierMatch * 2) + (evaluation.consistency * 2) + (2 - evaluation.evasiveness);
+    const agentChange = quality >= 12 ? -5 : quality >= 10 ? -3 : quality >= 8 ? 0 : quality >= 6 ? 3 : 6;
+    const certainChange = (result.localFlags.tooShort ? 4 : 0)
+      + (result.localFlags.evasive ? 3 : 0)
+      + Math.min(4, evaluation.contradictions.length * 2)
+      + Math.min(3, evaluation.unsupportedDetails.length)
+      - (result.localFlags.matches >= 2 ? 2 : result.localFlags.matches === 1 ? 1 : 0);
+    const change = Math.max(-7, Math.min(10, agentChange + certainChange));
+    this.suspicion = Math.max(0, Math.min(100, this.suspicion + change));
+    const additions = evaluation.unsupportedDetails.length ? ` 待证实：${evaluation.unsupportedDetails.join("；")}` : "";
+    const note = evaluation.contradictions.length ? `${evaluation.summary} 矛盾：${evaluation.contradictions.join("；")}${additions}` : `${evaluation.summary}${additions}`;
+    const completed = { ...result, change, note, evaluation };
+    delete completed.localEvaluation;
+    delete completed.localFlags;
+    this.responses.push(completed);
     this.round += 1;
-    return result;
+    return completed;
   }
 
   verdict() {
@@ -892,7 +990,7 @@ class InfiltratorController {
   constructor(campaignId = CAMPAIGNS[0].id, profile = null) {
     this.mode = "infiltrator";
     this.campaign = cloneCampaign(campaignId);
-    this.profile = profile || makeInfiltratorProfile(this.campaign);
+    this.profile = normalizeInfiltratorProfile(this.campaign, profile || makeInfiltratorProfile(this.campaign));
     this.judge = new JudgeAgent(this.campaign, this.profile);
     this.status = "briefing";
     this.logs = [];
@@ -915,17 +1013,19 @@ class InfiltratorController {
     const cleanAnswer = String(answer || "").trim();
     if (this.status !== "active" || this.awaitingNext || this.pending || !cleanAnswer || this.judge.round >= 10) return false;
     this.pending = true;
-    const result = this.judge.evaluate(cleanAnswer);
-    this.logs.push({ speaker: "player", text: cleanAnswer, round: result.round });
+    const draft = this.judge.beginEvaluation(cleanAnswer);
+    this.logs.push({ speaker: "player", text: cleanAnswer, round: draft.round });
     let provider = "fallback";
+    let evaluation = draft.localEvaluation;
     try {
-      const remote = await requestJudgeReply(this, cleanAnswer, result);
-      result.reaction = remote.speech;
+      const remote = await requestJudgeReply(this, cleanAnswer, draft);
+      draft.reaction = remote.speech;
+      evaluation = remote.evaluation || evaluation;
       provider = remote.provider || "model";
-      this.judge.responses[this.judge.responses.length - 1].reaction = result.reaction;
     } catch (error) {
       console.warn("[TeWu Judge] 使用本地降级回答", error);
     }
+    const result = this.judge.completeEvaluation(draft, evaluation);
     this.logs.push({ speaker: "judge", text: result.reaction, round: result.round, provider });
     if (this.judge.round >= 10) {
       this.lastDecision = { ...this.judge.verdict(), name: this.profile.name };
@@ -965,13 +1065,11 @@ class InfiltratorController {
   }
 
   static restore(snapshot) {
-    const controller = new InfiltratorController(snapshot.campaignId);
+    const controller = new InfiltratorController(snapshot.campaignId, snapshot.profile);
     controller.status = snapshot.status === "interrogation" ? "complete" : (snapshot.status || "briefing");
     controller.logs = snapshot.logs || [];
     controller.lastDecision = snapshot.lastDecision || null;
     controller.awaitingNext = Boolean(snapshot.awaitingNext);
-    controller.profile = snapshot.profile || controller.profile;
-    controller.judge.profile = controller.profile;
     controller.judge.restore(snapshot.judge);
     return controller;
   }
@@ -1059,13 +1157,30 @@ function renderHeader(showStats = false) {
   return `<header class="topbar"><div class="brand"><span class="brand-mark">特</span><div><p class="brand-title">特务</p><p class="brand-subtitle">机构档案 · ${escapeHtml(headerCampaign.name)}</p></div></div><div class="top-meta"><span><i class="lock-dot"></i>通讯加密</span><span>机构 <strong>${escapeHtml(headerCampaign.name)}</strong></span>${showStats ? metric : ""}${exit}</div></header>`;
 }
 
+function renderInfiltratorBriefFacts(profile) {
+  const cover = profile.cover;
+  const facts = [
+    ["本人姓名", profile.name, "identity"],
+    ["职业与单位", `${profile.role} · ${profile.origin}`, "identity"],
+    ["公开联系人", `${cover.contactName} · ${cover.contactRole}`, "identity"],
+    ["交班同事", `${cover.colleagueName} · ${cover.colleagueRole}`, "identity"],
+    ["证件", cover.credential, "wide"],
+    ["固定路线", cover.route, "wide"],
+    ["时间口径", cover.timeline, "wide"],
+    ["携带物", cover.belongings, "wide"],
+    ["联系口径", cover.contact, "wide"],
+    ["进城目的", cover.purpose, "wide"],
+  ];
+  return facts.map(([label, value, size]) => `<div class="cover-brief-fact ${size === "wide" ? "wide" : ""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+}
+
 function renderBriefing() {
   const campaign = cloneCampaign(selectedCampaignId);
   const infiltratorProfile = selectedMode === "infiltrator" ? getPendingInfiltratorProfile(selectedCampaignId) : null;
   const modeBriefing = infiltratorProfile ? `你将以${infiltratorProfile.role}的掩护身份进入${campaign.setting}。审查官会从机构的安全视角核对你的身份、路线、物品、关系和时间线；你需要让陈述能够经受十轮连续追问。` : campaign.briefing;
   const body = `<main class="page"><section class="briefing-grid"><div><p class="eyebrow">主控档案 · 机构选择</p><h1>十个人里，谁不该出现在这里？</h1><p class="briefing-copy">选择一个真实历史机构，进入它的目标群体、审查方式和历史参考。五个机构可以在混合时空设定中共存，十名候选人由相互隔离的角色程序连续扮演。完成十人的盘问后，你将统一提交一份扣留名单。</p></div><div class="brief-note"><strong>混合时空设定</strong>主控允许不同机构的历史参考同场出现，但会明确标记哪些内容是史实参考、哪些内容是本作的玩法设定。刷新页面会保留当前机构。</div></section><div class="section-label"><h2>选择机构</h2><span>五个机构 · 目标各不相同</span></div><section class="campaign-grid">${CAMPAIGNS.map((item) => `<button class="campaign-card ${item.id === selectedCampaignId ? "selected" : ""}" data-campaign="${item.id}"><span class="campaign-code">${item.code}</span><h3>${item.name}</h3><span class="campaign-era">${item.era}</span><p>${item.description}</p><span class="campaign-tagline">${item.setting}</span></button>`).join("")}</section><div class="section-label"><h2>选择玩法</h2><span>两种角色视角</span></div><section class="mode-grid"><button class="mode-card ${selectedMode === "officer" ? "selected" : ""}" data-mode="officer"><strong>执行官模式</strong><span>盘问十名候选人，再从十人中选出需要扣留的对象。</span></button><button class="mode-card ${selectedMode === "infiltrator" ? "selected" : ""}" data-mode="infiltrator"><strong>潜伏者模式</strong><span>你接受十轮审查，由审查官程序判定是否放行。</span></button></section><section class="historical-preview"><div class="history-box"><h3>${escapeHtml(campaign.name)} · ${infiltratorProfile ? "潜伏者简报" : "主控简报"}</h3><p>${escapeHtml(modeBriefing)}</p></div><div class="history-box"><h3>历史边界</h3><p>${escapeHtml(campaign.historical)}</p></div></section><div class="brief-footer"><p>${infiltratorProfile ? "上方掩护档案会原样带入审查。请在十轮回答中保持身份、路线和物品细节一致。" : "每名候选人至少盘问两轮、最多十轮。十人全部盘问后统一提交扣留名单，名单可以为空或包含多人。"}</p><button class="primary-button" data-action="start">进入 ${escapeHtml(campaign.name)}</button></div><div class="section-label" style="margin-top:17px"><h2>当时会听见的词</h2><span>${escapeHtml(campaign.setting)}</span></div><div class="term-row">${campaign.terms.map((term) => `<span class="term-chip">${escapeHtml(term)}</span>`).join("")}</div></main>`;
   const briefingBody = body;
-  const infiltratorBrief = infiltratorProfile ? `<section class="infiltrator-brief"><div><p class="eyebrow">进入前资料 · 潜伏者</p><h2>你要守住的身份</h2><p>你不是执行官，也不负责筛查十名来客。你将以这份掩护身份进入${escapeHtml(campaign.setting)}，接受${escapeHtml(campaign.name)}审查官的连续盘问。</p></div><div class="infiltrator-brief-facts"><div><span>姓名</span><strong>${escapeHtml(infiltratorProfile.name)}</strong></div><div><span>职业</span><strong>${escapeHtml(infiltratorProfile.role)}</strong></div><div><span>来处</span><strong>${escapeHtml(infiltratorProfile.origin)}</strong></div><div><span>携带物</span><strong>${escapeHtml(infiltratorProfile.public)}</strong></div><div><span>审查重点</span><strong>${escapeHtml(INSTITUTIONAL_AXES[campaign.id]?.title || "身份与关系")}</strong></div><div><span>你的目标</span><strong>通过十轮审查</strong></div></div><p class="infiltrator-brief-note">审查官会围绕身份、路线、物品、关系和时间线追问。回答越具体且前后一致，越有机会获得放行；这份掩护档案会原样带入下一页。</p></section>` : "";
+  const infiltratorBrief = infiltratorProfile ? `<section class="infiltrator-brief"><div class="infiltrator-brief-head"><p class="eyebrow">进入前资料 · 潜伏者</p><h2>你要守住的掩护档案</h2><p>以下口径会原样带入审查。本人姓名与公开联系人是两个人；临时编出的姓名、单位或编号会被记作待证实的新关系。</p></div><div class="infiltrator-brief-facts">${renderInfiltratorBriefFacts(infiltratorProfile)}</div><div class="infiltrator-local-knowledge"><strong>本地知识</strong>${infiltratorProfile.cover.localKnowledge.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div><p class="infiltrator-brief-note">你可以自由组织语言并补充不冲突的生活细节。审查官会比较完整档案、此前回答和本轮问题，不再按隐藏关键词决定放行。</p></section>` : "";
   const finalBriefingBody = briefingBody.replace('<section class="historical-preview">', `${infiltratorBrief}<section class="historical-preview">`);
   return `<div class="app-shell">${renderHeader()}${finalBriefingBody}</div>`;
 }
@@ -1154,12 +1269,15 @@ function renderInfiltratorTop() {
 
 function renderInfiltratorLeft() {
   const profile = controller.profile;
-  return `<aside><div class="panel"><div class="panel-title">掩护身份</div><ul class="brief-list"><li><b>姓名</b><span>${escapeHtml(profile.name)}</span></li><li><b>职业</b><span>${escapeHtml(profile.role)}</span></li><li><b>来处</b><span>${escapeHtml(profile.origin)}</span></li><li><b>携带物</b><span>${escapeHtml(profile.public)}</span></li></ul></div><div class="panel"><div class="panel-title">你的目标</div><div class="facts"><div class="fact"><div class="fact-head"><span>任务</span><strong>保持放行</strong></div><p>回答十轮审查，维持掩护身份的一致性。审查官不会提前告诉你判定规则。</p></div><div class="fact"><div class="fact-head"><span>风险</span><strong>细节越少越可疑</strong></div><p>回避、前后矛盾和无法核对的时间点都会提高可疑度。</p></div></div></div></aside>`;
+  const cover = profile.cover;
+  return `<aside><div class="panel"><div class="panel-title">掩护身份</div><ul class="brief-list cover-identity"><li><b>本人</b><span>${escapeHtml(profile.name)}</span></li><li><b>职业</b><span>${escapeHtml(profile.role)}</span></li><li><b>单位</b><span>${escapeHtml(profile.origin)}</span></li><li><b>联系人</b><span>${escapeHtml(cover.contactName)}<small>${escapeHtml(cover.contactRole)}</small></span></li><li><b>同事</b><span>${escapeHtml(cover.colleagueName)}<small>${escapeHtml(cover.colleagueRole)}</small></span></li></ul></div><div class="panel"><div class="panel-title">证件与行程</div><div class="cover-reference"><details open><summary>证件</summary><p>${escapeHtml(cover.credential)}</p></details><details open><summary>路线</summary><p>${escapeHtml(cover.route)}</p></details><details><summary>时间与见过的人</summary><p>${escapeHtml(cover.timeline)}</p></details><details><summary>携带物</summary><p>${escapeHtml(cover.belongings)}</p></details><details><summary>联系人与目的</summary><p>${escapeHtml(cover.contact)}</p><p>${escapeHtml(cover.purpose)}</p></details></div></div><div class="panel"><div class="panel-title">本地知识</div><div class="cover-reference local">${cover.localKnowledge.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div></div></aside>`;
 }
 
 function renderInfiltratorRight() {
   const suspicion = controller.suspicion();
-  return `<aside><div class="panel"><div class="panel-title">审查状态</div><div class="meter-wrap"><div class="meter-row"><span>审查官可疑度</span><strong>${suspicion}%</strong></div><div class="meter"><div class="${suspicion >= 56 ? "alert" : suspicion >= 40 ? "amber" : "teal"}" style="width:${suspicion}%"></div></div><div class="meter-row" style="margin-top:13px"><span>剩余回答</span><strong>${10 - controller.judge.round}</strong></div><div class="meter"><div class="teal" style="width:${controller.judge.round * 10}%"></div></div></div></div><div class="panel"><div class="panel-title">审查记录</div><div class="facts"><div class="fact"><div class="fact-head"><span>当前主题</span><strong>${controller.judge.round < 10 ? topicLabel(JUDGE_QUESTIONS[controller.judge.round].topic) : "已结束"}</strong></div><p>${controller.judge.round < 10 ? "回答要尽量给出可被档案或路线核对的具体细节。" : "审查官正在形成最终判定。"}</p></div><div class="fact"><div class="fact-head"><span>审查方式</span><strong>逐轮核验</strong></div><p>审查官会记录你的回答，并比较身份、路线、物品、关系和时间线。</p></div></div></div></aside>`;
+  const latest = controller.judge.responses.at(-1);
+  const lastReview = latest ? `<div class="fact"><div class="fact-head"><span>上一轮变化</span><strong>${latest.change > 0 ? `+${latest.change}` : latest.change} 警戒</strong></div><p>${escapeHtml(latest.note)}</p></div>` : "";
+  return `<aside><div class="panel"><div class="panel-title">审查状态</div><div class="meter-wrap"><div class="meter-row"><span>审查官可疑度</span><strong>${suspicion}%</strong></div><div class="meter"><div class="${suspicion >= 56 ? "alert" : suspicion >= 40 ? "amber" : "teal"}" style="width:${suspicion}%"></div></div><div class="meter-row" style="margin-top:13px"><span>剩余回答</span><strong>${10 - controller.judge.round}</strong></div><div class="meter"><div class="teal" style="width:${controller.judge.round * 10}%"></div></div></div></div><div class="panel"><div class="panel-title">审查记录</div><div class="facts"><div class="fact"><div class="fact-head"><span>当前主题</span><strong>${controller.judge.round < 10 ? topicLabel(JUDGE_QUESTIONS[controller.judge.round].topic) : "已结束"}</strong></div><p>${controller.judge.round < 10 ? "结合左侧档案作答；合理的同义表达不会因缺词受罚。" : "审查官正在形成最终判定。"}</p></div>${lastReview}<div class="fact"><div class="fact-head"><span>审查方式</span><strong>档案 + Agent</strong></div><p>审查官会核对问题相关性、具体细节、档案吻合、前后一致和回避程度。</p></div></div></div></aside>`;
 }
 
 function renderInfiltratorLog() {
@@ -1196,7 +1314,12 @@ function renderInfiltratorGame() {
 function renderInfiltratorSettlement() {
   const result = controller.lastDecision;
   const released = result?.action === "release";
-  const rows = controller.judge.responses.map((item) => `<div class="review-row"><b>${String(item.round).padStart(2, "0")}</b><span>${topicLabel(item.topic)} · ${escapeHtml(item.note)}</span><strong class="review-result ${item.change <= 0 ? "correct" : "wrong"}">${item.change <= 0 ? "降低警戒" : "提高警戒"}</strong></div>`).join("");
+  const rows = controller.judge.responses.map((item) => {
+    const evaluation = item.evaluation;
+    const metrics = evaluation ? `问题 ${evaluation.relevance}/2 · 细节 ${evaluation.specificity}/2 · 档案 ${evaluation.dossierMatch}/2 · 一致 ${evaluation.consistency}/2 · 回避 ${evaluation.evasiveness}/2` : "旧版记录未保存结构化评价";
+    const changeLabel = item.change > 0 ? `警戒 +${item.change}` : item.change < 0 ? `警戒 ${item.change}` : "警戒不变";
+    return `<div class="review-entry"><div class="review-row"><b>${String(item.round).padStart(2, "0")}</b><span>${topicLabel(item.topic)} · ${escapeHtml(item.note)}</span><strong class="review-result ${item.change <= 0 ? "correct" : "wrong"}">${changeLabel}</strong></div><p class="review-basis">${escapeHtml(metrics)}</p></div>`;
+  }).join("");
   return `<div class="app-shell">${renderHeader(true)}<main class="page"><section class="settlement"><div class="settlement-head"><p class="eyebrow">审查报告 · 已结案</p><h1>${released ? "掩护通过" : "身份暴露"}</h1><p>审查官最终判定：${released ? "放行" : "扣留"}。${escapeHtml(result?.reason || "")}</p></div><div class="score-panel"><div class="grade">${released ? "过" : "疑"}</div><div><div class="score-line"><strong>${controller.suspicion()}%</strong><span>最终可疑度</span></div><div class="score-track"><div style="width:${controller.suspicion()}%"></div></div><p class="score-note">完成十轮回答 · 审查官自动作出判定</p></div></div><div class="stat-grid"><div class="stat-card"><span>审查轮数</span><strong>10</strong></div><div class="stat-card"><span>最终可疑度</span><strong>${controller.suspicion()}%</strong></div><div class="stat-card"><span>审查结果</span><strong>${released ? "放行" : "扣留"}</strong></div><div class="stat-card"><span>回答记录</span><strong>${controller.judge.responses.length}</strong></div></div><div class="review"><h2>逐轮审查记录</h2>${rows}</div><div class="settlement-actions"><button class="secondary-button" data-action="back">返回机构选择</button><button class="primary-button" data-action="restart">重新接受审查</button></div></section></main></div>`;
 }
 
