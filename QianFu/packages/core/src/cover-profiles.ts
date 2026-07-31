@@ -53,6 +53,9 @@ export function getCampaignCoverProfile(campaign: CampaignDefinition, id: string
   if (!configured) throw new Error(`Campaign ${campaign.id} has no entry configuration for cover profile ${base.id}`);
   return {
     ...base,
+    title: configured.title ?? base.title,
+    summary: configured.summary ?? base.summary,
+    routineLabel: configured.routineLabel ?? base.routineLabel,
     startingLocationId: configured.startingLocationId,
     workLocationIds: [...configured.workLocationIds],
     initialContactCharacterIds: [...configured.initialContactCharacterIds],

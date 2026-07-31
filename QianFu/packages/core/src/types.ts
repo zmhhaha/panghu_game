@@ -286,6 +286,10 @@ export interface CampaignCoverProfileConfig {
   startingLocationId: string;
   workLocationIds: string[];
   initialContactCharacterIds: string[];
+  /** Campaign-specific public identity presentation. The profile id remains a stable engine slot. */
+  title?: string;
+  summary?: string;
+  routineLabel?: string;
 }
 
 export interface CampaignCatalogEntry {
@@ -297,6 +301,7 @@ export interface CampaignCatalogEntry {
   estimatedDays: number;
   objectiveCount: number;
   coverProfileIds: Array<"archive_clerk" | "travelling_merchant" | "freelance_writer">;
+  coverProfileOverrides?: Partial<Record<"archive_clerk" | "travelling_merchant" | "freelance_writer", { title?: string; summary?: string; routineLabel?: string }>>;
 }
 
 export interface CharacterState {

@@ -18,6 +18,7 @@ const REGISTERED_CAMPAIGNS: RegisteredCampaign[] = [{
     estimatedDays: 10,
     objectiveCount: LINJIANG_1942.objectives.length,
     coverProfileIds: ["archive_clerk", "travelling_merchant", "freelance_writer"],
+    coverProfileOverrides: Object.fromEntries(Object.entries(LINJIANG_1942.coverProfiles).map(([id, profile]) => [id, { title: profile.title, summary: profile.summary, routineLabel: profile.routineLabel }])),
   },
 }, {
   definition: HAIZHOU_1943,
@@ -30,6 +31,7 @@ const REGISTERED_CAMPAIGNS: RegisteredCampaign[] = [{
     estimatedDays: 10,
     objectiveCount: HAIZHOU_1943.objectives.length,
     coverProfileIds: ["archive_clerk", "travelling_merchant", "freelance_writer"],
+    coverProfileOverrides: Object.fromEntries(Object.entries(HAIZHOU_1943.coverProfiles).map(([id, profile]) => [id, { title: profile.title, summary: profile.summary, routineLabel: profile.routineLabel }])),
   },
 }];
 
