@@ -4,7 +4,7 @@ metadata:
   name: tewu-agent-config
   namespace: tewu
 data:
-  # Supported values: fallback, openai, deepseek, anthropic, custom.
+  # Supported values: openai, deepseek, custom. An LLM provider is required.
   PROVIDER: deepseek
   OPENAI_BASE_URL: https://api.openai.com/v1
   OPENAI_MODEL: gpt-4o-mini

@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-function runCases() {
+async function runCases() {
   const campaign = cloneCampaign(CAMPAIGNS[0].id);
   assert.deepEqual(CAMPAIGNS.map((item) => item.id), ["gestapo", "kgb", "tokko", "cia"], "机构顺序或数量异常");
   assert.equal(CAMPAIGNS.find((item) => item.id === "cia").setting, "华盛顿联邦办公区入口");
@@ -110,6 +110,10 @@ function runCases() {
   assert.equal(officer.agents.length, 10, "执行官模式必须同时生成十名候选人");
   assert.ok(officer.relationshipGroups.length >= 2 && officer.relationshipGroups.length <= 4, "每局应生成 2 至 4 组熟人关系");
   assert.ok(officer.relationshipGroups.some((group) => group.members.length >= 2), "关系组至少包含两名成员");
+  assert.ok(officer.relationshipGroups.every((group) => group.eventId && group.location && group.timeWindow && group.anchorFacts?.length >= 2 && group.sequence?.length >= 2), "关系组应包含具体事件锚点和固定顺序");
+  assert.ok(officer.relationshipGroups.every((group) => Object.values(group.memberViews || {}).every((view) => view.knows?.length && view.doesNotKnow?.length && !String(view.summary).includes("我作为"))), "成员视角不得退化为职业模板台词");
+  assert.ok(officer.relationshipGroups.some((group) => group.targetRelated && group.members.some((id) => officer.roster.find((item) => item.id === id)?.target)), "每局至少要有一组与潜伏目标相关的共同事件");
+  assert.ok(officer.relationshipGroups.some((group) => group.members.every((id) => !officer.roster.find((item) => item.id === id)?.target)), "每局至少要有一组普通人的交集事件");
   assert.ok(officer.agents.some((agent) => agent.dossier.relationships.length > 0), "候选人档案应包含各自所知的关系组片段");
   assert.ok(officer.agents.some((agent) => agent.dossier.testimonyPlan?.disclosureTriggers?.length >= 2), "候选人应拥有预备口径和泄露触发器");
 
@@ -135,6 +139,32 @@ function runCases() {
   assert.equal(restored.agents[2].round, 1, "恢复存档应保留其他人物的独立对话轮数");
 }
 
+{
+  const failingOfficer = new WorldController(campaign.id);
+  failingOfficer.start();
+  const beforeMemory = failingOfficer.agents[0].memory.length;
+  const beforeLogs = failingOfficer.agents[0].logs.length;
+  const completed = await failingOfficer.ask("请说明你从哪里来，几点到达？");
+  assert.equal(completed, false, "模型失败时本轮不能伪造成功");
+  assert.equal(failingOfficer.agents[0].memory.length, beforeMemory, "模型失败不得写入 NPC memory");
+  assert.equal(failingOfficer.agents[0].logs.length, beforeLogs, "模型失败不得写入 NPC logs");
+  assert.equal(failingOfficer.draftQuestion, "请说明你从哪里来，几点到达？", "失败问题应保留在输入草稿");
+  assert.equal(failingOfficer.requestNotice, "模型正在忙，请稍后再提问");
+}
+
+{
+  const failingInfiltrator = new InfiltratorController(campaign.id);
+  failingInfiltrator.start();
+  const beforeRound = failingInfiltrator.judge.round;
+  const beforeLogs = failingInfiltrator.logs.length;
+  const completed = await failingInfiltrator.ask("我按档案回答，姓名职业和单位都没有变化。");
+  assert.equal(completed, false, "审查官模型失败时本轮不能伪造成功");
+  assert.equal(failingInfiltrator.judge.round, beforeRound, "审查官模型失败不得推进轮数");
+  assert.equal(failingInfiltrator.logs.length, beforeLogs, "审查官模型失败不得写入审查记录");
+  assert.equal(failingInfiltrator.draftAnswer, "我按档案回答，姓名职业和单位都没有变化。", "失败回答应保留在输入草稿");
+  assert.equal(failingInfiltrator.requestNotice, "模型正在忙，请稍后再提问");
+}
+
   console.log("judge-state: all assertions passed");
 }
 
@@ -144,7 +174,7 @@ const browserEntryIndex = appSource.indexOf(browserEntry);
 if (browserEntryIndex < 0) throw new Error("无法定位 app.js 的浏览器入口");
 
 vm.runInNewContext(
-  `${appSource.slice(0, browserEntryIndex)}\n(${runCases.toString()})();`,
-  { assert: require("node:assert/strict"), console, setTimeout, clearTimeout, fetch: () => Promise.resolve({ ok: true }), persistSession() {}, clearPersistedSession() {}, localStorage: { setItem() {}, getItem() { return null; }, removeItem() {} } },
+  `${appSource.slice(0, browserEntryIndex)}\n(async () => { await (${runCases.toString()})(); })();`,
+  { assert: require("node:assert/strict"), console, setTimeout, clearTimeout, fetch: () => Promise.resolve({ ok: false, status: 503 }), persistSession() {}, clearPersistedSession() {}, localStorage: { setItem() {}, getItem() { return null; }, removeItem() {} } },
   { filename: "judge-state.bundle.js" },
 );

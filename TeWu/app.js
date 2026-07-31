@@ -401,11 +401,11 @@ async function requestNpcReply(controller, question, answer, sourceIndex, dossie
       references,
       disclosureFacts: answer.disclosureFacts,
       memorySummary,
-      fallback: answer.text,
     }),
   });
   if (!response.ok) throw new Error(`NPC API ${response.status}`);
   const payload = await response.json();
+  if (payload.provider === "fallback") throw new Error("服务端返回了不受支持的降级结果");
   if (!payload.speech) throw new Error("NPC API 返回为空");
   return payload;
 }
@@ -422,13 +422,12 @@ async function requestJudgeReply(controller, answer, result) {
       topic: result.topic,
       question: result.question,
       plannedNextTopic: result.plannedNextTopic,
-      history: controller.logs.slice(0, -1),
-      fallback: result.reaction,
-      fallbackEvaluation: result.localEvaluation,
+      history: controller.logs,
     }),
   });
   if (!response.ok) throw new Error(`Judge API ${response.status}`);
   const payload = await response.json();
+  if (payload.provider === "fallback") throw new Error("服务端返回了不受支持的降级结果");
   if (!payload.speech) throw new Error("Judge API 返回为空");
   return payload;
 }
@@ -449,21 +448,28 @@ function makeDossier(campaign, blueprint, index, relationshipGroups = []) {
     .filter((group) => group.members.includes(blueprint.id))
     .map((group) => ({
       groupId: group.id,
+      eventId: group.eventId,
       label: group.label,
       type: group.type,
       members: group.members,
       factId: group.factId,
-      statement: group.memberStatements?.[blueprint.id] || group.sharedTruth,
+      location: group.location,
+      timeWindow: group.timeWindow,
+      anchors: group.anchorFacts,
+      sequence: group.sequence,
+      evidence: group.evidence,
+      statement: group.memberViews?.[blueprint.id]?.summary || group.sharedTruth,
       sharedTruth: group.sharedTruth,
-      knowledge: group.memberKnowledge?.[blueprint.id] || "direct",
+      memberView: group.memberViews?.[blueprint.id] || { knows: [], doesNotKnow: [], evidence: [], disclosureStyle: "自然叙述" },
+      knowledge: group.memberViews?.[blueprint.id]?.knowledge || "direct",
     }));
   const relationshipFacts = relationships.map((relationship) => ({
     factId: relationship.factId,
     category: "关系",
-    truth: relationship.sharedTruth,
+    truth: `${relationship.location}在${relationship.timeWindow}发生过一段可交叉核对的共同经历：${relationship.sharedTruth}`,
     coverClaim: relationship.statement,
     expected: relationship.statement,
-    evidence: [`${relationship.label}的交叉陈述`, "关系组记录"],
+    evidence: [relationship.location, relationship.timeWindow, ...(relationship.anchors || []).map((anchor) => `${anchor.type}：${anchor.value}`), ...(relationship.evidence || []), "关系组记录"],
     publicKnowledge: false,
     npcKnowledge: relationship.knowledge,
     allowedResponses: ["明确回答", "模糊回答", "只说明自己知道的部分", "否认动机"],
@@ -606,36 +612,139 @@ function shuffle(items) {
   return result;
 }
 
+const RELATIONSHIP_EVENT_SEEDS = {
+  old_checkpoint: { eventId: "event.old_checkpoint_crate_2140", location: "旧检查棚东侧货台", timeWindow: "21:40—21:55", anchors: [{ type: "时间", value: "21:48", evidence: "夜班换岗簿" }, { type: "物品", value: "灰色箱子 A-17", evidence: "封签登记册" }], sequence: ["货车在东侧货台短暂停靠", "灰色箱子从第一货台移到第二货台", "换岗后箱子重新贴上封签"], evidence: ["夜班换岗簿", "封签登记册"], concealedContext: "有人借换岗空档把一份未登记材料交给了下一位联络者" },
+  medicine_transfer: { eventId: "event.medicine_seal_2015", location: "南郊疗养院后门药品台", timeWindow: "20:05—20:25", anchors: [{ type: "时间", value: "20:15", evidence: "药房交接表" }, { type: "编号", value: "药箱 A-47", evidence: "封签登记" }], sequence: ["药房把 A-47 药箱推到后门", "商行来人核对税票和封签", "样本盒在换班前被带离登记台"], evidence: ["药房交接表", "税票联单"], concealedContext: "正常药品交接被人利用来掩护一支未登记的复检试管" },
+  night_transport: { eventId: "event.night_transport_fence_1900", location: "河堤北侧封闭段外的临时路口", timeWindow: "18:55—19:15", anchors: [{ type: "时间", value: "19:00", evidence: "水务巡测表" }, { type: "地点", value: "北侧铁栅门", evidence: "封闭段值守记录" }], sequence: ["巡测员在铁栅门旁记录潮位", "检修车从临时路口减速通过", "有人沿堤脚绕开封闭段"], evidence: ["水务巡测表", "封闭段值守记录"], concealedContext: "封闭段被临时打开过一条只够单人通行的路线" },
+  old_hall: { eventId: "event.old_hall_backdoor_1940", location: "旧会馆西侧后门", timeWindow: "19:35—19:50", anchors: [{ type: "时间", value: "19:42", evidence: "会馆值班簿" }, { type: "称呼", value: "纸灯巷", evidence: "街区口述登记" }], sequence: ["剧团道具车停在后门", "学校来人把一只印章盒交给值班员", "后门在换岗前重新上锁"], evidence: ["会馆值班簿", "后门钥匙登记"], concealedContext: "后门的公开借用掩护了一次不在会馆登记册上的短暂交接" },
+  paper_batch: { eventId: "event.paper_batch_carbon_2030", location: "中央图书馆后库与新闻社暗房之间的装卸巷", timeWindow: "20:20—20:40", anchors: [{ type: "批次", value: "纸张批次 P-12", evidence: "采购清单" }, { type: "物品", value: "蓝色碳纸封套", evidence: "邮电局领用单" }], sequence: ["装订工领取受潮书脊", "暗房技师把联系样片装入纸套", "报务员在封套外补写地址"], evidence: ["采购清单", "邮电局领用单"], concealedContext: "同一批纸材被分别用于正常修复和一段未登记的通信" },
+  night_repair: { eventId: "event.night_repair_switch_2125", location: "北城电车库外的市政维修井", timeWindow: "21:20—21:45", anchors: [{ type: "时间", value: "21:32", evidence: "夜间报修电话簿" }, { type: "编号", value: "锁芯型号 M-3", evidence: "市政维修单" }], sequence: ["末班车在维修井前减速", "锁具工打开侧门更换锁芯", "面包房空箱车从旁边驶过"], evidence: ["夜间报修电话簿", "市政维修单"], concealedContext: "维修和送货的正常动线让一只空箱避开了正门登记" },
+  night_crossing: { eventId: "event.east_river_boat_2055", location: "东河临时码头三号跳板", timeWindow: "20:50—21:15", anchors: [{ type: "时间", value: "20:58", evidence: "渡口船次簿" }, { type: "船次", value: "临时加开第 3 航", evidence: "缆绳登记" }], sequence: ["水位上涨，码头临时加开短航", "检验所木盒先于摆渡人登船", "巡测员在岸边记录缆绳长度"], evidence: ["渡口船次簿", "缆绳登记"], concealedContext: "样本运输的临时航次被用来传递一张没有登记的湿纸条" },
+};
+
 function createRelationshipGroups(roster) {
   const ids = new Set(roster.map((item) => item.id));
   const templates = [
-    { type: "工作交叉", label: "旧检查棚换乘组", members: ["printer", "courier", "archivist"], truth: "三人在旧检查棚附近共享过一次换乘窗口，但各自只看见其中一段。" },
-    { type: "工作交叉", label: "药品交接组", members: ["nurse", "merchant", "labtech"], truth: "药品箱、封签和样本在同一晚的交接链上出现过，成员知道的箱号并不完全相同。" },
-    { type: "路线交叉", label: "夜间运输组", members: ["mechanic", "surveyor", "botanist"], truth: "三人的工作路线在夜间运输线上短暂相交，只有一人亲眼看见封闭段。" },
-    { type: "公开场所组", label: "旧会馆交叉组", members: ["actor", "teacher", "archivist"], truth: "学校、剧团和档案工作都使用过旧会馆，成员对后门称呼和时间的记忆各有侧重。" },
-    { type: "物料批次组", label: "纸张与报文组", members: ["bookbinder", "photographer", "telegraphist", "tailor"], truth: "修复纸、联系样片和报文封签来自相近的采购批次，只有接触材料的人知道具体差异。" },
-    { type: "夜班交叉组", label: "末班维修组", members: ["conductor", "locksmith", "baker", "porter"], truth: "末班车、夜间报修和货箱回收时间相邻，成员知道时刻，却未必知道彼此目的。" },
-    { type: "渡运交叉组", label: "东河夜航组", members: ["ferryman", "labtech", "surveyor"], truth: "东河水位变化导致临时夜航，检验所和巡测线的工作记录可能在同一时段重叠。" },
+    { type: "工作交叉", label: "旧检查棚换乘组", eventKey: "old_checkpoint", members: ["printer", "courier", "archivist"], truth: "三人在同一个换乘窗口附近出现过，但各自只掌握事件的一段。", targetRelated: true },
+    { type: "工作交叉", label: "药品交接组", eventKey: "medicine_transfer", members: ["nurse", "merchant", "labtech"], truth: "药箱、税票和样本在同一晚的交接链上出现过，成员记住的编号并不完全相同。", targetRelated: false },
+    { type: "路线交叉", label: "夜间运输组", eventKey: "night_transport", members: ["mechanic", "surveyor", "botanist"], truth: "三人的工作路线在封闭段外短暂相交，只有一人走到铁栅门附近。", targetRelated: false },
+    { type: "公开场所组", label: "旧会馆交叉组", eventKey: "old_hall", members: ["actor", "teacher", "archivist"], truth: "学校、剧团和档案工作都在旧会馆留下过公开记录，但没有人掌握完整经过。", targetRelated: true },
+    { type: "物料批次组", label: "纸张与报文组", eventKey: "paper_batch", members: ["bookbinder", "photographer", "telegraphist", "tailor"], truth: "几种工作材料来自同一采购批次，接触不同环节的人看到的物件也不同。", targetRelated: false },
+    { type: "夜班交叉组", label: "末班维修组", eventKey: "night_repair", members: ["conductor", "locksmith", "baker", "porter"], truth: "末班车、夜间报修和货箱回收时间相邻，成员知道时刻，却未必知道彼此目的。", targetRelated: false },
+    { type: "渡运交叉组", label: "东河夜航组", eventKey: "night_crossing", members: ["ferryman", "labtech", "surveyor"], truth: "东河水位变化导致临时夜航，检验所和巡测线的记录在同一时段重叠。", targetRelated: false },
   ];
   const usable = shuffle(templates).filter((template) => template.members.filter((id) => ids.has(id)).length >= 2);
   const selected = usable.slice(0, Math.min(4, Math.max(2, usable.length)));
+  const ensureTemplate = (predicate, eventKey) => {
+    if (selected.some(predicate)) return;
+    const candidate = usable.find((item) => item.eventKey === eventKey);
+    if (candidate && !selected.includes(candidate)) {
+      if (selected.length >= 4) selected[selected.length - 1] = candidate; else selected.push(candidate);
+    }
+  };
+  ensureTemplate((template) => template.targetRelated && template.members.some((id) => roster.find((item) => item.id === id)?.target), "old_checkpoint");
+  ensureTemplate((template) => !template.targetRelated && template.members.every((id) => !roster.find((item) => item.id === id)?.target), "medicine_transfer");
+  if (!selected.some((template) => template.targetRelated && template.members.some((id) => roster.find((item) => item.id === id)?.target))) {
+    const targetId = roster.find((item) => item.target)?.id;
+    const companionId = roster.find((item) => item.id !== targetId)?.id;
+    if (targetId && companionId) {
+      const generated = { type: "工作交叉", label: "临时交叉事件", eventKey: "old_checkpoint", members: [targetId, companionId], truth: "两名来客在同一段换乘窗口短暂出现，但没有共享完整目的。", targetRelated: true };
+      if (selected.length >= 4) {
+        const replaceIndex = selected.findIndex((item) => !item.targetRelated);
+        selected[replaceIndex >= 0 ? replaceIndex : selected.length - 1] = generated;
+      } else selected.push(generated);
+    }
+  }
+  if (!selected.some((template) => template.members.length >= 2 && template.members.every((id) => !roster.find((item) => item.id === id)?.target))) {
+    const ordinaryIds = roster.filter((item) => !item.target).slice(0, 2).map((item) => item.id);
+    if (ordinaryIds.length >= 2) {
+      const generated = { type: "生活交集", label: "普通工作交集", eventKey: "medicine_transfer", members: ordinaryIds, truth: "两名普通来客在公开工作流程中短暂交集，各自只知道表面事务。", targetRelated: false };
+      if (selected.length >= 4) {
+        const replaceIndex = selected.findIndex((item) => !(item.targetRelated && item.members.some((id) => roster.find((candidate) => candidate.id === id)?.target)));
+        const protectedIndexes = selected.map((item, itemIndex) => item.targetRelated && item.members.some((id) => roster.find((candidate) => candidate.id === id)?.target) ? itemIndex : -1).filter((itemIndex) => itemIndex >= 0);
+        const safeIndex = replaceIndex >= 0 ? replaceIndex : protectedIndexes.length > 1 ? protectedIndexes[protectedIndexes.length - 1] : -1;
+        if (safeIndex >= 0) selected[safeIndex] = generated; else selected.push(generated);
+      } else selected.push(generated);
+    }
+  }
   while (selected.length < 2) {
     const members = shuffle([...ids]).slice(0, Math.min(3, ids.size));
     if (members.length < 2) break;
-    selected.push({ type: "临时同行", label: "临时同行组", members, truth: "几名来客在同一段公共路线短暂相遇，但没有共享完整目的。" });
+    selected.push({ type: "临时同行", label: "临时同行组", eventKey: "old_checkpoint", members, truth: "几名来客在同一段公共路线短暂相遇，但没有共享完整目的。", targetRelated: members.some((id) => roster.find((item) => item.id === id)?.target) });
   }
   return selected.map((template, index) => {
+    const seed = RELATIONSHIP_EVENT_SEEDS[template.eventKey] || RELATIONSHIP_EVENT_SEEDS.old_checkpoint;
     const members = template.members.filter((id) => ids.has(id));
-    const memberStatements = {};
-    const memberKnowledge = {};
+    const memberViews = {};
     members.forEach((id, memberIndex) => {
       const blueprint = roster.find((item) => item.id === id);
       const role = blueprint?.role || "来客";
-      const focus = ["看见路线", "记住时间", "听说过交接", "只知道物品"][memberIndex % 4];
-      memberStatements[id] = `${template.truth}我作为${role}只${focus}，不知道其他人的真实目的。`;
-      memberKnowledge[id] = memberIndex === 0 ? "direct" : memberIndex === 1 ? "partial" : "hearsay";
+      const knowledge = memberIndex === 0 ? "direct" : memberIndex === 1 ? "partial" : "hearsay";
+      const known = memberIndex % 3 === 0
+        ? [seed.anchors[0].value, seed.sequence[0]]
+        : memberIndex % 3 === 1
+          ? [seed.anchors[1].value, seed.sequence[1]]
+          : [seed.sequence[2], seed.location];
+      const doesNotKnow = memberIndex % 2 === 0 ? ["谁安排了这次交接", "物件最终去了哪里"] : ["另一名成员的完整路线", "这件事是否与政治任务有关"];
+      const disclosureStyle = ["职业细节", "时间和编号", "只复述听见的部分", "谨慎区分所见与推测"][memberIndex % 4];
+      memberViews[id] = {
+        knowledge,
+        knows: known,
+        doesNotKnow,
+        evidence: seed.evidence.slice(0, memberIndex % 2 === 0 ? 2 : 1),
+        disclosureStyle,
+        summary: `${role}记得${known.join("，")}；能查的依据是${seed.evidence[memberIndex % seed.evidence.length]}，但不知道${doesNotKnow[0]}。`,
+      };
     });
-    return { id: `group-${index + 1}-${template.label}`, factId: `group.${index + 1}.shared`, type: template.type, label: template.label, members, sharedTruth: template.truth, memberStatements, memberKnowledge };
+    return {
+      id: `group-${index + 1}-${template.label}`,
+      eventId: seed.eventId,
+      factId: `group.${index + 1}.shared`,
+      type: template.type,
+      label: template.label,
+      members,
+      location: seed.location,
+      timeWindow: seed.timeWindow,
+      anchorFacts: seed.anchors,
+      sequence: seed.sequence,
+      evidence: seed.evidence,
+      concealedContext: seed.concealedContext,
+      targetRelated: template.targetRelated,
+      sharedTruth: template.truth,
+      memberViews,
+    };
+  });
+}
+
+function normalizeRelationshipGroups(groups, roster) {
+  return (Array.isArray(groups) ? groups : []).map((group, index) => {
+    if (group?.eventId && group.location && group.timeWindow && Array.isArray(group.anchorFacts)) return group;
+    const seed = RELATIONSHIP_EVENT_SEEDS.old_checkpoint;
+    const members = Array.isArray(group?.members) ? group.members : [];
+    const memberViews = group?.memberViews || {};
+    members.forEach((id, memberIndex) => {
+      if (memberViews[id]) return;
+      const blueprint = roster.find((item) => item.id === id);
+      memberViews[id] = {
+        knowledge: group?.memberKnowledge?.[id] || (memberIndex ? "partial" : "direct"),
+        knows: [seed.anchors[0].value, seed.sequence[memberIndex % seed.sequence.length]],
+        doesNotKnow: ["谁安排了这次交接"],
+        evidence: seed.evidence.slice(0, 1),
+        disclosureStyle: "自然叙述",
+        summary: `${blueprint?.role || "来客"}记得${seed.anchors[0].value}附近发生过一段短暂交接，但不知道安排者。`,
+      };
+    });
+    return {
+      ...group,
+      eventId: `event.legacy_${index + 1}`,
+      location: group?.location || seed.location,
+      timeWindow: group?.timeWindow || seed.timeWindow,
+      anchorFacts: group?.anchorFacts || seed.anchors,
+      sequence: group?.sequence || seed.sequence,
+      evidence: group?.evidence || seed.evidence,
+      concealedContext: group?.concealedContext || "旧版关系组未记录完整共同事件，只保留原有交集。",
+      memberViews,
+    };
   });
 }
 
@@ -646,36 +755,32 @@ class NpcAgent {
     this.logs = [];
   }
 
-  respond(question, references = []) {
+  prepareResponse(question, references = []) {
     const topic = inferTopic(question);
     const index = this.memory.length;
     const previousTopicCount = this.memory.filter((item) => item.topic === topic).length;
-    const topicBank = this.dossier.topicReplies[topic] || this.dossier.topicReplies.general;
-    const fallbackLine = this.dossier.lines[index % Math.max(1, this.dossier.lines.length)] || "我只能补充已经能够核对的部分。";
-    let text = topic === "institution" ? institutionalReply(this.dossier, previousTopicCount) : (topicBank[previousTopicCount % topicBank.length] || fallbackLine);
-    if (previousTopicCount > 0 && topic !== "general") {
-      const details = FOLLOWUP_DETAILS[topic] || [];
-      const detail = details[(previousTopicCount - 1) % details.length] || "我只能补充已经能够核对的部分。";
-      text = `你刚才已经问过${topicLabel(topic)}。${text} ${detail}`;
-    }
     const disclosureFacts = this.dossier.testimonyPlan?.disclosureTriggers?.find((item) => {
       if (references.length && item.trigger.includes("同组")) return true;
       if (previousTopicCount > 0 && item.trigger.includes("同一主题")) return true;
       return topic === "institution" && item.trigger.includes("公开表态");
     })?.factIds || [];
-    if (references.length) {
-      const reference = references[0];
-      text = `${text} 关于${reference.name}的说法，我只知道自己亲眼见到的那一段，不能替他解释动机。`;
-    }
-    if (disclosureFacts.length) {
-      const fact = (this.dossier.facts || []).find((item) => item.factId === disclosureFacts[0]);
-      if (fact?.expected && !text.includes(fact.expected)) text = `${text} 能补充的只有：${fact.expected}。`;
-    }
     const observation = this.dossier.topicObservations[topic] || { ...this.dossier.observations[index % this.dossier.observations.length], topic };
     const claims = factsForTopic(this.dossier, topic).slice(0, 2).map((fact) => ({ factId: fact.factId, category: fact.category, value: fact.expected, stance: "确认" }));
     const round = this.memory.length + 1;
-    this.memory.push({ question, answer: text, topic, round, claims, observation });
-    return { text, round, observation, claims, disclosureFacts };
+    return { question, text: "", round, topic, observation, claims, disclosureFacts };
+  }
+
+  commitResponse(draft, text, claims = draft.claims) {
+    const answer = String(text || draft.text || "").trim();
+    const committedClaims = Array.isArray(claims) ? claims : draft.claims;
+    const item = { question: draft.question, answer, topic: draft.topic, round: draft.round, claims: committedClaims, observation: draft.observation };
+    this.memory.push(item);
+    return { ...draft, text: answer, claims: committedClaims };
+  }
+
+  respond(question, references = []) {
+    const draft = this.prepareResponse(question, references);
+    return this.commitResponse(draft, draft.text, draft.claims);
   }
 
   get round() { return this.memory.length; }
@@ -720,7 +825,7 @@ class WorldController {
     this.mode = "officer";
     this.campaign = cloneCampaign(campaignId);
     this.roster = Array.isArray(roster) && roster.length === 10 ? roster.map((blueprint) => ({ ...blueprint })) : createOfficerRoster();
-    this.relationshipGroups = Array.isArray(relationshipGroups) && relationshipGroups.length >= 2 ? relationshipGroups : createRelationshipGroups(this.roster);
+    this.relationshipGroups = Array.isArray(relationshipGroups) && relationshipGroups.length >= 2 ? normalizeRelationshipGroups(relationshipGroups, this.roster) : createRelationshipGroups(this.roster);
     this.agents = this.roster.map((blueprint, index) => new NpcAgent(makeDossier(this.campaign, blueprint, index, this.relationshipGroups)));
     this.status = "briefing";
     this.currentIndex = 0;
@@ -732,6 +837,8 @@ class WorldController {
     this.lastDecision = null;
     this.awaitingNext = false;
     this.pendingIndexes = new Set();
+    this.draftQuestion = "";
+    this.requestNotice = "";
   }
 
   start() {
@@ -761,27 +868,30 @@ class WorldController {
     const sourceDossier = sourceAgent.dossier;
     if (this.status !== "active" || this.awaitingNext || this.pendingIndexes.size || !cleanQuestion) return false;
     const references = this.findReferences(cleanQuestion, sourceIndex);
+    this.draftQuestion = cleanQuestion;
+    this.requestNotice = "";
     this.pendingIndexes.add(sourceIndex);
-    const answer = sourceAgent.respond(cleanQuestion, references);
-    sourceAgent.logs.push({ speaker: "player", text: cleanQuestion, round: answer.round });
-    let provider = "fallback";
+    const answer = sourceAgent.prepareResponse(cleanQuestion, references);
     try {
-      const remote = await requestNpcReply(this, cleanQuestion, answer, sourceIndex, sourceDossier, sourceAgent.logs.slice(0, -1), references, sourceAgent.summary());
-      answer.text = remote.speech;
-      answer.claims = Array.isArray(remote.claims) ? remote.claims : answer.claims;
-      provider = remote.provider || "model";
-      sourceAgent.memory[sourceAgent.memory.length - 1].answer = answer.text;
-      sourceAgent.memory[sourceAgent.memory.length - 1].claims = answer.claims;
+      const remote = await requestNpcReply(this, cleanQuestion, answer, sourceIndex, sourceDossier, sourceAgent.logs, references, sourceAgent.summary());
+      const committed = sourceAgent.commitResponse(answer, remote.speech, Array.isArray(remote.claims) ? remote.claims : answer.claims);
+      sourceAgent.logs.push({ speaker: "player", text: cleanQuestion, round: committed.round });
+      sourceAgent.logs.push({ speaker: "npc", text: committed.text, round: committed.round, provider: remote.provider || "model" });
+      this.observationsByAgent[sourceIndex].push(committed.observation);
+      this.recordClaims(committed.claims, committed.round, sourceIndex, sourceDossier.name, committed.text);
+      this.recordNetworkClue(committed.observation.topic, sourceIndex, sourceDossier);
+      this.draftQuestion = "";
+      this.requestNotice = "";
+      this.pendingIndexes.delete(sourceIndex);
+      this.save();
+      return true;
     } catch (error) {
-      console.warn("[TeWu Agent] 使用本地降级回答", error);
+      console.warn("[TeWu Agent] 模型请求失败，本轮未写入对话", error);
+      this.pendingIndexes.delete(sourceIndex);
+      this.requestNotice = "模型正在忙，请稍后再提问";
+      this.save();
+      return false;
     }
-    sourceAgent.logs.push({ speaker: "npc", text: answer.text, round: answer.round, provider });
-    this.observationsByAgent[sourceIndex].push(answer.observation);
-    this.recordClaims(answer.claims, answer.round, sourceIndex, sourceDossier.name, answer.text);
-    this.recordNetworkClue(answer.observation.topic, sourceIndex, sourceDossier);
-    this.pendingIndexes.delete(sourceIndex);
-    this.save();
-    return true;
   }
 
   findReferences(question, sourceIndex) {
@@ -831,6 +941,8 @@ class WorldController {
     this.currentIndex = index;
     this.lastDecision = null;
     this.awaitingNext = false;
+    this.draftQuestion = "";
+    this.requestNotice = "";
     this.save();
     return true;
   }
@@ -880,6 +992,8 @@ class WorldController {
       relationshipGroups: this.relationshipGroups,
       lastDecision: this.lastDecision,
       awaitingNext: this.awaitingNext,
+      draftQuestion: this.draftQuestion,
+      requestNotice: this.requestNotice,
       agentStates: this.agents.map((agent) => agent.snapshot()),
     };
     persistSession(snapshot);
@@ -902,6 +1016,8 @@ class WorldController {
     controller.selectedTargets = snapshot.selectedTargets || [];
     controller.lastDecision = snapshot.lastDecision || null;
     controller.awaitingNext = Boolean(snapshot.awaitingNext);
+    controller.draftQuestion = String(snapshot.draftQuestion || "");
+    controller.requestNotice = String(snapshot.requestNotice || "");
     controller.agents.forEach((agent, index) => agent.restore(snapshot.agentStates?.[index]));
     if (!snapshot.agentStates?.[controller.currentIndex]?.logs?.length && legacyLogs.length) controller.agents[controller.currentIndex].logs = legacyLogs;
     return controller;
@@ -1015,9 +1131,9 @@ function normalizeInfiltratorProfile(campaign, profile) {
 }
 
 function normalizeJudgeEvaluation(evaluation) {
-  const rating = (value, fallback = 1) => {
+  const rating = (value, defaultValue = 1) => {
     const number = Number(value);
-    return Number.isFinite(number) ? Math.max(0, Math.min(2, Math.round(number))) : fallback;
+    return Number.isFinite(number) ? Math.max(0, Math.min(2, Math.round(number))) : defaultValue;
   };
   return {
     relevance: rating(evaluation?.relevance),
@@ -1126,10 +1242,10 @@ class JudgeAgent {
       slot.value = claim.value;
       locked.push(slot);
     }
-    const fallbackSlot = (this.profile.freeSlots || []).find((slot) => slot.topic === topic && !slot.value);
-    if (!locked.length && fallbackSlot && qualifiesFreeSlotClaim(fallbackSlot, answer)) {
-      fallbackSlot.value = answer.slice(0, 180);
-      locked.push(fallbackSlot);
+    const openSlot = (this.profile.freeSlots || []).find((slot) => slot.topic === topic && !slot.value);
+    if (!locked.length && openSlot && qualifiesFreeSlotClaim(openSlot, answer)) {
+      openSlot.value = answer.slice(0, 180);
+      locked.push(openSlot);
     }
     return locked;
   }
@@ -1212,6 +1328,8 @@ class InfiltratorController {
     this.lastDecision = null;
     this.awaitingNext = false;
     this.pending = false;
+    this.draftAnswer = "";
+    this.requestNotice = "";
   }
 
   start() {
@@ -1227,28 +1345,32 @@ class InfiltratorController {
   async ask(answer) {
     const cleanAnswer = String(answer || "").trim();
     if (this.status !== "active" || this.awaitingNext || this.pending || !cleanAnswer || this.judge.round >= 10) return false;
+    this.draftAnswer = cleanAnswer;
+    this.requestNotice = "";
     this.pending = true;
     const draft = this.judge.beginEvaluation(cleanAnswer);
-    this.logs.push({ speaker: "player", text: cleanAnswer, round: draft.round });
-    let provider = "fallback";
-    let remoteResult = { evaluation: draft.localEvaluation };
     try {
       const remote = await requestJudgeReply(this, cleanAnswer, draft);
       draft.reaction = remote.speech;
-      remoteResult = remote;
-      provider = remote.provider || "model";
+      const result = this.judge.completeEvaluation(draft, remote);
+      this.logs.push({ speaker: "player", text: cleanAnswer, round: result.round });
+      this.logs.push({ speaker: "judge", text: result.reaction, round: result.round, provider: remote.provider || "model" });
+      if (this.judge.round >= 10) {
+        this.lastDecision = { ...this.judge.verdict(), name: this.profile.name };
+        this.awaitingNext = true;
+      }
+      this.draftAnswer = "";
+      this.requestNotice = "";
+      this.pending = false;
+      this.save();
+      return true;
     } catch (error) {
-      console.warn("[TeWu Judge] 使用本地降级回答", error);
+      console.warn("[TeWu Judge] 模型请求失败，本轮未写入审查记录", error);
+      this.pending = false;
+      this.requestNotice = "模型正在忙，请稍后再提问";
+      this.save();
+      return false;
     }
-    const result = this.judge.completeEvaluation(draft, remoteResult);
-    this.logs.push({ speaker: "judge", text: result.reaction, round: result.round, provider });
-    if (this.judge.round >= 10) {
-      this.lastDecision = { ...this.judge.verdict(), name: this.profile.name };
-      this.awaitingNext = true;
-    }
-    this.pending = false;
-    this.save();
-    return true;
   }
 
   suspicion() {
@@ -1274,6 +1396,8 @@ class InfiltratorController {
       logs: this.logs,
       lastDecision: this.lastDecision,
       awaitingNext: this.awaitingNext,
+      draftAnswer: this.draftAnswer,
+      requestNotice: this.requestNotice,
       profile: this.profile,
       judge: this.judge.snapshot(),
     });
@@ -1285,6 +1409,8 @@ class InfiltratorController {
     controller.logs = snapshot.logs || [];
     controller.lastDecision = snapshot.lastDecision || null;
     controller.awaitingNext = Boolean(snapshot.awaitingNext);
+    controller.draftAnswer = String(snapshot.draftAnswer || "");
+    controller.requestNotice = String(snapshot.requestNotice || "");
     controller.judge.restore(snapshot.judge);
     return controller;
   }
@@ -1461,7 +1587,6 @@ function renderDialogueLog() {
 
 function agentSourceLabel(provider) {
   if (!provider) return "";
-  if (provider === "fallback") return " · 本地降级";
   return ` · 模型：${provider === "deepseek" ? "DeepSeek" : provider}`;
 }
 
@@ -1475,9 +1600,10 @@ function renderQuestionArea() {
   const round = controller.agent.round;
   if (controller.awaitingNext) return "";
   if (controller.pendingIndexes.size && !controller.pending) return `<div class="question-area waiting-area"><div class="question-head"><strong>另一名候选人正在回应</strong><span>可以查看名单和已有记录</span></div><div class="response-status"><i></i><i></i><i></i><span>当前请求完成后即可继续提问。</span></div></div>`;
-  if (controller.pending) return `<div class="question-area waiting-area"><div class="question-head"><strong>候选人正在回应</strong><span>模型正在整理本轮回答</span></div><div class="response-status"><i></i><i></i><i></i><span>请稍候，对话记录已保存。</span></div></div>`;
+  if (controller.pending) return `<div class="question-area waiting-area"><div class="question-head"><strong>候选人正在回应</strong><span>模型正在整理本轮回答</span></div><div class="response-status"><i></i><i></i><i></i><span>请稍候，模型返回后才会写入对话记录。</span></div></div>`;
   const hints = [...(INSTITUTIONAL_AXES[controller.campaign.id]?.prompts || []), "证件和编号怎么核对？", "你从哪里来，几点出发？"].slice(0, 5);
-  return `<div class="question-area"><div class="question-head"><strong>与候选人对话</strong><span>已提问 ${round} 次 · 不限次数</span></div><form class="question-form" data-question-form><input class="question-input" name="question" autocomplete="off" placeholder="直接输入你要问的问题……" maxlength="240" /><button class="send-button" type="submit">发送问题</button></form><div class="prompt-chips">${hints.map((hint) => `<button type="button" class="prompt-chip" data-prompt="${escapeHtml(hint)}">${escapeHtml(hint)}</button>`).join("")}</div></div>`;
+  const notice = controller.requestNotice ? `<div class="request-notice">${escapeHtml(controller.requestNotice)}</div>` : "";
+  return `<div class="question-area"><div class="question-head"><strong>与候选人对话</strong><span>已提问 ${round} 次 · 不限次数</span></div>${notice}<form class="question-form" data-question-form><input class="question-input" name="question" autocomplete="off" placeholder="直接输入你要问的问题……" maxlength="240" value="${escapeHtml(controller.draftQuestion)}" /><button class="send-button" type="submit">发送问题</button></form><div class="prompt-chips">${hints.map((hint) => `<button type="button" class="prompt-chip" data-prompt="${escapeHtml(hint)}">${escapeHtml(hint)}</button>`).join("")}</div></div>`;
 }
 
 function renderResult() {
@@ -1527,8 +1653,9 @@ function renderInfiltratorLog() {
 function renderInfiltratorQuestionArea() {
   const round = controller.judge.round;
   if (controller.awaitingNext) return "";
-  if (controller.pending) return `<div class="question-area waiting-area"><div class="question-head"><strong>审查官正在审阅</strong><span>模型正在核对并形成实际下一问</span></div><div class="response-status"><i></i><i></i><i></i><span>请稍候，回答已写入审查记录。</span></div></div>`;
-  return `<div class="question-area"><div class="question-head"><strong>审查官提问</strong><span>已回答 ${round} / 10 轮</span></div><div class="judge-prompt">${escapeHtml(controller.currentQuestion())}</div><form class="question-form" data-infiltrator-form><input class="question-input" name="answer" autocomplete="off" placeholder="以你的掩护身份回答……" maxlength="220" /><button class="send-button" type="submit">回答</button></form></div>`;
+  if (controller.pending) return `<div class="question-area waiting-area"><div class="question-head"><strong>审查官正在审阅</strong><span>模型正在核对并形成实际下一问</span></div><div class="response-status"><i></i><i></i><i></i><span>请稍候，模型返回后才会写入审查记录。</span></div></div>`;
+  const notice = controller.requestNotice ? `<div class="request-notice">${escapeHtml(controller.requestNotice)}</div>` : "";
+  return `<div class="question-area"><div class="question-head"><strong>审查官提问</strong><span>已回答 ${round} / 10 轮</span></div><div class="judge-prompt">${escapeHtml(controller.currentQuestion())}</div>${notice}<form class="question-form" data-infiltrator-form><input class="question-input" name="answer" autocomplete="off" placeholder="以你的掩护身份回答……" maxlength="220" value="${escapeHtml(controller.draftAnswer)}" /><button class="send-button" type="submit">回答</button></form></div>`;
 }
 
 function renderInfiltratorResult() {
@@ -1613,14 +1740,16 @@ function bindEvents() {
     const input = event.currentTarget.elements.question;
     const request = controller.ask(input.value);
     render();
-    if (await request) render();
+    await request;
+    render();
   });
   document.querySelector("[data-infiltrator-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = event.currentTarget.elements.answer;
     const request = controller.ask(input.value);
     render();
-    if (await request) render();
+    await request;
+    render();
   });
   document.querySelectorAll("[data-prompt]").forEach((button) => button.addEventListener("click", () => {
     const input = document.querySelector(".question-input");

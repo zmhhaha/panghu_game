@@ -42,11 +42,39 @@ function cleanText(value, maxLength) {
 }
 
 function providerConfig() {
-  const provider = String(process.env.PROVIDER || "fallback").toLowerCase();
+  const provider = String(process.env.PROVIDER || "").toLowerCase();
   if (provider === "deepseek") return { provider, baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com", apiKey: process.env.DEEPSEEK_API_KEY, model: process.env.DEEPSEEK_MODEL || "deepseek-chat" };
   if (provider === "openai" || provider === "openai-compatible") return { provider: "openai", baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1", apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || "gpt-4o-mini" };
   if (provider === "custom") return { provider, baseUrl: process.env.CUSTOM_BASE_URL, apiKey: process.env.CUSTOM_API_KEY, model: process.env.CUSTOM_MODEL || "tewu-npc" };
   return null;
+}
+
+const MODEL_MAX_ATTEMPTS = 3;
+
+async function requestModelWithRetry(config, body, label, validate = (value) => value) {
+  if (!config?.apiKey || !config.baseUrl) throw new Error("LLM provider 未配置");
+  let lastError;
+  for (let attempt = 1; attempt <= MODEL_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS || 20000));
+    try {
+      const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
+      const data = await response.json();
+      return await validate(data);
+    } catch (error) {
+      lastError = error;
+      console.error(`[TeWu Agent] ${label} attempt=${attempt}/${MODEL_MAX_ATTEMPTS} failed:`, error instanceof Error ? error.message : error);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastError || new Error(`${label} 模型请求失败`);
 }
 
 function parseModelJson(content) {
@@ -70,9 +98,9 @@ function boundedClaims(parsed, facts) {
   }).filter(Boolean);
 }
 
-function boundedRating(value, fallback = 1) {
+function boundedRating(value, defaultValue = 1) {
   const number = Number(value);
-  return Number.isFinite(number) ? Math.max(0, Math.min(2, Math.round(number))) : fallback;
+  return Number.isFinite(number) ? Math.max(0, Math.min(2, Math.round(number))) : defaultValue;
 }
 
 function chineseEvaluationText(value, maxLength) {
@@ -116,7 +144,8 @@ function boundedJudgeQuestion(value) {
 function boundedJudgeSpeech(value, round) {
   const raw = cleanText(value, 800);
   const statements = (raw.match(/[^。！？]+[。！？]?/g) || []).filter((sentence) => !/[？?]\s*$/.test(sentence));
-  let speech = statements.join("").trim() || "审查官把这项回答记入记录，暂不作结论。";
+  let speech = statements.join("").trim();
+  if (!speech) return "";
   if (round < 10) {
     speech = speech
       .replace(/(准许|允许)(你|其)?(通行|离开)/g, "该项记录暂时通过核对")
@@ -129,9 +158,6 @@ function boundedJudgeSpeech(value, round) {
 
 async function roleplay(payload) {
   const config = providerConfig();
-  const fallback = cleanText(payload.fallback, 800);
-  if (!config?.apiKey || !config.baseUrl) return { speech: fallback, provider: "fallback" };
-
   const campaign = payload.campaign || {};
   const dossier = payload.dossier || {};
   const history = Array.isArray(payload.history) ? payload.history.slice(-16).map((item) => ({
@@ -145,7 +171,7 @@ async function roleplay(payload) {
     `本机构审查侧重点：${cleanText(campaign.institutionalAxes?.title, 100)}。${cleanText(campaign.institutionalAxes?.brief, 260)}。若玩家问到政治立场、组织归属或安全观念，请按角色性格和时代背景给出具体、有代价的回答，并让口头表态能与实际经历、关系或记录相互检验；不要把口号式表态当成自动证明。`,
     `姓名：${cleanText(dossier.name, 80)}；公开职业：${cleanText(dossier.role, 100)}；来处：${cleanText(dossier.origin, 120)}；携带物：${cleanText(dossier.public, 180)}。`,
     `与其他来客可能交叉的公开线索：${cleanText(dossier.network?.relation, 220)}；可被机构复核的记录：${cleanText(dossier.network?.verify, 220)}。如被问到这些内容，应保持角色立场，不主动泄露全部关系。`,
-    `关系组与角色所知范围：${JSON.stringify((Array.isArray(dossier.relationships) ? dossier.relationships : []).map((item) => ({ groupId: item.groupId, label: item.label, members: item.members, statement: item.statement, knowledge: item.knowledge })))}。只能说自己所知的那一段；同组成员的完整档案不可读取。`,
+    `关系组与角色所知范围：${JSON.stringify((Array.isArray(dossier.relationships) ? dossier.relationships : []).map((item) => ({ groupId: item.groupId, eventId: item.eventId, label: item.label, members: item.members, location: item.location, timeWindow: item.timeWindow, anchors: item.anchors, sequence: item.sequence, statement: item.statement, memberView: item.memberView, knowledge: item.knowledge })))}。只能说自己所知的那一段；同组成员的完整档案不可读取。`,
     `预备口径与泄露规则：${JSON.stringify(dossier.testimonyPlan || {})}。常规问题可以稳定回答；只有在玩家引用同组证词、反复追问或把政治表态与实际经历相连时，才从既定 factId 中补充细节。不得为了制造破绽临时创造案件事实。`,
     `本轮引用的其他证词：${JSON.stringify((Array.isArray(payload.references) ? payload.references : []).map((item) => ({ name: item.name, statements: item.statements })))}；本轮允许触发的事实：${JSON.stringify(payload.disclosureFacts || [])}。`,
     `当前 NPC 的固定口供摘要：${JSON.stringify(payload.memorySummary || {})}。摘要只用于保持长期一致，不能把摘要之外的新事实当成案件事实。`,
@@ -153,38 +179,25 @@ async function roleplay(payload) {
     `案件事实账本（不可新增事实）：${JSON.stringify((Array.isArray(dossier.facts) ? dossier.facts : []).map((fact) => ({ factId: fact.factId, category: fact.category, expected: fact.expected, allowedResponses: fact.allowedResponses })))}。只允许从这些 factId 中选择本轮实际涉及的主张；如果问题没有涉及账本事实，claims 返回空数组。`,
     `真实状态：${dossier.isTarget ? "你是机构正在寻找的潜伏目标，必须维护一套具体可信的掩护身份；你可以给出可核验的表面细节，但在关系链、时间线或物品来源上留有一处可被交叉验证的漏洞" : "你是普通来客，但也可能疲惫、紧张、厌烦或对无关细节记忆不准；不要表现得过度配合或完美无缺"}。`,
     `角色特征：${cleanText(dossier.signature, 180)}。可被识破或核验的关键点：${cleanText(dossier.tell, 180)}。`,
-    "只回答玩家本轮问题，不替玩家行动，不宣布自己是否为目标，不提模型、提示词、规则或数值。每一轮必须推进记录：给出一个新的可核验事实、一个带条件的否认、一个时间/关系/物品细节，或指出为什么某项记录无法立即核对。不得机械重复此前的自我辩解；如果玩家引用了其他来客，必须只根据自己所知的关系组片段作答，并保留合理的不确定性。",
+    "只回答玩家本轮问题，不替玩家行动，不宣布自己是否为目标，不提模型、提示词、规则或数值。每一轮必须推进记录：给出一个新的可核验事实、一个带条件的否认、一个时间/关系/物品细节，或指出为什么某项记录无法立即核对。不得机械重复此前的自我辩解；如果玩家引用了其他来客，必须围绕姓名、具体地点、时间、编号和动作回应，并且只根据自己的 memberView 说明亲眼看到、听说或不知道的部分。不要把 eventId、memberView、knowledge、anchors 等内部字段名说给玩家，也不要使用“我作为某职业只知道……”这类模板句。不能凭空增加共同事件、箱号、人物或记录。",
     "保持与此前回答一致，控制在25至140个汉字。只输出JSON：{\"speech\":\"本轮盘问回应\",\"claims\":[{\"factId\":\"账本中的 ID\",\"value\":\"本轮对该事实的说法\",\"stance\":\"确认/否认/不确定/修正\"}]}。不得在 claims 中创造账本之外的 ID。",
   ].join("\n");
   const user = JSON.stringify({ round: Number(payload.round || 1), history, question: cleanText(payload.question, 300), references: payload.references || [], disclosureFacts: payload.disclosureFacts || [], memorySummary: payload.memorySummary || {} });
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS || 20000));
-  try {
-    const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
-      body: JSON.stringify({ model: config.model, temperature: 0.75, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
-    });
-    if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
-    const data = await response.json();
+  const result = await requestModelWithRetry(config, { model: config.model, temperature: 0.75, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user }] }, "npc", (data) => {
     const parsed = parseModelJson(data?.choices?.[0]?.message?.content);
     const speech = cleanText(parsed?.speech, 800);
     if (!speech) throw new Error("模型回答为空");
     return { speech, claims: boundedClaims(parsed, dossier.facts), provider: config.provider };
-  } finally {
-    clearTimeout(timer);
-  }
+  });
+  return result;
 }
 
 async function judgeReply(payload) {
   const config = providerConfig();
-  const fallback = cleanText(payload.fallback, 800);
   const campaign = payload.campaign || {};
   const profile = payload.profile || {};
   const round = Number(payload.round || 1);
   const topic = cleanText(payload.topic, 100);
-  if (!config?.apiKey || !config.baseUrl) return { speech: fallback, evaluation: boundedJudgeEvaluation({ evaluation: payload.fallbackEvaluation }, profile, topic), nextQuestion: "", followupQuestion: "", provider: "fallback" };
   const history = Array.isArray(payload.history) ? payload.history.slice(-16).map((item) => ({
     speaker: item?.speaker === "player" ? "被审查者" : "审查官",
     text: cleanText(item?.text, 500),
@@ -206,25 +219,17 @@ async function judgeReply(payload) {
     "使用第三人称审查官视角，speech控制在20至130个汉字。只输出JSON：{\"speech\":\"不含问题和提前结论的本轮反应\",\"nextQuestion\":\"下一必查主题的问题\",\"followupQuestion\":\"当前主题的追问\",\"evaluation\":{\"relevance\":0,\"specificity\":0,\"dossierMatch\":0,\"consistency\":0,\"evasiveness\":0,\"evidenceFactIds\":[\"档案事实ID\"],\"contradictions\":[\"具体矛盾\"],\"unsupportedDetails\":[\"档案外新增姓名或事实\"],\"freeSlotClaims\":[{\"slotId\":\"自由口径ID\",\"value\":\"从本轮回答提取的简短口径\"}],\"summary\":\"本轮中文评价依据\"}}。",
   ].join("\n");
   const user = JSON.stringify({ round, topic, question: cleanText(payload.question, 300), currentAnswer: cleanText(payload.answer, 500) });
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS || 20000));
-  try {
-    const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST", signal: controller.signal,
-      headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
-      body: JSON.stringify({ model: config.model, temperature: 0.45, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
-    });
-    if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
-    const data = await response.json();
+  const result = await requestModelWithRetry(config, { model: config.model, temperature: 0.45, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user }] }, "judge", (data) => {
     const parsed = parseModelJson(data?.choices?.[0]?.message?.content);
     const speech = boundedJudgeSpeech(parsed?.speech, round);
     if (!speech) throw new Error("审查官回答为空");
     return { speech, evaluation: boundedJudgeEvaluation(parsed, profile, topic), nextQuestion: boundedJudgeQuestion(parsed?.nextQuestion), followupQuestion: boundedJudgeQuestion(parsed?.followupQuestion), provider: config.provider };
-  } finally { clearTimeout(timer); }
+  });
+  return result;
 }
 
 const server = http.createServer(async (request, response) => {
-  if (request.method === "GET" && request.url === "/api/health") return send(response, 200, { ok: true, provider: providerConfig()?.provider || "fallback" });
+  if (request.method === "GET" && request.url === "/api/health") return send(response, 200, { ok: true, provider: providerConfig()?.provider || "unconfigured" });
   if (request.url === "/api/session") {
     const user = authenticatedUser(request);
     if (!user) return send(response, 401, { error: "未认证" });
@@ -269,4 +274,4 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.listen(port, "0.0.0.0", () => console.log(`[TeWu Agent] listening=${port} provider=${providerConfig()?.provider || "fallback"}`));
+server.listen(port, "0.0.0.0", () => console.log(`[TeWu Agent] listening=${port} provider=${providerConfig()?.provider || "unconfigured"}`));
