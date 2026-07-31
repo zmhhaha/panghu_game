@@ -36,56 +36,38 @@ const CAMPAIGNS = [
     names: ["谢尔盖·莫罗佐夫", "妮娜·别洛娃", "尤里·彼得罗夫", "加林娜·奥尔洛娃", "安东·索科洛夫", "维拉·卡尔波娃", "帕维尔·列文", "伊琳娜·马尔科娃", "维克托·达尼洛夫", "奥尔加·佐林"],
   },
   {
-    id: "juntong",
-    code: "战时军事调查 · 1938—1946",
-    name: "军统",
-    roman: "JUNTONG",
-    era: "1938—1946 · 国民政府战时体系",
-    setting: "重庆南岸交通线检查站",
-    sceneCaption: "重庆南岸 · 22:05",
-    description: "抗战时期的交通、军政与情报网络交错在一起。一个熟悉地名的人未必站在你这一边。",
-    briefing: "陪都的夜雨让交通线变得拥挤。十名来客要通过南岸检查站，你需要找出伪装成运输人员的渗透者，同时避免误伤真正的难民与联络员。",
-    historical: "本机构背景采用抗战时期国民政府军事委员会调查统计局的历史语境，展现战时情报、日伪渗透与军政关系的复杂性。",
-    targetLabel: "日伪渗透人员",
-    terms: ["交通线", "陪都", "军政联络", "战时通行证"],
-    route: "嘉陵江水陆联运线",
-    office: "南岸交通站档案室",
-    authority: "军事委员会调查统计局交通处",
-    names: ["陈复生", "沈月华", "林沧海", "赵文达", "何素琴", "唐景仪", "罗启明", "方若兰", "黄绍安", "顾怀远"],
-  },
-  {
-    id: "zhongtong",
-    code: "党务调查系统 · 1938—1945",
-    name: "中统",
-    roman: "ZHONGTONG",
-    era: "1938—1945 · 国统区党务情报",
-    setting: "昆明城北党政机关入口",
-    sceneCaption: "昆明北门 · 20:50",
-    description: "党务情报网络里的审查更接近关系学。职务、介绍信和谁愿意替你说话同样重要。",
-    briefing: "一份组织名单在转运途中失去了一页。十名来客将在城北入口接受盘查，其中一人正在寻找名单上的缺口。",
-    historical: "本机构背景采用中国国民党中央执行委员会调查统计局的党务情报语境，并把它与军统的军事调查职责区分开。",
-    targetLabel: "组织名单窃取者",
-    terms: ["介绍信", "党务关系", "组织名单", "机关门禁"],
-    route: "滇缅公路东段",
-    office: "城北党务登记处",
-    authority: "中央执行委员会调查统计局联络科",
-    names: ["李伯衡", "周婉秋", "徐景明", "宋致远", "许兰芝", "严克俭", "陆绍棠", "孟秋白", "蒋维新", "林佩珊"],
+    id: "tokko",
+    code: "日本特高警察 · 1911—1945",
+    name: "特高科",
+    roman: "TOKKO",
+    era: "1911—1945 · 日本与占领区",
+    setting: "东京下町警察署入口",
+    sceneCaption: "东京下町 · 21:30",
+    description: "以思想审查、出版监控和邻保网络维持秩序。沉默、检举与一份通信记录都可能改变一个人的命运。",
+    briefing: "警察署思想课正在核对一批夜间来客。十名人员会以工人、学生和职员身份进入辖区，其中有人与反战出版和地下联络网络有关。",
+    historical: "特高警察于 1911 年设立，长期负责政治思想审查、出版管制、反共调查和殖民地监控，曾参与对异议者的拘押与酷刑；1945 年日本战败后被解散。本作呈现其压迫性制度背景，不把思想警察包装成英雄能力。",
+    targetLabel: "反战与地下联络人员",
+    terms: ["思想检举", "特高警察", "出版审查", "邻保网络"],
+    route: "东海道夜行线",
+    office: "警察署思想课档案室",
+    authority: "警视厅特高课",
+    names: ["佐藤健一", "山田澄江", "高桥修一", "小林千代", "中村诚", "田中芳子", "森川隆", "井上美代", "渡边修", "石井春树"],
   },
   {
     id: "cia",
-    code: "美国中央情报局 · 1947—1975",
+    code: "美国中央情报局 · 1950—1954",
     name: "中央情报局",
     roman: "CIA",
-    era: "1947—1975 · 美国与西欧",
-    setting: "西柏林联络站入口",
-    sceneCaption: "西柏林 · 00:25",
-    description: "混合冷战背景下的国内反共筛查。真正危险的不是带着密码的人，而是知道谁会替他担保的人。",
-    briefing: "华盛顿的内部名单出现缺口。十名来客会在夜间进入联邦办公区，其中有人与美国共产主义组织保持秘密联络，你要在不看标签的情况下找出他。",
-    historical: "本机构背景参考中央情报局成立后的冷战早期与欧洲联络网络；本作采用架空设定，让 CIA 承担美国国内反共筛查任务，现实中的国内调查分工并不完全如此。",
-    terms: ["忠诚调查", "共产主义组织", "安全许可", "线人网络"],
+    era: "1950—1954 · 麦卡锡主义时期的美国",
+    setting: "华盛顿联邦办公区入口",
+    sceneCaption: "华盛顿 · 22:10",
+    description: "麦卡锡主义时期的忠诚审查与反共恐惧。公开表态、关系名单和一封旧信都可能影响一个人的工作与自由。",
+    briefing: "华盛顿的安全名单出现缺口。十名来客会在夜间进入联邦办公区，其中有人与美国共产主义组织保持秘密联络，你要在不看标签的情况下找出他。",
+    historical: "本机构背景采用 1950—1954 年麦卡锡主义时期的冷战语境，参考忠诚调查、黑名单、国会调查和反共举报；本作采用架空设定，让 CIA 承担一线国内审查职责，现实中的美国国内调查分工并不完全如此。",
+    terms: ["忠诚调查", "麦卡锡主义", "黑名单", "安全许可"],
     route: "华盛顿—纽约铁路联络线",
     office: "国内安全审查处",
-    authority: "中央情报局国内联络组",
+    authority: "中央情报局国内安全联络组",
     targetLabel: "美国共产主义分子",
     names: ["托马斯·里德", "伊莱恩·哈里斯", "彼得·沃格特", "玛格丽特·科尔", "詹姆斯·贝克", "安娜·克劳斯", "威廉·格林", "苏珊·米勒", "罗伯特·海因斯", "露丝·卡特"],
   },
@@ -94,9 +76,8 @@ const CAMPAIGNS = [
 const LOCAL_KNOWLEDGE = {
   gestapo: ["旧检查棚夜班在 22:00 换岗，交接簿会留下车次与临时改线记录。", "外环主路与东线货运支线的口头叫法不同；长期跑线的人通常分得清。", "铁路警察档案室可核对通行证编号、岗位交接和封签登记。"],
   kgb: ["封闭城市的许可分为人员、货运与夜间换乘三类，编号格式不同。", "第七边境铁路在凌晨会有一次固定的登记交接，错过者必须说明原因。", "当地人把西侧岗亭称作旧站房，而官方文件仍使用边检哨位。"],
-  juntong: ["嘉陵江水陆联运线的夜渡按船次登记，陆路通行证不能替代渡口记录。", "南岸检查站附近有旧码头、临时仓和汽车站三条常用路线。", "交通站档案室可对照货单、交接人和当天的船车时刻。"],
-  zhongtong: ["城北入口的介绍信会同时写明引介人、所属关系和有效日期。", "机关附近有北门正路、邮政巷和旧会馆三处常见等候点。", "党务登记处能核对公开职务与担保关系，但不会记录私人交往。"],
-  cia: ["西柏林联络站夜间访客要经过值班台，安全许可与普通通行证编号不同。", "联络站附近的公开入口、货运入口和旧电车站使用的人群不同。", "国内安全审查处可查公开履历与许可记录，但街头称呼往往不出现在正式文件中。"],
+  tokko: ["东京下町警察署的夜间登记由值班巡查负责，换岗时会在巡查簿上留下时间和印章。", "辖区居民通常把警察署后侧的小路称作纸灯巷，正式地图只标作第三联络道。", "思想课档案室可以核对出版物送检记录、邻保联络和临时通行证，但不会记录普通闲谈。"],
+  cia: ["麦卡锡主义时期，忠诚调查、普通通行证和安全许可不是同一套记录，编号格式也不同。", "华盛顿联邦办公区的公开入口、后勤入口和听证会访客入口由不同窗口登记。", "国会调查、雇主黑名单和安全许可可能互相引用，但街头传闻不等于正式证据。"],
 };
 
 const INSTITUTIONAL_AXES = {
@@ -110,20 +91,15 @@ const INSTITUTIONAL_AXES = {
     brief: "盘查会围绕冷战对手、涉外接触、出入许可与国家安全叙事展开，重点是回答能否与行程和关系记录相互印证。",
     prompts: ["你怎么看待西方广播和冷战对手？", "你最近是否接触过外国人或外来信件？", "为什么需要夜间进入封闭城市？", "若有人请你带一件未登记物品过境，你会如何回应？"],
   },
-  juntong: {
-    title: "战时立场与交通关系",
-    brief: "盘查会关注战时交通线、日伪渗透风险、军政联络和个人来历。立场回答必须能被实际工作、路线或介绍人佐证。",
-    prompts: ["你如何看待日伪占领区的消息？", "谁为你的战时通行作担保？", "你在交通线上接触过哪些单位？", "若有人要求你绕过登记运送物品，你会怎么做？"],
-  },
-  zhongtong: {
-    title: "组织关系与介绍来源",
-    brief: "盘查会围绕介绍信、公开职务、组织关系与政治立场进行；关键不是口头表态，而是引介人与履历是否能对上。",
-    prompts: ["你的介绍信由谁开具，和你是什么关系？", "你如何看待组织纪律和公开政治立场？", "最近是谁向你介绍这份工作？", "如果原介绍人不在城内，你会找谁核对？"],
+  tokko: {
+    title: "思想立场与日常检举",
+    brief: "特高科会把反战出版、工人学生组织、邻保检举和涉外通信当作审查重点；政治口号本身不应替代对具体关系、时间和记录的核对。",
+    prompts: ["你如何看待国家总动员和天皇制下的义务？", "最近读过或替谁递送过什么报刊？", "邻保组织或警察署有没有找你作过思想情况说明？", "如果同事私下谈论反战或罢工，你会怎么处理？"],
   },
   cia: {
-    title: "忠诚审查与政治关联",
-    brief: "本作架空设定下，盘查会关注共产主义组织关联、安全许可与公开政治活动；避免把政治观点本身当作定罪证据，应追查具体关系和记录。",
-    prompts: ["你怎么看待美国的共产主义组织活动？", "你是否参加过政治集会、读书会或工会活动？", "谁能为你的安全许可或履历作证明？", "你最近是否与被调查人员有过工作往来？"],
+    title: "麦卡锡主义式忠诚审查",
+    brief: "本作架空设定下，盘查会关注反共公开表态、忠诚调查、安全许可、黑名单和共产主义组织关联；不把一句政治口号当作定罪证据，而要追查具体关系和记录。",
+    prompts: ["你如何证明自己忠于美国而不是共产主义组织？", "你是否参加过工会、读书会或被调查的政治集会？", "谁能为你的安全许可、雇佣履历或忠诚证明作担保？", "你最近是否与被列入黑名单的人有过工作往来？"],
   },
 };
 
@@ -204,9 +180,7 @@ const CHARACTER_MODELS = {
 const SOCIAL_ENVIRONMENTS = {
   gestapo: { pressure: "战时征用、配给制度与政治迫害让公开表态和私人关系都带有风险", expectation: "人们会谨慎区分能公开说的忠诚表态与不能留下纸面的私人看法" },
   kgb: { pressure: "封闭城市、国家分配与涉外限制使出入许可和外来接触格外敏感", expectation: "人们熟悉官方安全语言，却会对外国广播、短波设备和非登记往来保持戒备" },
-  juntong: { pressure: "战时流动、物资紧缺和多方势力交错使交通关系常常比正式证件更有分量", expectation: "人们会用抗战、家计、避难或单位交接解释行动，但这些说法需要和实际路线对上" },
-  zhongtong: { pressure: "党务关系、介绍来源和机关门禁交织，公开履历与私人交往并不总是一致", expectation: "人们重视谁引介、谁担保和是否守组织程序，也会回避过度追问私人政治关系" },
-  cia: { pressure: "冷战忠诚审查会影响就业、许可和社交关系，政治活动容易被重新解释", expectation: "人们可能公开反共却担心工会、读书会或旧友关系被扩大解读，因而既辩解又保留" },
+  cia: { pressure: "麦卡锡主义时期的忠诚调查、黑名单和安全许可会影响就业、社交关系与迁徙，政治活动容易被重新解释", expectation: "人们会公开使用反共和忠诚语言，却担心工会、读书会或旧友关系被扩大解读，因而既辩解又保留" },
 };
 
 const OCCUPATION_LENSES = {
@@ -306,24 +280,31 @@ const NETWORK_FACT_IDS = {
   labtech: "network.night_crossing",
 };
 
+const PUBLIC_STANCE_LINES = {
+  gestapo: "公开服从国家秩序和官方组织，不在检查站否定元首或占领体制",
+  kgb: "公开效忠国家安全体系，反对未经许可的外部联络和反国家组织",
+  tokko: "公开服从国家体制和思想秩序，不在警察署否定动员、反共或出版审查",
+  cia: "公开效忠美国，反对共产主义组织，并愿意配合忠诚调查和安全许可核验",
+};
+
 function makeCaseFacts(campaign, blueprint) {
   const seed = CASE_SEEDS[blueprint.id] || {};
+  const stanceCover = campaign.id === "cia" ? `${seed.stanceCover}；公开使用效忠美国、反共和配合忠诚调查的表述` : seed.stanceCover;
   const make = (suffix, category, truth, coverClaim, evidence, allowedResponses = ["明确回答", "模糊回答", "要求查档"]) => ({ factId: `${blueprint.id}.${suffix}`, category, truth, coverClaim, evidence, publicKnowledge: true, npcKnowledge: "direct", allowedResponses });
   return [
     make("route", "路线", `${seed.routeTrue || `从${blueprint.origin}进入${campaign.setting}`}`, seed.routeCover, [campaign.route, ...(seed.evidence || [])]),
     make("timeline", "时间线", seed.timeTrue, seed.timeCover, seed.evidence || []),
     make("object", "物品", seed.objectTrue, seed.objectCover, seed.evidence || []),
     { ...make("relationship", "关系", seed.relationTrue, seed.relationCover, (CASE_LINKS[blueprint.id] || []).map((link) => link.description)), factId: NETWORK_FACT_IDS[blueprint.id] || `${blueprint.id}.relationship` },
-    make("stance", "政治与组织", seed.stanceTrue, seed.stanceCover, [campaign.authority, campaign.office], ["公开表态", "谈论个人经历", "拒绝评价", "把立场转回职业"]),
-  ].map((fact) => ({ ...fact, expected: blueprint.target ? fact.coverClaim : fact.truth }));
+    make("stance", "政治与组织", seed.stanceTrue, stanceCover, [campaign.authority, campaign.office], ["公开表态", "谈论个人经历", "拒绝评价", "把立场转回职业"]),
+  ].map((fact) => ({ ...fact, expected: blueprint.target ? fact.coverClaim : fact.category === "政治与组织" ? (PUBLIC_STANCE_LINES[campaign.id] || fact.truth) : fact.truth }));
 }
 
 const INSTITUTION_TOOLS = {
   gestapo: { label: "档案比对", description: "调取铁路警察档案室的岗位、证件和交接记录。" },
   kgb: { label: "许可核验", description: "比对封闭城市登记处的出入许可和换乘记录。" },
-  juntong: { label: "交通复核", description: "核对交通线的交接单、船车时刻和通行凭据。" },
-  zhongtong: { label: "关系核查", description: "比对介绍信、公开职务和担保关系。" },
-  cia: { label: "背景核查", description: "检索安全许可、公开履历和联络记录。" },
+  tokko: { label: "思想档案核查", description: "核对出版物送检、邻保联络、临时通行证和思想课登记。" },
+  cia: { label: "忠诚背景核查", description: "检索安全许可、雇佣履历、黑名单引用和公开联络记录。" },
 };
 
 const FOLLOWUP_DETAILS = {
@@ -399,9 +380,7 @@ function institutionalReply(dossier, repeatCount) {
   const frames = {
     gestapo: ["这种问题在这里不能随便回答。", "我知道公开表态会被写进记录。"],
     kgb: ["安全问题不该只靠一句态度判断。", "外部接触要看时间、许可和实际来往。"],
-    juntong: ["战时人人都会说立场，关键还是看谁走过哪条交通线。", "我不拿口头忠诚替代能查到的工作记录。"],
-    zhongtong: ["组织关系要看引介、履历和程序，不是把口号说得响。", "我可以说明自己的来处，但不能替别人表态。"],
-    cia: ["政治观点和具体组织往来不是同一件事。", "安全许可应该看履历和实际接触，不该只靠标签。"],
+    cia: ["我效忠美国，也愿意接受忠诚审查；具体组织往来仍要看履历和记录。", "反对共产主义组织是公开立场，但安全许可不能只靠一句口号发放。"],
   };
   const choices = frames[dossier.campaignId] || ["我只能就自己知道的事回答。"];
   const frame = choices[repeatCount % choices.length];
@@ -1296,7 +1275,7 @@ function renderBriefing() {
   const campaign = cloneCampaign(selectedCampaignId);
   const infiltratorProfile = selectedMode === "infiltrator" ? getPendingInfiltratorProfile(selectedCampaignId) : null;
   const modeBriefing = infiltratorProfile ? `你将以${infiltratorProfile.role}的掩护身份进入${campaign.setting}。审查官会从机构的安全视角核对你的身份、路线、物品、关系和时间线；你需要让陈述能够经受十轮连续追问。` : campaign.briefing;
-  const body = `<main class="page"><section class="briefing-grid"><div><p class="eyebrow">主控档案 · 机构选择</p><h1>十个人里，谁不该出现在这里？</h1><p class="briefing-copy">选择一个真实历史机构，进入它的目标群体、审查方式和历史参考。五个机构可以在混合时空设定中共存，十名候选人由相互隔离的角色程序连续扮演。完成十人的盘问后，你将统一提交一份扣留名单。</p></div><div class="brief-note"><strong>混合时空设定</strong>主控允许不同机构的历史参考同场出现，但会明确标记哪些内容是史实参考、哪些内容是本作的玩法设定。刷新页面会保留当前机构。</div></section><div class="section-label"><h2>选择机构</h2><span>五个机构 · 目标各不相同</span></div><section class="campaign-grid">${CAMPAIGNS.map((item) => `<button class="campaign-card ${item.id === selectedCampaignId ? "selected" : ""}" data-campaign="${item.id}"><span class="campaign-code">${item.code}</span><h3>${item.name}</h3><span class="campaign-era">${item.era}</span><p>${item.description}</p><span class="campaign-tagline">${item.setting}</span></button>`).join("")}</section><div class="section-label"><h2>选择玩法</h2><span>两种角色视角</span></div><section class="mode-grid"><button class="mode-card ${selectedMode === "officer" ? "selected" : ""}" data-mode="officer"><strong>执行官模式</strong><span>盘问十名候选人，再从十人中选出需要扣留的对象。</span></button><button class="mode-card ${selectedMode === "infiltrator" ? "selected" : ""}" data-mode="infiltrator"><strong>潜伏者模式</strong><span>你接受十轮审查，由审查官程序判定是否放行。</span></button></section><section class="historical-preview"><div class="history-box"><h3>${escapeHtml(campaign.name)} · ${infiltratorProfile ? "潜伏者简报" : "主控简报"}</h3><p>${escapeHtml(modeBriefing)}</p></div><div class="history-box"><h3>历史边界</h3><p>${escapeHtml(campaign.historical)}</p></div></section><div class="brief-footer"><p>${infiltratorProfile ? "上方掩护档案会原样带入审查。请在十轮回答中保持身份、路线和物品细节一致。" : "每名候选人至少盘问两轮、最多十轮。十人全部盘问后统一提交扣留名单，名单可以为空或包含多人。"}</p><button class="primary-button" data-action="start">进入 ${escapeHtml(campaign.name)}</button></div><div class="section-label" style="margin-top:17px"><h2>当时会听见的词</h2><span>${escapeHtml(campaign.setting)}</span></div><div class="term-row">${campaign.terms.map((term) => `<span class="term-chip">${escapeHtml(term)}</span>`).join("")}</div></main>`;
+  const body = `<main class="page"><section class="briefing-grid"><div><p class="eyebrow">主控档案 · 机构选择</p><h1>十个人里，谁不该出现在这里？</h1><p class="briefing-copy">选择一个真实历史机构，进入它的目标群体、审查方式和历史参考。四个机构可以在混合时空设定中共存，十名候选人由相互隔离的角色程序连续扮演。完成十人的盘问后，你将统一提交一份扣留名单。</p></div><div class="brief-note"><strong>混合时空设定</strong>主控允许不同机构的历史参考同场出现，但会明确标记哪些内容是史实参考、哪些内容是本作的玩法设定。刷新页面会保留当前机构。</div></section><div class="section-label"><h2>选择机构</h2><span>四个机构 · 目标各不相同</span></div><section class="campaign-grid">${CAMPAIGNS.map((item) => `<button class="campaign-card ${item.id === selectedCampaignId ? "selected" : ""}" data-campaign="${item.id}"><span class="campaign-code">${item.code}</span><h3>${item.name}</h3><span class="campaign-era">${item.era}</span><p>${item.description}</p><span class="campaign-tagline">${item.setting}</span></button>`).join("")}</section><div class="section-label"><h2>选择玩法</h2><span>两种角色视角</span></div><section class="mode-grid"><button class="mode-card ${selectedMode === "officer" ? "selected" : ""}" data-mode="officer"><strong>执行官模式</strong><span>盘问十名候选人，再从十人中选出需要扣留的对象。</span></button><button class="mode-card ${selectedMode === "infiltrator" ? "selected" : ""}" data-mode="infiltrator"><strong>潜伏者模式</strong><span>你接受十轮审查，由审查官程序判定是否放行。</span></button></section><section class="historical-preview"><div class="history-box"><h3>${escapeHtml(campaign.name)} · ${infiltratorProfile ? "潜伏者简报" : "主控简报"}</h3><p>${escapeHtml(modeBriefing)}</p></div><div class="history-box"><h3>历史边界</h3><p>${escapeHtml(campaign.historical)}</p></div></section><div class="brief-footer"><p>${infiltratorProfile ? "上方掩护档案会原样带入审查。请在十轮回答中保持身份、路线和物品细节一致。" : "每名候选人至少盘问两轮、最多十轮。十人全部盘问后统一提交扣留名单，名单可以为空或包含多人。"}</p><button class="primary-button" data-action="start">进入 ${escapeHtml(campaign.name)}</button></div><div class="section-label" style="margin-top:17px"><h2>当时会听见的词</h2><span>${escapeHtml(campaign.setting)}</span></div><div class="term-row">${campaign.terms.map((term) => `<span class="term-chip">${escapeHtml(term)}</span>`).join("")}</div></main>`;
   const briefingBody = body;
   const infiltratorBrief = infiltratorProfile ? `<section class="infiltrator-brief"><div class="infiltrator-brief-head"><p class="eyebrow">进入前资料 · 潜伏者</p><h2>你要守住的掩护档案</h2><p>固定字段必须保持一致；两项自由口径由你在首次被问到时确定，之后会写入档案继续核对。</p></div><div class="infiltrator-brief-facts">${renderInfiltratorBriefFacts(infiltratorProfile)}</div><div class="infiltrator-local-knowledge"><strong>本地知识</strong>${infiltratorProfile.cover.localKnowledge.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div><p class="infiltrator-brief-note">本人、联系人和交班同事是不同的人。审查官会比较档案、此前口供和当前回答；未正面回答或缺少具体细节的回合不会降低警戒。</p></section>` : "";
   const finalBriefingBody = briefingBody.replace('<section class="historical-preview">', `${infiltratorBrief}<section class="historical-preview">`);

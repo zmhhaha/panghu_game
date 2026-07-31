@@ -4,6 +4,9 @@ const vm = require("node:vm");
 
 function runCases() {
   const campaign = cloneCampaign(CAMPAIGNS[0].id);
+  assert.deepEqual(CAMPAIGNS.map((item) => item.id), ["gestapo", "kgb", "tokko", "cia"], "机构顺序或数量异常");
+  assert.equal(CAMPAIGNS.find((item) => item.id === "cia").setting, "华盛顿联邦办公区入口");
+  assert.match(INSTITUTIONAL_AXES.cia.brief, /麦卡锡主义|忠诚调查/);
 
   function evaluation(overrides = {}) {
     return {
