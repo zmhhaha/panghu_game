@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tashuo-agent-config
+  namespace: tashuo
+data:
+  # Credentials are injected by tashuo-agent. There is deliberately no fallback value.
+  PROVIDER: deepseek
+  LLM_TIMEOUT_MS: "120000"
+

@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tashuo-db-migration
+  namespace: tashuo
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels: { app: tashuo-db-migration }
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: arm-cluster-master:5000/tashuo-server:latest
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-ec"]
+          args:
+            - for file in /app/apps/server/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"; done
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: tashuo-database, key: url }
+

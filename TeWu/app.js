@@ -26,7 +26,7 @@ const CAMPAIGNS = [
     setting: "西部边境封闭城市入口",
     sceneCaption: "西部边境区 · 01:15",
     description: "冷战反间谍体系中的许可检查。证件上的一枚印章，可能比一个人的解释更有分量。",
-    briefing: "边境区刚结束一次无线电静默。十名旅客会在凌晨进入封闭城市，其中一人携带的不是行李，而是一段尚未确认的联络链。",
+    briefing: "边境区刚结束一次无线电静默。十名旅客会在凌晨进入封闭城市，其中有少数人员携带的不是普通行李，而是尚未确认的联络链。",
     historical: "本机构背景使用冷战时期的边境、出入许可与反间谍制度背景，区分克格勃成立后的机构称谓与更早的安全机关沿革。",
     targetLabel: "未经许可的外部联络者",
     terms: ["出入许可", "边境区", "无线电静默", "反间谍处"],
@@ -287,6 +287,51 @@ const PUBLIC_STANCE_LINES = {
   cia: "公开效忠美国，反对共产主义组织，并愿意配合忠诚调查和安全许可核验",
 };
 
+const TARGET_COUNT_RANGE = { min: 2, max: 4 };
+
+const FACT_TOPIC_BY_CATEGORY = {
+  路线: "route",
+  时间线: "route",
+  物品: "document",
+  关系: "contact",
+  政治与组织: "institution",
+};
+
+function makeFairnessClue(blueprint, facts, index) {
+  const categories = blueprint.target ? ["物品", "关系", "路线"] : ["物品", "路线", "时间线"];
+  const category = categories[index % categories.length];
+  const fact = facts.find((item) => item.category === category) || facts[0];
+  const evidence = (fact?.evidence || []).filter(Boolean).slice(0, 3);
+  if (!evidence.length) evidence.push("机构档案");
+  const source = evidence.join("、") || "机构档案";
+  if (blueprint.target) {
+    return {
+      kind: "conflict",
+      factId: fact.factId,
+      topic: FACT_TOPIC_BY_CATEGORY[fact.category] || "general",
+      category: fact.category,
+      coverClaim: fact.coverClaim,
+      recordTruth: fact.truth,
+      evidence,
+      lead: `先核对${source}，这项记录能直接验证其${fact.category}口径。`,
+      review: `其掩护口径“${fact.coverClaim}”与${source}记录的“${fact.truth}”不能同时成立。`,
+    };
+  }
+  return {
+    kind: "closure",
+    factId: fact.factId,
+    topic: FACT_TOPIC_BY_CATEGORY[fact.category] || "general",
+    category: fact.category,
+    coverClaim: fact.truth,
+    surfaceAnomaly: fact.truth,
+    recordTruth: fact.truth,
+    evidence,
+    lead: `表面异常需要继续核对${source}。`,
+    resolution: blueprint.tell,
+    review: `${source}支持“${fact.truth}”；${blueprint.tell}。`,
+  };
+}
+
 function makeCaseFacts(campaign, blueprint) {
   const seed = CASE_SEEDS[blueprint.id] || {};
   const stanceCover = campaign.id === "cia" ? `${seed.stanceCover}；公开使用效忠美国、反共和配合忠诚调查的表述` : seed.stanceCover;
@@ -321,7 +366,7 @@ const FOLLOWUP_DETAILS = {
 const TOPICS = [
   { id: "institution", label: "机构与立场", keys: ["元首", "忠诚", "秩序", "政治", "组织", "工会", "共产主义", "冷战", "西方广播", "外国人", "外来信件", "占领", "日伪", "纪律", "介绍信", "安全许可", "集会", "读书会"] },
   { id: "identity", label: "身份与职责", keys: ["身份", "职业", "做什么", "姓名", "工作"] },
-  { id: "chronology", label: "时间与见证", keys: ["昨天", "昨晚", "交班", "时间点", "见过哪些", "见过谁"] },
+  { id: "chronology", label: "时间与见证", keys: ["昨天", "昨晚", "交班", "时间点", "先后", "顺序"] },
   { id: "route", label: "路线与时间", keys: ["路线", "从哪里", "几点", "车", "站", "路"] },
   { id: "document", label: "证件与物品", keys: ["证件", "文件", "印章", "箱子", "行李", "票"] },
   { id: "contact", label: "接头与关系", keys: ["谁", "接头", "认识", "联络", "朋友", "见面", "关系", "证词", "说法"] },
@@ -393,13 +438,15 @@ async function requestNpcReply(controller, question, answer, sourceIndex, dossie
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       campaign: { name: controller.campaign.name, era: controller.campaign.era, setting: controller.campaign.setting, localKnowledge: LOCAL_KNOWLEDGE[controller.campaign.id] || [], institutionalAxes: INSTITUTIONAL_AXES[controller.campaign.id] || {} },
-      dossier: { name: dossier.name, role: dossier.role, origin: dossier.origin, public: dossier.public, signature: dossier.signature, tell: dossier.tell, network: dossier.network, personality: dossier.personality, facts: dossier.facts, relationships: dossier.relationships, testimonyPlan: dossier.testimonyPlan, isTarget: dossier.isTarget },
+      dossier: { blueprintId: dossier.blueprintId, name: dossier.name, role: dossier.role, origin: dossier.origin, public: dossier.public, signature: dossier.signature, tell: dossier.tell, fairnessClue: dossier.fairnessClue, network: dossier.network, personality: dossier.personality, facts: dossier.facts, relationships: dossier.relationships, testimonyPlan: dossier.testimonyPlan, isTarget: dossier.isTarget },
       sourceIndex,
       round: answer.round,
       question,
       history,
       references,
       disclosureFacts: answer.disclosureFacts,
+      fairnessStage: answer.fairnessStage,
+      relationshipStage: answer.relationshipStage,
       memorySummary,
     }),
   });
@@ -446,23 +493,34 @@ function makeDossier(campaign, blueprint, index, relationshipGroups = []) {
   const baseFacts = makeCaseFacts(campaign, blueprint);
   const relationships = relationshipGroups
     .filter((group) => group.members.includes(blueprint.id))
-    .map((group) => ({
-      groupId: group.id,
-      eventId: group.eventId,
-      label: group.label,
-      type: group.type,
-      members: group.members,
-      factId: group.factId,
-      location: group.location,
-      timeWindow: group.timeWindow,
-      anchors: group.anchorFacts,
-      sequence: group.sequence,
-      evidence: group.evidence,
-      statement: group.memberViews?.[blueprint.id]?.summary || group.sharedTruth,
-      sharedTruth: group.sharedTruth,
-      memberView: group.memberViews?.[blueprint.id] || { knows: [], doesNotKnow: [], evidence: [], disclosureStyle: "自然叙述" },
-      knowledge: group.memberViews?.[blueprint.id]?.knowledge || "direct",
-    }));
+    .map((group) => {
+      const conflict = group.targetContradiction;
+      const targetContradiction = !conflict
+        ? null
+        : blueprint.id === conflict.targetId
+          ? { role: "target", targetId: conflict.targetId, targetClaim: conflict.targetClaim, recordTruth: conflict.recordTruth, evidence: conflict.evidence }
+          : blueprint.id === conflict.witnessId
+            ? { role: "witness", witnessId: conflict.witnessId, witnessStatement: conflict.witnessStatement, evidence: conflict.evidence }
+            : null;
+      return {
+        groupId: group.id,
+        eventId: group.eventId,
+        label: group.label,
+        type: group.type,
+        members: group.members,
+        factId: group.factId,
+        location: group.location,
+        timeWindow: group.timeWindow,
+        anchors: group.anchorFacts,
+        sequence: group.sequence,
+        evidence: group.evidence,
+        statement: group.memberViews?.[blueprint.id]?.summary || group.sharedTruth,
+        sharedTruth: group.sharedTruth,
+        targetContradiction,
+        memberView: group.memberViews?.[blueprint.id] || { knows: [], doesNotKnow: [], evidence: [], disclosureStyle: "自然叙述" },
+        knowledge: group.memberViews?.[blueprint.id]?.knowledge || "direct",
+      };
+    });
   const relationshipFacts = relationships.map((relationship) => ({
     factId: relationship.factId,
     category: "关系",
@@ -475,6 +533,7 @@ function makeDossier(campaign, blueprint, index, relationshipGroups = []) {
     allowedResponses: ["明确回答", "模糊回答", "只说明自己知道的部分", "否认动机"],
   }));
   const facts = [...baseFacts, ...relationshipFacts];
+  const fairnessClue = makeFairnessClue(blueprint, facts, index);
   const lines = (blueprint.target ? targetLines : ordinaryLines).map((line) => line(persona, campaign));
   const cautionRounds = blueprint.target ? [1, 2, 4, 5, 7, 9] : [2, 4, 6, 8];
   const observations = lines.map((_, roundIndex) => {
@@ -577,6 +636,7 @@ function makeDossier(campaign, blueprint, index, relationshipGroups = []) {
   ];
   return {
     id: `${campaign.id}-${blueprint.id}-${index + 1}`,
+    blueprintId: blueprint.id,
     campaignId: campaign.id,
     name: campaign.names[index],
     role: blueprint.role,
@@ -584,6 +644,7 @@ function makeDossier(campaign, blueprint, index, relationshipGroups = []) {
     public: blueprint.public,
     signature: blueprint.signature,
     tell: blueprint.tell,
+    fairnessClue,
     network,
     personality,
     facts,
@@ -622,6 +683,24 @@ const RELATIONSHIP_EVENT_SEEDS = {
   night_crossing: { eventId: "event.east_river_boat_2055", location: "东河临时码头三号跳板", timeWindow: "20:50—21:15", anchors: [{ type: "时间", value: "20:58", evidence: "渡口船次簿" }, { type: "船次", value: "临时加开第 3 航", evidence: "缆绳登记" }], sequence: ["水位上涨，码头临时加开短航", "检验所木盒先于摆渡人登船", "巡测员在岸边记录缆绳长度"], evidence: ["渡口船次簿", "缆绳登记"], concealedContext: "样本运输的临时航次被用来传递一张没有登记的湿纸条" },
 };
 
+function makeGroupTargetContradiction(group, roster) {
+  const members = Array.isArray(group.members) ? group.members : [];
+  const targetId = members.find((id) => roster.find((item) => item.id === id)?.target);
+  if (!targetId) return null;
+  const witnessId = members.find((id) => id !== targetId) || targetId;
+  const target = roster.find((item) => item.id === targetId);
+  const witness = roster.find((item) => item.id === witnessId);
+  const anchor = group.anchorFacts?.[0] || { value: group.timeWindow, evidence: group.evidence?.[0] || "事件记录" };
+  return {
+    targetId,
+    witnessId,
+    targetClaim: `${target?.role || "该来客"}声称在${group.timeWindow}没有经过${group.location}，也没有见到名单成员`,
+    witnessStatement: `${witness?.role || "另一名来客"}能以${anchor.evidence}为依据，说明在${anchor.value}看见其工作物件或车辆出现在${group.location}`,
+    recordTruth: `${anchor.evidence}与成员口供都把${target?.role || "该来客"}的工作物件或车辆放在${group.location}的${group.timeWindow}内`,
+    evidence: [anchor.evidence, ...(group.evidence || [])].filter(Boolean).slice(0, 3),
+  };
+}
+
 function createRelationshipGroups(roster) {
   const ids = new Set(roster.map((item) => item.id));
   const templates = [
@@ -635,33 +714,36 @@ function createRelationshipGroups(roster) {
   ];
   const usable = shuffle(templates).filter((template) => template.members.filter((id) => ids.has(id)).length >= 2);
   const selected = usable.slice(0, Math.min(4, Math.max(2, usable.length)));
+  const actualMembers = (template) => template.members.filter((id) => ids.has(id));
+  const includesTarget = (template) => actualMembers(template).some((id) => roster.find((item) => item.id === id)?.target);
+  const allOrdinary = (template) => actualMembers(template).every((id) => !roster.find((item) => item.id === id)?.target);
   const ensureTemplate = (predicate, eventKey) => {
     if (selected.some(predicate)) return;
-    const candidate = usable.find((item) => item.eventKey === eventKey);
+    const candidate = usable.find(predicate) || usable.find((item) => item.eventKey === eventKey && predicate(item));
     if (candidate && !selected.includes(candidate)) {
       if (selected.length >= 4) selected[selected.length - 1] = candidate; else selected.push(candidate);
     }
   };
-  ensureTemplate((template) => template.targetRelated && template.members.some((id) => roster.find((item) => item.id === id)?.target), "old_checkpoint");
-  ensureTemplate((template) => !template.targetRelated && template.members.every((id) => !roster.find((item) => item.id === id)?.target), "medicine_transfer");
-  if (!selected.some((template) => template.targetRelated && template.members.some((id) => roster.find((item) => item.id === id)?.target))) {
+  ensureTemplate(includesTarget, "old_checkpoint");
+  ensureTemplate(allOrdinary, "medicine_transfer");
+  if (!selected.some(includesTarget)) {
     const targetId = roster.find((item) => item.target)?.id;
-    const companionId = roster.find((item) => item.id !== targetId)?.id;
+    const companionId = roster.find((item) => item.id !== targetId && !item.target)?.id || roster.find((item) => item.id !== targetId)?.id;
     if (targetId && companionId) {
       const generated = { type: "工作交叉", label: "临时交叉事件", eventKey: "old_checkpoint", members: [targetId, companionId], truth: "两名来客在同一段换乘窗口短暂出现，但没有共享完整目的。", targetRelated: true };
       if (selected.length >= 4) {
-        const replaceIndex = selected.findIndex((item) => !item.targetRelated);
+        const replaceIndex = selected.findIndex(allOrdinary);
         selected[replaceIndex >= 0 ? replaceIndex : selected.length - 1] = generated;
       } else selected.push(generated);
     }
   }
-  if (!selected.some((template) => template.members.length >= 2 && template.members.every((id) => !roster.find((item) => item.id === id)?.target))) {
+  if (!selected.some((template) => actualMembers(template).length >= 2 && allOrdinary(template))) {
     const ordinaryIds = roster.filter((item) => !item.target).slice(0, 2).map((item) => item.id);
     if (ordinaryIds.length >= 2) {
       const generated = { type: "生活交集", label: "普通工作交集", eventKey: "medicine_transfer", members: ordinaryIds, truth: "两名普通来客在公开工作流程中短暂交集，各自只知道表面事务。", targetRelated: false };
       if (selected.length >= 4) {
-        const replaceIndex = selected.findIndex((item) => !(item.targetRelated && item.members.some((id) => roster.find((candidate) => candidate.id === id)?.target)));
-        const protectedIndexes = selected.map((item, itemIndex) => item.targetRelated && item.members.some((id) => roster.find((candidate) => candidate.id === id)?.target) ? itemIndex : -1).filter((itemIndex) => itemIndex >= 0);
+        const replaceIndex = selected.findIndex((item) => !includesTarget(item));
+        const protectedIndexes = selected.map((item, itemIndex) => includesTarget(item) ? itemIndex : -1).filter((itemIndex) => itemIndex >= 0);
         const safeIndex = replaceIndex >= 0 ? replaceIndex : protectedIndexes.length > 1 ? protectedIndexes[protectedIndexes.length - 1] : -1;
         if (safeIndex >= 0) selected[safeIndex] = generated; else selected.push(generated);
       } else selected.push(generated);
@@ -696,7 +778,7 @@ function createRelationshipGroups(roster) {
         summary: `${role}记得${known.join("，")}；能查的依据是${seed.evidence[memberIndex % seed.evidence.length]}，但不知道${doesNotKnow[0]}。`,
       };
     });
-    return {
+    const group = {
       id: `group-${index + 1}-${template.label}`,
       eventId: seed.eventId,
       factId: `group.${index + 1}.shared`,
@@ -709,19 +791,27 @@ function createRelationshipGroups(roster) {
       sequence: seed.sequence,
       evidence: seed.evidence,
       concealedContext: seed.concealedContext,
-      targetRelated: template.targetRelated,
+      targetRelated: members.some((id) => roster.find((item) => item.id === id)?.target),
       sharedTruth: template.truth,
       memberViews,
     };
+    const targetContradiction = makeGroupTargetContradiction(group, roster);
+    if (targetContradiction) {
+      group.targetContradiction = targetContradiction;
+      const targetView = group.memberViews[targetContradiction.targetId];
+      const witnessView = group.memberViews[targetContradiction.witnessId];
+      if (targetView) targetView.summary = targetContradiction.targetClaim;
+      if (witnessView && targetContradiction.witnessId !== targetContradiction.targetId) witnessView.summary = `${witnessView.summary}；${targetContradiction.witnessStatement}`;
+    }
+    return group;
   });
 }
 
 function normalizeRelationshipGroups(groups, roster) {
   return (Array.isArray(groups) ? groups : []).map((group, index) => {
-    if (group?.eventId && group.location && group.timeWindow && Array.isArray(group.anchorFacts)) return group;
     const seed = RELATIONSHIP_EVENT_SEEDS.old_checkpoint;
     const members = Array.isArray(group?.members) ? group.members : [];
-    const memberViews = group?.memberViews || {};
+    const memberViews = { ...(group?.memberViews || {}) };
     members.forEach((id, memberIndex) => {
       if (memberViews[id]) return;
       const blueprint = roster.find((item) => item.id === id);
@@ -734,17 +824,26 @@ function normalizeRelationshipGroups(groups, roster) {
         summary: `${blueprint?.role || "来客"}记得${seed.anchors[0].value}附近发生过一段短暂交接，但不知道安排者。`,
       };
     });
-    return {
+    const normalized = {
       ...group,
-      eventId: `event.legacy_${index + 1}`,
+      eventId: group?.eventId || `event.legacy_${index + 1}`,
       location: group?.location || seed.location,
       timeWindow: group?.timeWindow || seed.timeWindow,
       anchorFacts: group?.anchorFacts || seed.anchors,
       sequence: group?.sequence || seed.sequence,
       evidence: group?.evidence || seed.evidence,
       concealedContext: group?.concealedContext || "旧版关系组未记录完整共同事件，只保留原有交集。",
+      targetRelated: members.some((id) => roster.find((item) => item.id === id)?.target),
       memberViews,
     };
+    normalized.targetContradiction = makeGroupTargetContradiction(normalized, roster) || undefined;
+    if (normalized.targetContradiction) {
+      const targetView = normalized.memberViews[normalized.targetContradiction.targetId];
+      const witnessView = normalized.memberViews[normalized.targetContradiction.witnessId];
+      if (targetView) targetView.summary = normalized.targetContradiction.targetClaim;
+      if (witnessView && normalized.targetContradiction.witnessId !== normalized.targetContradiction.targetId) witnessView.summary = `${witnessView.summary}；${normalized.targetContradiction.witnessStatement}`;
+    }
+    return normalized;
   });
 }
 
@@ -764,10 +863,29 @@ class NpcAgent {
       if (previousTopicCount > 0 && item.trigger.includes("同一主题")) return true;
       return topic === "institution" && item.trigger.includes("公开表态");
     })?.factIds || [];
+    const fairnessClue = this.dossier.fairnessClue;
+    const fairnessMatches = fairnessClue && (
+      topic === fairnessClue.topic
+      || (fairnessClue.topic === "contact" && topic === "chronology")
+    );
+    const fairnessStage = !fairnessMatches
+      ? "none"
+      : (previousTopicCount > 0 || references.length)
+        ? (fairnessClue.kind === "conflict" ? "reveal" : "closure")
+        : "lead";
+    const relationshipConflict = this.dossier.relationships?.find((item) => item.targetContradiction);
+    const relationshipStage = !["contact", "chronology"].includes(topic) || !relationshipConflict
+      ? "none"
+      : (previousTopicCount > 0 || references.length)
+        ? "reveal"
+        : "lead";
+    const allowedDisclosureFacts = fairnessMatches
+      ? [...new Set([...disclosureFacts, fairnessClue.factId])]
+      : disclosureFacts;
     const observation = this.dossier.topicObservations[topic] || { ...this.dossier.observations[index % this.dossier.observations.length], topic };
     const claims = factsForTopic(this.dossier, topic).slice(0, 2).map((fact) => ({ factId: fact.factId, category: fact.category, value: fact.expected, stance: "确认" }));
     const round = this.memory.length + 1;
-    return { question, text: "", round, topic, observation, claims, disclosureFacts };
+    return { question, text: "", round, topic, observation, claims, disclosureFacts: allowedDisclosureFacts, fairnessStage, relationshipStage };
   }
 
   commitResponse(draft, text, claims = draft.claims) {
@@ -816,7 +934,8 @@ function createOfficerRoster() {
     const swapIndex = Math.floor(Math.random() * (index + 1));
     [targetOrder[index], targetOrder[swapIndex]] = [targetOrder[swapIndex], targetOrder[index]];
   }
-  const targetIndexes = new Set(targetOrder.slice(0, 4));
+  const targetCount = TARGET_COUNT_RANGE.min + Math.floor(Math.random() * (TARGET_COUNT_RANGE.max - TARGET_COUNT_RANGE.min + 1));
+  const targetIndexes = new Set(targetOrder.slice(0, targetCount));
   return roster.map((blueprint, index) => ({ ...blueprint, target: targetIndexes.has(index) }));
 }
 
@@ -916,7 +1035,7 @@ class WorldController {
 
   recordNetworkClue(topic, sourceIndex = this.currentIndex, dossier = this.dossier) {
     const network = dossier.network;
-    if (!network?.relation || !["route", "contact", "document", "local"].includes(topic)) return;
+    if (!network?.relation || !["route", "chronology", "contact", "document", "local"].includes(topic)) return;
     const key = `${dossier.id}:network`;
     if (!this.caseClues.some((item) => item.key === key)) this.caseClues.push({ key, label: network.node, text: network.relation, source: dossier.name, sourceIndex });
   }
@@ -927,6 +1046,17 @@ class WorldController {
     const key = `${this.dossier.id}:verify`;
     if (!network?.verify || this.caseClues.some((item) => item.key === key)) return false;
     this.caseClues.push({ key, label: this.campaignTool.label, text: network.verify, source: this.dossier.name });
+    const fairness = this.dossier.fairnessClue;
+    if (fairness) {
+      const source = fairness.evidence.join("、") || this.campaignTool.label;
+      const spoken = this.agent.memory.filter((item) => item.topic === fairness.topic).at(-1)?.answer;
+      const text = fairness.kind === "conflict"
+        ? spoken
+          ? `${source}记录为“${fairness.recordTruth}”；候选人此前回答是“${spoken}”。`
+          : `${source}记录为“${fairness.recordTruth}”；候选人尚未就${fairness.category}给出可比较口供。`
+        : `${source}记录为“${fairness.recordTruth}”；可与候选人的表面异常继续核对。`;
+      this.caseClues.push({ key: `${this.dossier.id}:fairness`, label: "公平核验", text, source: this.dossier.name, sourceIndex: this.currentIndex, factId: fairness.factId });
+    }
     this.observationsByAgent[this.currentIndex].push({ topic: "document", label: `${this.campaignTool.label}已归档`, level: "neutral" });
     this.save();
     return true;
@@ -963,7 +1093,26 @@ class WorldController {
     const selected = new Set(this.selectedTargets);
     this.decisions = this.agents.map((agent, index) => {
       const action = selected.has(index) ? "detain" : "release";
-      return { action, correct: (action === "detain" && agent.dossier.isTarget) || (action === "release" && !agent.dossier.isTarget), name: agent.dossier.name, isTarget: agent.dossier.isTarget, tell: agent.dossier.tell, index };
+      const fairness = agent.dossier.fairnessClue;
+      const relatedMemory = agent.memory.filter((item) => item.topic === fairness?.topic);
+      const relationshipConflict = agent.dossier.relationships?.find((item) => item.targetContradiction?.targetId === agent.dossier.blueprintId)?.targetContradiction;
+      const verified = this.caseClues.some((item) => item.key === `${agent.dossier.id}:fairness`);
+      const quote = relatedMemory.at(-1)?.answer || "";
+      const review = relationshipConflict && agent.dossier.isTarget
+        ? `${fairness.review} 交叉记录还显示：${relationshipConflict.recordTruth}。`
+        : fairness.review;
+      return {
+        action,
+        correct: (action === "detain" && agent.dossier.isTarget) || (action === "release" && !agent.dossier.isTarget),
+        name: agent.dossier.name,
+        isTarget: agent.dossier.isTarget,
+        tell: agent.dossier.tell,
+        review,
+        reviewQuote: quote,
+        evidenceSeen: verified || Boolean(quote),
+        evidenceSource: fairness.evidence.join("、") || this.campaignTool.label,
+        index,
+      };
     });
     this.status = "complete";
     this.lastDecision = null;
@@ -971,8 +1120,22 @@ class WorldController {
     return true;
   }
 
-  accuracy() {
+  rawAccuracy() {
     return this.decisions.length ? (this.decisions.filter((decision) => decision.correct).length / this.decisions.length) * 100 : 0;
+  }
+
+  targetRecall() {
+    const targets = this.decisions.filter((decision) => decision.isTarget);
+    return targets.length ? (targets.filter((decision) => decision.action === "detain").length / targets.length) * 100 : 0;
+  }
+
+  normalReleaseRate() {
+    const ordinary = this.decisions.filter((decision) => !decision.isTarget);
+    return ordinary.length ? (ordinary.filter((decision) => decision.action === "release").length / ordinary.length) * 100 : 0;
+  }
+
+  accuracy() {
+    return this.decisions.length ? (this.targetRecall() + this.normalReleaseRate()) / 2 : 0;
   }
 
   save() {
@@ -1492,7 +1655,7 @@ function render() {
 
 function renderHeader(showStats = false) {
   const headerCampaign = controller.status === "briefing" ? cloneCampaign(selectedCampaignId) : controller.campaign;
-  const officerMetric = controller.status === "complete" ? `<span>准确率 <strong>${Math.round(controller.accuracy())}%</strong></span>` : `<span>已接触 <strong>${controller.agents.filter((agent) => agent.round > 0).length} / 10</strong></span>`;
+  const officerMetric = controller.status === "complete" ? `<span>平衡分 <strong>${Math.round(controller.accuracy())}%</strong></span>` : `<span>已接触 <strong>${controller.agents.filter((agent) => agent.round > 0).length} / 10</strong></span>`;
   const metric = controller.mode === "infiltrator" ? `<span>可疑度 <strong>${controller.suspicion()}%</strong></span>` : officerMetric;
   const exit = controller.status === "active" ? `<button class="header-exit" data-action="exit">退出当前局</button>` : "";
   return `<header class="topbar"><div class="brand"><span class="brand-mark">特</span><div><p class="brand-title">特务</p><p class="brand-subtitle">机构档案 · ${escapeHtml(headerCampaign.name)}</p></div></div><div class="top-meta"><span><i class="lock-dot"></i>通讯加密</span><span>机构 <strong>${escapeHtml(headerCampaign.name)}</strong></span>${showStats ? metric : ""}${exit}</div></header>`;
@@ -1548,7 +1711,7 @@ function renderLeftRail() {
   const c = controller.campaign;
   const knowledge = LOCAL_KNOWLEDGE[c.id] || [];
   const axis = INSTITUTIONAL_AXES[c.id] || {};
-  return `<aside><div class="panel"><div class="panel-title">任务简报</div><ul class="brief-list"><li><b>01</b><span>十名来客从开局起全部可查。</span></li><li><b>02</b><span>任意切换人物，重复追问也不会丢失口供。</span></li><li><b>03</b><span>用本地知识、关系组和原话横向核对。</span></li><li><b>04</b><span>名单可随时编辑，准备好后立即提交。</span></li></ul></div><div class="panel"><div class="panel-title">机构审查侧重</div><div class="facts"><div class="fact"><div class="fact-head"><span>${escapeHtml(axis.title || "身份核验")}</span></div><p>${escapeHtml(axis.brief || "将口头陈述与可核验记录交叉比对。")}</p></div></div></div><div class="panel"><div class="panel-title">本地知识</div><div class="facts">${knowledge.map((item, index) => `<div class="fact"><div class="fact-head"><span>记录 ${String(index + 1).padStart(2, "0")}</span></div><p>${escapeHtml(item)}</p></div>`).join("")}</div></div>${renderQueue()}</aside>`;
+  return `<aside><div class="panel"><div class="panel-title">任务简报</div><ul class="brief-list"><li><b>01</b><span>十名来客从开局起全部可查。</span></li><li><b>02</b><span>情报估计有 ${TARGET_COUNT_RANGE.min} 至 ${TARGET_COUNT_RANGE.max} 名目标，确切人数未知。</span></li><li><b>03</b><span>重复追问或执行核验，可以取得冲突或闭环记录。</span></li><li><b>04</b><span>用关系组和原话横向核对，准备好后提交名单。</span></li></ul></div><div class="panel"><div class="panel-title">机构审查侧重</div><div class="facts"><div class="fact"><div class="fact-head"><span>${escapeHtml(axis.title || "身份核验")}</span></div><p>${escapeHtml(axis.brief || "将口头陈述与可核验记录交叉比对。")}</p></div></div></div><div class="panel"><div class="panel-title">本地知识</div><div class="facts">${knowledge.map((item, index) => `<div class="fact"><div class="fact-head"><span>记录 ${String(index + 1).padStart(2, "0")}</span></div><p>${escapeHtml(item)}</p></div>`).join("")}</div></div>${renderQueue()}</aside>`;
 }
 
 function renderFacts() {
@@ -1611,7 +1774,7 @@ function renderResult() {
   if (!result) return "";
   const outcome = result.correct ? "判断正确" : result.action === "detain" ? "误捕" : "漏网";
   const actual = result.isTarget ? (controller.campaign.targetLabel || "目标") : "普通来客";
-  return `<div class="result-box ${result.correct ? "" : "wrong"}"><h3>${outcome} · ${escapeHtml(result.name)} 的档案已核验</h3><p>真实身份：${actual}。主控记录的关键复核点：${escapeHtml(result.tell)}。</p></div><div class="next-row"><button class="next-button" data-action="next">${controller.currentIndex === 9 ? "查看行动结算 →" : "接触下一名候选人 →"}</button></div>`;
+  return `<div class="result-box ${result.correct ? "" : "wrong"}"><h3>${outcome} · ${escapeHtml(result.name)} 的档案已核验</h3><p>真实身份：${actual}。结案依据：${escapeHtml(result.review || result.tell)}。</p></div><div class="next-row"><button class="next-button" data-action="next">${controller.currentIndex === 9 ? "查看行动结算 →" : "接触下一名候选人 →"}</button></div>`;
 }
 
 function renderInterview() {
@@ -1694,6 +1857,7 @@ function renderGame() {
 
 function renderOfficerSelection() {
   const selected = new Set(controller.selectedTargets);
+  const contacted = controller.agents.filter((agent) => agent.round > 0).length;
   const cards = controller.agents.map((agent, index) => {
     const dossier = agent.dossier;
     const candidateClaims = controller.caseClaims.filter((item) => item.sourceIndex === index).slice(-2);
@@ -1702,23 +1866,31 @@ function renderOfficerSelection() {
     const transcript = [`<div class="transcript-line"><b>初始陈述</b><span>${escapeHtml(dossier.public)}。${escapeHtml(dossier.role)}，${escapeHtml(dossier.origin)}。</span></div>`, ...agent.memory.map((item) => `<div class="transcript-line"><b>第 ${item.round} 轮 · 你</b><span>${escapeHtml(item.question)}</span><b>第 ${item.round} 轮 · 候选人</b><span>${escapeHtml(item.answer)}</span></div>`)].join("");
     return `<div class="selection-candidate ${picked ? "selected" : ""}"><button class="selection-toggle" data-select-candidate="${index}" aria-pressed="${picked}"><span class="selection-index">${String(index + 1).padStart(2, "0")}</span><span class="selection-copy"><b>${escapeHtml(dossier.name)}</b><em>${escapeHtml(dossier.role)} · ${escapeHtml(dossier.origin)}</em><small>${escapeHtml(claimSummary)}</small></span><strong>${picked ? "已列入扣留名单" : "未选择"}</strong></button><div class="selection-transcript" aria-label="${escapeHtml(dossier.name)} 的盘问记录"><div class="transcript-title">盘问记录 · ${agent.memory.length} 轮</div>${transcript}</div></div>`;
   }).join("");
-  return `<div class="app-shell">${renderHeader(false)}<main class="page"><section class="selection-screen"><div class="settlement-head"><p class="eyebrow">十人盘问 · 统一处置</p><h1>提交扣留名单</h1><p>根据十人的陈述、本地知识、机构核验和关系线索选择若干对象。名单可以为空，也可以包含多人；未选择者将被放行。</p></div><div class="selection-summary"><span>已选择 <strong>${selected.size}</strong> 人</span><span>已盘问 <strong>10</strong> 人</span></div><div class="selection-grid">${cards}</div><div class="settlement-actions"><button class="secondary-button" data-action="exit">退出当前局</button><button class="primary-button" data-action="submit-selection">提交名单并结算</button></div></section></main></div>`;
+  return `<div class="app-shell">${renderHeader(false)}<main class="page"><section class="selection-screen"><div class="settlement-head"><p class="eyebrow">十人盘问 · 统一处置</p><h1>提交扣留名单</h1><p>根据十人的陈述、本地知识、机构核验和关系线索选择若干对象。情报估计有 ${TARGET_COUNT_RANGE.min} 至 ${TARGET_COUNT_RANGE.max} 名目标，确切人数未知；未选择者将被放行。</p></div><div class="selection-summary"><span>已选择 <strong>${selected.size}</strong> 人</span><span>已接触 <strong>${contacted}</strong> 人</span><span>情报范围 <strong>${TARGET_COUNT_RANGE.min}—${TARGET_COUNT_RANGE.max}</strong> 人</span></div><div class="selection-grid">${cards}</div><div class="settlement-actions"><button class="secondary-button" data-action="exit">退出当前局</button><button class="primary-button" data-action="submit-selection">提交名单并结算</button></div></section></main></div>`;
 }
 
 function renderSettlement() {
-  const accuracy = Math.round(controller.accuracy());
+  const score = Math.round(controller.accuracy());
+  const rawAccuracy = Math.round(controller.rawAccuracy());
+  const targetRecall = Math.round(controller.targetRecall());
+  const normalReleaseRate = Math.round(controller.normalReleaseRate());
   const correct = controller.decisions.filter((decision) => decision.correct).length;
   const wrong = controller.decisions.length - correct;
   const detained = controller.decisions.filter((decision) => decision.action === "detain").length;
   const leaked = controller.decisions.filter((decision) => !decision.correct && decision.action === "release").length;
-  const grade = accuracy === 100 ? "S" : accuracy >= 90 ? "A" : accuracy >= 80 ? "B" : accuracy >= 70 ? "C" : accuracy >= 60 ? "D" : "E";
+  const grade = score === 100 ? "S" : score >= 90 ? "A" : score >= 80 ? "B" : score >= 70 ? "C" : score >= 60 ? "D" : "E";
   const summary = grade === "S" ? "十名候选人的处置全部正确，主控将本次行动记为无误判断。" : grade === "A" ? "大部分判断稳健，但仍有少数证据没有及时连成闭环。" : grade === "B" ? "你抓住了部分异常，不过行动记录显示还有明显的复核空档。" : "这次行动留下了较大判断风险，建议回到简报重新检查问题路径。";
-  const rows = controller.decisions.map((decision, index) => `<div class="review-entry"><div class="review-row"><b>${String(index + 1).padStart(2, "0")}</b><span>${escapeHtml(decision.name)} · ${decision.action === "detain" ? "扣留" : "放行"}</span><strong class="review-result ${decision.correct ? "correct" : "wrong"}">${decision.correct ? "正确" : decision.action === "detain" ? "误捕" : "漏网"}</strong></div><p class="review-basis">结案复盘：${escapeHtml(decision.tell)}</p></div>`).join("");
+  const rows = controller.decisions.map((decision, index) => {
+    const quote = decision.reviewQuote
+      ? `<p class="review-basis">相关口供：“${escapeHtml(decision.reviewQuote)}”</p>`
+      : `<p class="review-basis">本局未取得该主题的候选人原话；以下依据来自结案后公开的档案。</p>`;
+    return `<div class="review-entry"><div class="review-row"><b>${String(index + 1).padStart(2, "0")}</b><span>${escapeHtml(decision.name)} · ${decision.action === "detain" ? "扣留" : "放行"}</span><strong class="review-result ${decision.correct ? "correct" : "wrong"}">${decision.correct ? "正确" : decision.action === "detain" ? "误捕" : "漏网"}</strong></div><p class="review-basis">结案依据：${escapeHtml(decision.review || decision.tell)}</p>${quote}<p class="review-basis">记录来源：${escapeHtml(decision.evidenceSource || "机构档案")} · ${decision.evidenceSeen ? "盘问阶段已取得相关线索" : "盘问阶段未取得相关线索"}</p></div>`;
+  }).join("");
   const totalRounds = controller.agents.reduce((sum, agent) => sum + agent.round, 0);
   const clues = controller.caseClues.slice(-6);
   const archiveClaims = controller.caseClaims.slice(-8);
   const archive = `<div class="review case-archive"><h2>案件档案</h2><p>本次行动中，${escapeHtml(controller.campaign.name)}记录了 ${clues.length} 条机构线索和 ${controller.caseClaims.length} 条候选人主张。结算依据来自十人的统一名单，不设置额外审问阶段。</p>${clues.map((clue) => `<div class="review-row"><b>线</b><span>${escapeHtml(clue.text)}</span><strong>${escapeHtml(clue.source)}</strong></div>`).join("")}${archiveClaims.map((claim) => `<div class="review-row"><b>证</b><span>${escapeHtml(claim.category)} · ${escapeHtml(claim.value)}</span><strong>${escapeHtml(claim.status)}</strong></div>`).join("")}${!clues.length && !archiveClaims.length ? "<p>没有形成足够的跨人物线索链。</p>" : ""}</div>`;
-  return `<div class="app-shell">${renderHeader(true)}<main class="page"><section class="settlement"><div class="settlement-head"><p class="eyebrow">行动报告 · 已结案</p><h1>行动结算</h1><p>${summary} 当前机构：${escapeHtml(controller.campaign.name)} · ${escapeHtml(controller.campaign.era)}。</p></div><div class="score-panel"><div class="grade">${grade}</div><div><div class="score-line"><strong>${accuracy}%</strong><span>十次处置的综合准确率</span></div><div class="score-track"><div style="width:${accuracy}%"></div></div><p class="score-note">正确 ${correct} · 错误 ${wrong} · 扣留 ${detained} · 漏网 ${leaked}</p></div></div><div class="stat-grid"><div class="stat-card"><span>正确判断</span><strong>${correct}</strong></div><div class="stat-card"><span>误捕</span><strong>${controller.decisions.filter((item) => !item.correct && item.action === "detain").length}</strong></div><div class="stat-card"><span>漏网</span><strong>${leaked}</strong></div><div class="stat-card"><span>完成对话</span><strong>${totalRounds}</strong></div></div><div class="review"><h2>逐人复盘</h2>${rows}</div>${archive}<div class="settlement-actions"><button class="secondary-button" data-action="back">返回机构选择</button><button class="primary-button" data-action="restart">重新执行本局</button></div></section></main></div>`;
+  return `<div class="app-shell">${renderHeader(true)}<main class="page"><section class="settlement"><div class="settlement-head"><p class="eyebrow">行动报告 · 已结案</p><h1>行动结算</h1><p>${summary} 当前机构：${escapeHtml(controller.campaign.name)} · ${escapeHtml(controller.campaign.era)}。</p></div><div class="score-panel"><div class="grade">${grade}</div><div><div class="score-line"><strong>${score}%</strong><span>目标与普通人各占一半的平衡分</span></div><div class="score-track"><div style="width:${score}%"></div></div><p class="score-note">目标命中率 ${targetRecall}% · 普通人正确放行率 ${normalReleaseRate}% · 十人逐项准确率 ${rawAccuracy}%</p></div></div><div class="stat-grid"><div class="stat-card"><span>正确判断</span><strong>${correct}</strong></div><div class="stat-card"><span>误捕</span><strong>${controller.decisions.filter((item) => !item.correct && item.action === "detain").length}</strong></div><div class="stat-card"><span>漏网</span><strong>${leaked}</strong></div><div class="stat-card"><span>完成对话</span><strong>${totalRounds}</strong></div></div><div class="review"><h2>逐人复盘</h2>${rows}</div>${archive}<div class="settlement-actions"><button class="secondary-button" data-action="back">返回机构选择</button><button class="primary-button" data-action="restart">重新执行本局</button></div></section></main></div>`;
 }
 
 function renderOfficerComplete() {

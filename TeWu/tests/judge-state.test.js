@@ -108,23 +108,94 @@ async function runCases() {
   officer.start();
   assert.equal(officer.status, "active", "执行官模式应直接进入十人名单");
   assert.equal(officer.agents.length, 10, "执行官模式必须同时生成十名候选人");
+  const targetCount = officer.agents.filter((agent) => agent.dossier.isTarget).length;
+  assert.ok(targetCount >= TARGET_COUNT_RANGE.min && targetCount <= TARGET_COUNT_RANGE.max, "每局目标数量必须随机落在公开的 2 至 4 人范围内");
+  assert.ok(officer.agents.filter((agent) => agent.dossier.isTarget).every((agent) => agent.dossier.fairnessClue?.kind === "conflict" && agent.dossier.fairnessClue.factId && agent.dossier.fairnessClue.evidence.length), "每名目标必须有固定且可核验的冲突线索");
+  assert.ok(officer.agents.filter((agent) => !agent.dossier.isTarget).every((agent) => agent.dossier.fairnessClue?.kind === "closure" && agent.dossier.fairnessClue.resolution && agent.dossier.fairnessClue.evidence.length), "每名普通人必须有能闭环表面异常的记录");
   assert.ok(officer.relationshipGroups.length >= 2 && officer.relationshipGroups.length <= 4, "每局应生成 2 至 4 组熟人关系");
   assert.ok(officer.relationshipGroups.some((group) => group.members.length >= 2), "关系组至少包含两名成员");
   assert.ok(officer.relationshipGroups.every((group) => group.eventId && group.location && group.timeWindow && group.anchorFacts?.length >= 2 && group.sequence?.length >= 2), "关系组应包含具体事件锚点和固定顺序");
   assert.ok(officer.relationshipGroups.every((group) => Object.values(group.memberViews || {}).every((view) => view.knows?.length && view.doesNotKnow?.length && !String(view.summary).includes("我作为"))), "成员视角不得退化为职业模板台词");
+  assert.ok(officer.relationshipGroups.every((group) => group.targetRelated === group.members.some((id) => officer.roster.find((item) => item.id === id)?.target)), "关系事件必须根据实际成员重新判定是否涉及目标");
+  assert.ok(officer.relationshipGroups.filter((group) => !group.targetRelated).every((group) => group.members.every((id) => !officer.roster.find((item) => item.id === id)?.target)), "普通关系事件不得混入目标");
+  assert.ok(officer.relationshipGroups.filter((group) => group.targetRelated).every((group) => group.targetContradiction?.targetId && group.targetContradiction?.recordTruth && group.targetContradiction?.witnessStatement), "目标关系事件必须生成可交叉核对的固定冲突");
+  assert.equal(inferTopic("今晚你见过名单里的谁？"), "contact", "常见的见证人问题必须进入关系主题和横向对照板");
+  assert.ok(officer.agents.every((agent) => agent.dossier.relationships.every((relationship) => {
+    const conflict = relationship.targetContradiction;
+    if (!conflict) return true;
+    if (conflict.role === "target") return Boolean(conflict.targetClaim && conflict.recordTruth) && !conflict.witnessStatement;
+    if (conflict.role === "witness") return Boolean(conflict.witnessStatement) && !conflict.targetClaim && !conflict.recordTruth;
+    return false;
+  })), "子 Agent 只能读取自己在关系冲突中的目标口径或见证片段");
   assert.ok(officer.relationshipGroups.some((group) => group.targetRelated && group.members.some((id) => officer.roster.find((item) => item.id === id)?.target)), "每局至少要有一组与潜伏目标相关的共同事件");
   assert.ok(officer.relationshipGroups.some((group) => group.members.every((id) => !officer.roster.find((item) => item.id === id)?.target)), "每局至少要有一组普通人的交集事件");
   assert.ok(officer.agents.some((agent) => agent.dossier.relationships.length > 0), "候选人档案应包含各自所知的关系组片段");
   assert.ok(officer.agents.some((agent) => agent.dossier.testimonyPlan?.disclosureTriggers?.length >= 2), "候选人应拥有预备口径和泄露触发器");
 
+  const targetWithClue = officer.agents.find((agent) => agent.dossier.isTarget);
+  const questionByTopic = {
+    route: "你从哪里来，几点到达，有什么路线记录？",
+    document: "把证件、物品和编号说明清楚。",
+    contact: "今晚你认识或见过谁？",
+    institution: "你如何证明自己的政治忠诚？",
+    general: "请补充可以核验的细节。",
+  };
+  const targetQuestion = questionByTopic[targetWithClue.dossier.fairnessClue.topic] || questionByTopic.general;
+  const targetLead = targetWithClue.prepareResponse(targetQuestion);
+  assert.equal(targetLead.fairnessStage, "lead", "目标第一次进入关键主题时应留下可继续核验的引线");
+  targetWithClue.commitResponse(targetLead, "第一次固定口径", targetLead.claims);
+  const targetReveal = targetWithClue.prepareResponse(targetQuestion);
+  assert.equal(targetReveal.fairnessStage, "reveal", "重复追问目标关键主题时必须触发固定冲突");
+  assert.ok(targetReveal.disclosureFacts.includes(targetWithClue.dossier.fairnessClue.factId), "目标冲突必须进入本轮允许披露的事实范围");
+
+  const ordinaryWithClue = officer.agents.find((agent) => !agent.dossier.isTarget);
+  const ordinaryQuestion = questionByTopic[ordinaryWithClue.dossier.fairnessClue.topic] || questionByTopic.general;
+  const ordinaryLead = ordinaryWithClue.prepareResponse(ordinaryQuestion);
+  assert.equal(ordinaryLead.fairnessStage, "lead", "普通人第一次进入异常主题时应提供核验引线");
+  ordinaryWithClue.commitResponse(ordinaryLead, "第一次说明表面异常", ordinaryLead.claims);
+  assert.equal(ordinaryWithClue.prepareResponse(ordinaryQuestion).fairnessStage, "closure", "重复追问普通人关键主题时必须触发闭环解释");
+
   const first = officer.agents[0];
+  const firstStartRound = first.round;
   for (let index = 0; index < 12; index += 1) first.respond(`第${index + 1}次追问：请补充你知道的时间和关系细节。`);
-  assert.equal(first.round, 12, "执行官盘问不应有十轮上限");
+  assert.equal(first.round, firstStartRound + 12, "执行官盘问不应有十轮上限");
   assert.equal(officer.switchCandidate(1), true, "可以从名单切换到任意候选人");
   assert.equal(officer.agent, officer.agents[1]);
   assert.equal(officer.toggleSelection(1), true, "活动阶段即可编辑扣留名单");
   assert.equal(officer.submitSelections(), true, "未盘问完十人也可以提交名单");
   assert.equal(officer.status, "complete");
+}
+
+{
+  const releaseAll = new WorldController(campaign.id);
+  releaseAll.start();
+  releaseAll.submitSelections();
+  assert.equal(releaseAll.accuracy(), 50, "全部放行的平衡分必须为 50");
+
+  const detainAll = new WorldController(campaign.id);
+  detainAll.start();
+  detainAll.agents.forEach((_, index) => detainAll.toggleSelection(index));
+  detainAll.submitSelections();
+  assert.equal(detainAll.accuracy(), 50, "全部扣留的平衡分必须为 50");
+
+  const perfect = new WorldController(campaign.id);
+  perfect.start();
+  perfect.agents.forEach((agent, index) => { if (agent.dossier.isTarget) perfect.toggleSelection(index); });
+  perfect.submitSelections();
+  assert.equal(perfect.accuracy(), 100, "完整命中且无误捕时平衡分必须为 100");
+  assert.ok(perfect.decisions.every((decision) => decision.review && decision.evidenceSource), "逐人结算必须包含实际冲突或闭环依据及记录来源");
+}
+
+{
+  for (let run = 0; run < 40; run += 1) {
+    const generated = new WorldController(campaign.id);
+    const targetCount = generated.roster.filter((item) => item.target).length;
+    assert.ok(targetCount >= TARGET_COUNT_RANGE.min && targetCount <= TARGET_COUNT_RANGE.max, "批量生成时目标数量不得越界");
+    assert.ok(generated.relationshipGroups.length >= 2 && generated.relationshipGroups.length <= 4, "批量生成时关系组数量不得越界");
+    assert.ok(generated.relationshipGroups.some((group) => group.targetRelated), "批量生成时至少保留一组目标关系");
+    assert.ok(generated.relationshipGroups.some((group) => !group.targetRelated), "批量生成时至少保留一组普通关系");
+    assert.ok(generated.relationshipGroups.every((group) => group.targetRelated === group.members.some((id) => generated.roster.find((item) => item.id === id)?.target)), "批量生成时关系组分类必须与实际成员一致");
+  }
 }
 
 {
