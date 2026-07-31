@@ -124,6 +124,24 @@ h1, h2, h3, p { margin-top: 0; }
 .queue-dot { width: 7px; height: 7px; border-radius: 50%; background: #52635a; }
 .queue-row.current .queue-dot { background: var(--amber); }
 .queue-row.done .queue-dot { background: var(--teal); }
+.roster { padding: 0 7px 10px; }
+.roster-row { position: relative; border-top: 1px solid var(--line-soft); color: var(--muted); }
+.roster-row:first-child { border-top: 0; }
+.roster-row.current { background: var(--panel-raised); color: var(--paper); }
+.roster-row.detained { box-shadow: inset 3px 0 0 var(--alert); }
+.roster-row-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: stretch; }
+.roster-select { display: grid; grid-template-columns: 25px minmax(0, 1fr) auto; gap: 7px; align-items: center; min-width: 0; padding: 9px 5px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.roster-select:hover { color: var(--paper); }
+.roster-copy { display: grid; gap: 3px; min-width: 0; }
+.roster-copy b { overflow: hidden; color: inherit; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.roster-copy em { overflow: hidden; color: var(--muted-deep); font-size: 9px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.roster-copy small { overflow: hidden; color: var(--muted-deep); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.roster-count { color: var(--muted-deep); font-size: 9px; white-space: nowrap; }
+.roster-detain { align-self: center; margin-right: 4px; padding: 4px 5px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; white-space: nowrap; }
+.roster-detain:hover { border-color: var(--alert); color: #e49b8f; }
+.roster-row.detained .roster-detain { border-color: rgba(211, 107, 98, .7); color: #e49b8f; }
+.roster-transcript { display: none; position: absolute; z-index: 20; top: 4px; left: calc(100% + 8px); width: 300px; max-height: 330px; overflow-y: auto; padding: 12px; border: 1px solid var(--amber); background: #1d2421; box-shadow: 0 12px 26px rgba(0, 0, 0, .35); }
+.roster-row:hover .roster-transcript, .roster-row:focus-within .roster-transcript { display: block; }
 .meter-wrap { padding: 0 15px 16px; }
 .meter-row { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 7px; color: var(--muted); font-size: 10px; }
 .meter-row strong { color: var(--paper); font-weight: 500; }
@@ -138,6 +156,17 @@ h1, h2, h3, p { margin-top: 0; }
 .fact-head { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 10px; }
 .fact-head strong { color: var(--paper); font-weight: 500; }
 .fact p { margin: 6px 0 0; color: #cbd4ca; font-size: 11px; line-height: 1.65; }
+.comparison-body { padding: 0 15px 15px; }
+.comparison-note { margin: 0; padding-bottom: 8px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.comparison-fact { padding: 9px 0; border-top: 1px solid var(--line-soft); }
+.comparison-head { display: flex; justify-content: space-between; gap: 8px; color: var(--amber); font-size: 10px; }
+.comparison-head small { overflow: hidden; color: var(--muted-deep); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.comparison-entry { margin-top: 7px; padding-left: 8px; border-left: 1px solid var(--line); }
+.comparison-entry b { color: var(--muted); font-size: 9px; font-weight: 500; }
+.comparison-entry p { margin: 3px 0 4px; color: #cbd4ca; font-size: 10px; line-height: 1.55; }
+.quote-button { padding: 2px 0; border: 0; background: transparent; color: var(--teal); cursor: pointer; font-size: 9px; }
+.quote-button:hover { color: var(--paper); }
+.full-button { width: 100%; }
 .signal-dot { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--amber); }
 .signal-dot.good { background: var(--safe); }
 .signal-dot.caution { background: var(--alert); }
@@ -290,6 +319,7 @@ h1, h2, h3, p { margin-top: 0; }
   .result-box, .next-row { margin-left: 17px; margin-right: 17px; }
   .question-form, .decision-grid { grid-template-columns: 1fr; }
   .send-button { min-height: 43px; }
+  .roster-transcript { left: 0; top: calc(100% + 4px); width: min(88vw, 330px); }
   .score-panel { grid-template-columns: 84px 1fr; gap: 15px; padding: 16px; }
   .grade { font-size: 64px; }
   .stat-grid { grid-template-columns: 1fr 1fr; }

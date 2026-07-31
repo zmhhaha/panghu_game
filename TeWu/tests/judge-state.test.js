@@ -103,6 +103,38 @@ function runCases() {
   assert.equal(judge.currentQuestion(), JUDGE_FINAL_QUESTION);
 }
 
+{
+  const officer = new WorldController(campaign.id);
+  officer.start();
+  assert.equal(officer.status, "active", "执行官模式应直接进入十人名单");
+  assert.equal(officer.agents.length, 10, "执行官模式必须同时生成十名候选人");
+  assert.ok(officer.relationshipGroups.length >= 2 && officer.relationshipGroups.length <= 4, "每局应生成 2 至 4 组熟人关系");
+  assert.ok(officer.relationshipGroups.some((group) => group.members.length >= 2), "关系组至少包含两名成员");
+  assert.ok(officer.agents.some((agent) => agent.dossier.relationships.length > 0), "候选人档案应包含各自所知的关系组片段");
+  assert.ok(officer.agents.some((agent) => agent.dossier.testimonyPlan?.disclosureTriggers?.length >= 2), "候选人应拥有预备口径和泄露触发器");
+
+  const first = officer.agents[0];
+  for (let index = 0; index < 12; index += 1) first.respond(`第${index + 1}次追问：请补充你知道的时间和关系细节。`);
+  assert.equal(first.round, 12, "执行官盘问不应有十轮上限");
+  assert.equal(officer.switchCandidate(1), true, "可以从名单切换到任意候选人");
+  assert.equal(officer.agent, officer.agents[1]);
+  assert.equal(officer.toggleSelection(1), true, "活动阶段即可编辑扣留名单");
+  assert.equal(officer.submitSelections(), true, "未盘问完十人也可以提交名单");
+  assert.equal(officer.status, "complete");
+}
+
+{
+  const officer = new WorldController(campaign.id);
+  officer.start();
+  officer.agents[0].respond("你从哪里来？");
+  officer.currentIndex = 2;
+  officer.agents[2].respond("你认识谁？");
+  const restored = WorldController.restore({ campaignId: campaign.id, status: "active", currentIndex: 0, roster: officer.roster, relationshipGroups: officer.relationshipGroups, agentStates: officer.agents.map((agent) => agent.snapshot()), selectedTargets: [] });
+  assert.equal(restored.relationshipGroups[0].factId, officer.relationshipGroups[0].factId, "恢复存档不得重新生成关系事实");
+  assert.equal(restored.agents[0].round, 1, "恢复存档应保留各人物独立对话轮数");
+  assert.equal(restored.agents[2].round, 1, "恢复存档应保留其他人物的独立对话轮数");
+}
+
   console.log("judge-state: all assertions passed");
 }
 
@@ -113,6 +145,6 @@ if (browserEntryIndex < 0) throw new Error("无法定位 app.js 的浏览器入�
 
 vm.runInNewContext(
   `${appSource.slice(0, browserEntryIndex)}\n(${runCases.toString()})();`,
-  { assert: require("node:assert/strict"), console, setTimeout, clearTimeout },
+  { assert: require("node:assert/strict"), console, setTimeout, clearTimeout, fetch: () => Promise.resolve({ ok: true }), persistSession() {}, clearPersistedSession() {}, localStorage: { setItem() {}, getItem() { return null; }, removeItem() {} } },
   { filename: "judge-state.bundle.js" },
 );

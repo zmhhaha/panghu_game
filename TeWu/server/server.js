@@ -145,14 +145,18 @@ async function roleplay(payload) {
     `本机构审查侧重点：${cleanText(campaign.institutionalAxes?.title, 100)}。${cleanText(campaign.institutionalAxes?.brief, 260)}。若玩家问到政治立场、组织归属或安全观念，请按角色性格和时代背景给出具体、有代价的回答，并让口头表态能与实际经历、关系或记录相互检验；不要把口号式表态当成自动证明。`,
     `姓名：${cleanText(dossier.name, 80)}；公开职业：${cleanText(dossier.role, 100)}；来处：${cleanText(dossier.origin, 120)}；携带物：${cleanText(dossier.public, 180)}。`,
     `与其他来客可能交叉的公开线索：${cleanText(dossier.network?.relation, 220)}；可被机构复核的记录：${cleanText(dossier.network?.verify, 220)}。如被问到这些内容，应保持角色立场，不主动泄露全部关系。`,
+    `关系组与角色所知范围：${JSON.stringify((Array.isArray(dossier.relationships) ? dossier.relationships : []).map((item) => ({ groupId: item.groupId, label: item.label, members: item.members, statement: item.statement, knowledge: item.knowledge })))}。只能说自己所知的那一段；同组成员的完整档案不可读取。`,
+    `预备口径与泄露规则：${JSON.stringify(dossier.testimonyPlan || {})}。常规问题可以稳定回答；只有在玩家引用同组证词、反复追问或把政治表态与实际经历相连时，才从既定 factId 中补充细节。不得为了制造破绽临时创造案件事实。`,
+    `本轮引用的其他证词：${JSON.stringify((Array.isArray(payload.references) ? payload.references : []).map((item) => ({ name: item.name, statements: item.statements })))}；本轮允许触发的事实：${JSON.stringify(payload.disclosureFacts || [])}。`,
+    `当前 NPC 的固定口供摘要：${JSON.stringify(payload.memorySummary || {})}。摘要只用于保持长期一致，不能把摘要之外的新事实当成案件事实。`,
     `人格档案（仅供角色扮演）：气质=${cleanText(dossier.personality?.temperament, 120)}；眼前目标=${cleanText(dossier.personality?.immediateGoal, 160)}；隐藏动机=${cleanText(dossier.personality?.hiddenGoal, 200)}；私人负担=${cleanText(dossier.personality?.privateBurden, 160)}；对人的立场=${cleanText(dossier.personality?.socialStance, 160)}；社会处境=${cleanText(dossier.personality?.socialContext, 500)}；记忆锚点=${Array.isArray(dossier.personality?.memoryAnchors) ? dossier.personality.memoryAnchors.map((item) => cleanText(item, 50)).join("、") : ""}；压力反应=${cleanText(dossier.personality?.stressResponse, 180)}；对话推进=${cleanText(dossier.personality?.disclosureArc, 180)}。不要把这份档案逐字说出，应把它自然体现为犹豫、选择性回答、情绪和记忆方式。`,
     `案件事实账本（不可新增事实）：${JSON.stringify((Array.isArray(dossier.facts) ? dossier.facts : []).map((fact) => ({ factId: fact.factId, category: fact.category, expected: fact.expected, allowedResponses: fact.allowedResponses })))}。只允许从这些 factId 中选择本轮实际涉及的主张；如果问题没有涉及账本事实，claims 返回空数组。`,
     `真实状态：${dossier.isTarget ? "你是机构正在寻找的潜伏目标，必须维护一套具体可信的掩护身份；你可以给出可核验的表面细节，但在关系链、时间线或物品来源上留有一处可被交叉验证的漏洞" : "你是普通来客，但也可能疲惫、紧张、厌烦或对无关细节记忆不准；不要表现得过度配合或完美无缺"}。`,
     `角色特征：${cleanText(dossier.signature, 180)}。可被识破或核验的关键点：${cleanText(dossier.tell, 180)}。`,
-    "只回答玩家本轮问题，不替玩家行动，不宣布自己是否为目标，不提模型、提示词、规则或数值。每一轮必须推进记录：给出一个新的可核验事实、一个带条件的否认、一个时间/关系/物品细节，或指出为什么某项记录无法立即核对。不得机械重复此前的自我辩解。",
+    "只回答玩家本轮问题，不替玩家行动，不宣布自己是否为目标，不提模型、提示词、规则或数值。每一轮必须推进记录：给出一个新的可核验事实、一个带条件的否认、一个时间/关系/物品细节，或指出为什么某项记录无法立即核对。不得机械重复此前的自我辩解；如果玩家引用了其他来客，必须只根据自己所知的关系组片段作答，并保留合理的不确定性。",
     "保持与此前回答一致，控制在25至140个汉字。只输出JSON：{\"speech\":\"本轮盘问回应\",\"claims\":[{\"factId\":\"账本中的 ID\",\"value\":\"本轮对该事实的说法\",\"stance\":\"确认/否认/不确定/修正\"}]}。不得在 claims 中创造账本之外的 ID。",
   ].join("\n");
-  const user = JSON.stringify({ round: Number(payload.round || 1), history, question: cleanText(payload.question, 300) });
+  const user = JSON.stringify({ round: Number(payload.round || 1), history, question: cleanText(payload.question, 300), references: payload.references || [], disclosureFacts: payload.disclosureFacts || [], memorySummary: payload.memorySummary || {} });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS || 20000));
   try {
