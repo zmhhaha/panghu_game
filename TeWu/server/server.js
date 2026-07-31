@@ -156,6 +156,16 @@ function boundedJudgeSpeech(value, round) {
   return cleanText(speech, 800);
 }
 
+function selfLabelsConflict(speech) {
+  const text = cleanText(speech, 800);
+  return [
+    /(?:这|那|此事|这项记录).{0,12}(?:与|跟).{0,8}(?:我)?(?:此前|之前|刚才|前面).{0,12}(?:对不上|不一致|不一样|矛盾)/,
+    /(?:我|本人).{0,6}(?:此前|之前|刚才|前面).{0,8}(?:说法|陈述|回答).{0,6}(?:有问题|不实|错误|不对)/,
+    /(?:我|本人).{0,6}(?:撒谎|说谎|编造|伪造了?(?:身份|口供)?)/,
+    /(?:我承认|不得不承认).{0,12}(?:隐瞒|矛盾|假身份|欺骗)/,
+  ].some((pattern) => pattern.test(text));
+}
+
 async function roleplay(payload) {
   const config = providerConfig();
   const campaign = payload.campaign || {};
@@ -174,8 +184,8 @@ async function roleplay(payload) {
     `关系组与角色所知范围：${JSON.stringify((Array.isArray(dossier.relationships) ? dossier.relationships : []).map((item) => ({ groupId: item.groupId, eventId: item.eventId, label: item.label, members: item.members, location: item.location, timeWindow: item.timeWindow, anchors: item.anchors, sequence: item.sequence, statement: item.statement, memberView: item.memberView, knowledge: item.knowledge, targetContradiction: item.targetContradiction })))}。只能说自己所知的那一段；同组成员的完整档案不可读取。`,
     `预备口径与泄露规则：${JSON.stringify(dossier.testimonyPlan || {})}。常规问题可以稳定回答；只有在玩家引用同组证词、反复追问或把政治表态与实际经历相连时，才从既定 factId 中补充细节。不得为了制造破绽临时创造案件事实。`,
     `本轮引用的其他证词：${JSON.stringify((Array.isArray(payload.references) ? payload.references : []).map((item) => ({ name: item.name, statements: item.statements })))}；本轮允许触发的事实：${JSON.stringify(payload.disclosureFacts || [])}。`,
-    `推理公平性档案：${JSON.stringify(dossier.fairnessClue || {})}；本轮公平性阶段=${cleanText(payload.fairnessStage, 20) || "none"}。若 kind=conflict，lead 阶段应维持 coverClaim 并自然指出可核验记录，reveal 阶段必须说出 recordTruth 带来的不兼容细节，不能临时创造第三套解释把冲突完全抹平；若 kind=closure，lead 阶段应承认 surfaceAnomaly 并指出 evidence，closure 阶段必须用 recordTruth、evidence 和 resolution 闭环表面异常。none 阶段不要主动泄露该档案。不要向玩家说出 kind、stage、fairnessClue 等内部字段名。`,
-    `关系交叉阶段=${cleanText(payload.relationshipStage, 20) || "none"}；当前角色内部 ID=${cleanText(dossier.blueprintId, 80)}。若关系组含 targetContradiction：role=target 时，lead 阶段维持 targetClaim，reveal 阶段必须承认 recordTruth 所指向的未解决差异；role=witness 时，遇到关系追问应按 witnessStatement 回答。不得把目标身份、role 或内部 ID 说给玩家。`,
+    `推理公平性档案：${JSON.stringify(dossier.fairnessClue || {})}；本轮公平性阶段=${cleanText(payload.fairnessStage, 20) || "none"}。若 kind=conflict，lead 阶段应维持 coverClaim 并自然指出可核验记录；reveal 阶段必须说出 recordTruth 带来的不兼容细节，同时继续从角色立场维护 coverClaim，不得临时创造第三套事实把冲突抹平。目标可以承认某条具体记录存在、质疑记录含义或拒绝解释动机，但绝不能主动评价自己“前后矛盾”“说法对不上”“撒谎”或“身份有假”，这些结论必须留给玩家。若 kind=closure，lead 阶段应承认 surfaceAnomaly 并指出 evidence，closure 阶段必须用 recordTruth、evidence 和 resolution 闭环表面异常。none 阶段不要主动泄露该档案。不要向玩家说出 kind、stage、fairnessClue 等内部字段名。`,
+    `关系交叉阶段=${cleanText(payload.relationshipStage, 20) || "none"}；当前角色内部 ID=${cleanText(dossier.blueprintId, 80)}。若关系组含 targetContradiction：role=target 时，lead 阶段维持 targetClaim；reveal 阶段必须提供 recordTruth 中的具体事实，但仍维护 targetClaim 对动机和身份的解释，不得替玩家宣布两者矛盾、承认撒谎或自报目标身份。role=witness 时，遇到关系追问应按 witnessStatement 回答。不得把目标身份、role 或内部 ID 说给玩家。`,
     `当前 NPC 的固定口供摘要：${JSON.stringify(payload.memorySummary || {})}。摘要只用于保持长期一致，不能把摘要之外的新事实当成案件事实。`,
     `人格档案（仅供角色扮演）：气质=${cleanText(dossier.personality?.temperament, 120)}；眼前目标=${cleanText(dossier.personality?.immediateGoal, 160)}；隐藏动机=${cleanText(dossier.personality?.hiddenGoal, 200)}；私人负担=${cleanText(dossier.personality?.privateBurden, 160)}；对人的立场=${cleanText(dossier.personality?.socialStance, 160)}；社会处境=${cleanText(dossier.personality?.socialContext, 500)}；记忆锚点=${Array.isArray(dossier.personality?.memoryAnchors) ? dossier.personality.memoryAnchors.map((item) => cleanText(item, 50)).join("、") : ""}；压力反应=${cleanText(dossier.personality?.stressResponse, 180)}；对话推进=${cleanText(dossier.personality?.disclosureArc, 180)}。不要把这份档案逐字说出，应把它自然体现为犹豫、选择性回答、情绪和记忆方式。`,
     `案件事实账本（不可新增事实）：${JSON.stringify((Array.isArray(dossier.facts) ? dossier.facts : []).map((fact) => ({ factId: fact.factId, category: fact.category, expected: fact.expected, allowedResponses: fact.allowedResponses })))}。只允许从这些 factId 中选择本轮实际涉及的主张；如果问题没有涉及账本事实，claims 返回空数组。`,
@@ -189,6 +199,7 @@ async function roleplay(payload) {
     const parsed = parseModelJson(data?.choices?.[0]?.message?.content);
     const speech = cleanText(parsed?.speech, 800);
     if (!speech) throw new Error("模型回答为空");
+    if (dossier.isTarget && [payload.fairnessStage, payload.relationshipStage].includes("reveal") && selfLabelsConflict(speech)) throw new Error("目标回答替玩家宣布了矛盾");
     return { speech, claims: boundedClaims(parsed, dossier.facts), provider: config.provider };
   });
   return result;

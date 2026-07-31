@@ -297,6 +297,16 @@ const FACT_TOPIC_BY_CATEGORY = {
   政治与组织: "institution",
 };
 
+function makeOrdinaryResolution(blueprint, fact, source) {
+  const explanations = {
+    物品: `${source}能把这件异常物品对应到${blueprint.role}的领用、批次或工作流程；它最多说明手续或私人问题，不能单独证明潜伏任务。`,
+    路线: `${source}能把绕行、换乘和${blueprint.role}的公开工作路线连续对应；路线异常本身不能单独证明秘密联络。`,
+    时间线: `${source}能把前后时间点与${blueprint.role}的岗位流程连续对应；时间偏差本身不能单独证明隐蔽任务。`,
+    关系: `${source}能确认这段关系发生在${blueprint.role}的公开事务中；认识相关人员本身不能单独证明组织关系。`,
+  };
+  return explanations[fact.category] || `${source}能将这项异常与${blueprint.role}的公开事务连续对应，现有记录不足以证明潜伏任务。`;
+}
+
 function makeFairnessClue(blueprint, facts, index) {
   const categories = blueprint.target ? ["物品", "关系", "路线"] : ["物品", "路线", "时间线"];
   const category = categories[index % categories.length];
@@ -317,6 +327,7 @@ function makeFairnessClue(blueprint, facts, index) {
       review: `其掩护口径“${fact.coverClaim}”与${source}记录的“${fact.truth}”不能同时成立。`,
     };
   }
+  const resolution = makeOrdinaryResolution(blueprint, fact, source);
   return {
     kind: "closure",
     factId: fact.factId,
@@ -327,8 +338,8 @@ function makeFairnessClue(blueprint, facts, index) {
     recordTruth: fact.truth,
     evidence,
     lead: `表面异常需要继续核对${source}。`,
-    resolution: blueprint.tell,
-    review: `${source}支持“${fact.truth}”；${blueprint.tell}。`,
+    resolution,
+    review: `${source}支持“${fact.truth}”；${resolution}`,
   };
 }
 
@@ -534,6 +545,9 @@ function makeDossier(campaign, blueprint, index, relationshipGroups = []) {
   }));
   const facts = [...baseFacts, ...relationshipFacts];
   const fairnessClue = makeFairnessClue(blueprint, facts, index);
+  const dossierTell = blueprint.target
+    ? `其${fairnessClue.category}公开口径与${fairnessClue.evidence.join("、") || "机构记录"}之间留有一处不能同时成立的差异。`
+    : fairnessClue.resolution;
   const lines = (blueprint.target ? targetLines : ordinaryLines).map((line) => line(persona, campaign));
   const cautionRounds = blueprint.target ? [1, 2, 4, 5, 7, 9] : [2, 4, 6, 8];
   const observations = lines.map((_, roundIndex) => {
@@ -643,7 +657,7 @@ function makeDossier(campaign, blueprint, index, relationshipGroups = []) {
     origin: blueprint.origin,
     public: blueprint.public,
     signature: blueprint.signature,
-    tell: blueprint.tell,
+    tell: dossierTell,
     fairnessClue,
     network,
     personality,
@@ -1050,12 +1064,9 @@ class WorldController {
     if (fairness) {
       const source = fairness.evidence.join("、") || this.campaignTool.label;
       const spoken = this.agent.memory.filter((item) => item.topic === fairness.topic).at(-1)?.answer;
-      const text = fairness.kind === "conflict"
-        ? spoken
-          ? `${source}记录为“${fairness.recordTruth}”；候选人此前回答是“${spoken}”。`
-          : `${source}记录为“${fairness.recordTruth}”；候选人尚未就${fairness.category}给出可比较口供。`
-        : `${source}记录为“${fairness.recordTruth}”；可与候选人的表面异常继续核对。`;
-      this.caseClues.push({ key: `${this.dossier.id}:fairness`, label: "公平核验", text, source: this.dossier.name, sourceIndex: this.currentIndex, factId: fairness.factId });
+      const testimony = spoken ? `候选人相关口供：“${spoken}”` : `候选人尚未就${fairness.category}给出可比较口供`;
+      const text = `核验类别：${fairness.category}。${source}原始记录：“${fairness.recordTruth}”。${testimony}。记录仅并列原始事实，不代替处置判断。`;
+      this.caseClues.push({ key: `${this.dossier.id}:fairness`, label: "记录核验", text, source: this.dossier.name, sourceIndex: this.currentIndex, factId: fairness.factId });
     }
     this.observationsByAgent[this.currentIndex].push({ topic: "document", label: `${this.campaignTool.label}已归档`, level: "neutral" });
     this.save();

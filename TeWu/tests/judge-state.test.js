@@ -7,6 +7,9 @@ async function runCases() {
   assert.deepEqual(CAMPAIGNS.map((item) => item.id), ["gestapo", "kgb", "tokko", "cia"], "机构顺序或数量异常");
   assert.equal(CAMPAIGNS.find((item) => item.id === "cia").setting, "华盛顿联邦办公区入口");
   assert.match(INSTITUTIONAL_AXES.cia.brief, /麦卡锡主义|忠诚调查/);
+  assert.equal(selfLabelsConflict("这项记录确实跟我此前说的对不上。"), true, "目标主动宣布前后矛盾时必须触发重试");
+  assert.equal(selfLabelsConflict("我刚才的说法有问题，那不是完整事实。"), true, "目标主动否定此前口供时必须触发重试");
+  assert.equal(selfLabelsConflict("记录里确实有那支试管，但它的用途应由领用单解释。"), false, "目标可以承认具体记录并继续维护自身解释");
 
   function evaluation(overrides = {}) {
     return {
@@ -133,6 +136,7 @@ async function runCases() {
   assert.ok(officer.agents.some((agent) => agent.dossier.testimonyPlan?.disclosureTriggers?.length >= 2), "候选人应拥有预备口径和泄露触发器");
 
   const targetWithClue = officer.agents.find((agent) => agent.dossier.isTarget);
+  assert.match(targetWithClue.dossier.tell, /不能同时成立/, "目标的核验要点必须按本局身份生成，不能沿用角色池旧标签");
   const questionByTopic = {
     route: "你从哪里来，几点到达，有什么路线记录？",
     document: "把证件、物品和编号说明清楚。",
@@ -149,11 +153,28 @@ async function runCases() {
   assert.ok(targetReveal.disclosureFacts.includes(targetWithClue.dossier.fairnessClue.factId), "目标冲突必须进入本轮允许披露的事实范围");
 
   const ordinaryWithClue = officer.agents.find((agent) => !agent.dossier.isTarget);
+  assert.equal(ordinaryWithClue.dossier.tell, ordinaryWithClue.dossier.fairnessClue.resolution, "普通人的核验要点必须使用本局闭环说明");
+  assert.match(ordinaryWithClue.dossier.fairnessClue.resolution, /不能单独证明/, "普通人闭环必须明确区分手续异常与潜伏证据");
   const ordinaryQuestion = questionByTopic[ordinaryWithClue.dossier.fairnessClue.topic] || questionByTopic.general;
   const ordinaryLead = ordinaryWithClue.prepareResponse(ordinaryQuestion);
   assert.equal(ordinaryLead.fairnessStage, "lead", "普通人第一次进入异常主题时应提供核验引线");
-  ordinaryWithClue.commitResponse(ordinaryLead, "第一次说明表面异常", ordinaryLead.claims);
+  ordinaryWithClue.commitResponse(ordinaryLead, "第一次固定说明", ordinaryLead.claims);
   assert.equal(ordinaryWithClue.prepareResponse(ordinaryQuestion).fairnessStage, "closure", "重复追问普通人关键主题时必须触发闭环解释");
+
+  const targetIndex = officer.agents.indexOf(targetWithClue);
+  officer.switchCandidate(targetIndex);
+  assert.equal(officer.verifyCurrent(), true, "目标应能执行机构核验");
+  const targetVerification = officer.caseClues.find((item) => item.key === `${targetWithClue.dossier.id}:fairness`);
+  const ordinaryIndex = officer.agents.indexOf(ordinaryWithClue);
+  officer.switchCandidate(ordinaryIndex);
+  assert.equal(officer.verifyCurrent(), true, "普通人应能执行机构核验");
+  const ordinaryVerification = officer.caseClues.find((item) => item.key === `${ordinaryWithClue.dossier.id}:fairness`);
+  [targetVerification, ordinaryVerification].forEach((verification) => {
+    assert.equal(verification.label, "记录核验", "核验标题不得暴露内部公平性机制");
+    assert.match(verification.text, /^核验类别：.+。.+原始记录：/, "两类候选人必须使用相同的中性核验结构");
+    assert.match(verification.text, /候选人相关口供：/, "有口供时应中性并列原始记录和候选人陈述");
+    assert.doesNotMatch(verification.text, /表面异常|目标|潜伏|公平核验/, "核验文案不得通过措辞泄露身份类型");
+  });
 
   const first = officer.agents[0];
   const firstStartRound = first.round;
@@ -240,12 +261,18 @@ async function runCases() {
 }
 
 const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+const serverSource = fs.readFileSync(path.join(__dirname, "..", "server", "server.js"), "utf8");
 const browserEntry = 'const app = document.querySelector("#app");';
 const browserEntryIndex = appSource.indexOf(browserEntry);
 if (browserEntryIndex < 0) throw new Error("无法定位 app.js 的浏览器入口");
+const cleanTextStart = serverSource.indexOf("function cleanText");
+const cleanTextEnd = serverSource.indexOf("\n\nfunction providerConfig", cleanTextStart);
+const conflictGuardStart = serverSource.indexOf("function selfLabelsConflict");
+const conflictGuardEnd = serverSource.indexOf("\n\nasync function roleplay", conflictGuardStart);
+if ([cleanTextStart, cleanTextEnd, conflictGuardStart, conflictGuardEnd].some((index) => index < 0)) throw new Error("无法定位 server.js 的目标自曝校验器");
 
 vm.runInNewContext(
-  `${appSource.slice(0, browserEntryIndex)}\n(async () => { await (${runCases.toString()})(); })();`,
+  `${serverSource.slice(cleanTextStart, cleanTextEnd)}\n${serverSource.slice(conflictGuardStart, conflictGuardEnd)}\n${appSource.slice(0, browserEntryIndex)}\n(async () => { await (${runCases.toString()})(); })();`,
   { assert: require("node:assert/strict"), console, setTimeout, clearTimeout, fetch: () => Promise.resolve({ ok: false, status: 503 }), persistSession() {}, clearPersistedSession() {}, localStorage: { setItem() {}, getItem() { return null; }, removeItem() {} } },
   { filename: "judge-state.bundle.js" },
 );
