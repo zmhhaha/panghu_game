@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f4f1e8" />
+    <title>续页 · 文学播放器</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar__inner">
+        <div class="wordmark" aria-label="续页">
+          <span class="wordmark__mark" aria-hidden="true">续</span>
+          <span>续页</span>
+        </div>
+        <div class="topbar__actions">
+          <button class="library-button" id="libraryButton" type="button">书目</button>
+          <button class="model-state" id="modelState" type="button" title="模型连接状态">
+            <span class="model-state__dot" aria-hidden="true"></span>
+            <span id="modelLabel">检查模型</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="reading-shell">
+      <section class="book-heading" aria-labelledby="bookTitle">
+        <div class="book-heading__eyebrow">
+          <span>INTERACTIVE FICTION</span>
+          <span>VOL. 01 / 07</span>
+        </div>
+        <div class="book-heading__row">
+          <div>
+            <p class="book-heading__chapter" id="bookChapter">第一章 · 雨停以前</p>
+            <h1 id="bookTitle">无声潮汐</h1>
+            <p class="book-heading__byline" id="bookByline">佚名 · 交互稿</p>
+          </div>
+          <div class="book-heading__signal" aria-label="当前阅读状态">
+            <span class="book-heading__signal-mark" aria-hidden="true"></span>
+            <span>LIVE MANUSCRIPT</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="reading-meta" aria-live="polite">
+        <span id="readStatus">停在开篇</span>
+        <span id="readCount">0 字</span>
+      </div>
+
+      <div class="reader-window" id="readerWindow">
+        <div class="reader-window__header" aria-hidden="true">
+          <span>MANUSCRIPT / 001</span>
+          <span id="manuscriptCast">岑野 · 许泊</span>
+        </div>
+        <article
+          class="reader-copy"
+          id="readerCopy"
+          tabindex="0"
+          aria-label="小说正文。点击已经播放的文字可以回退播放位置。"
+        ></article>
+
+        <div class="end-note" id="endNote" hidden>
+          <span aria-hidden="true">※</span>
+          <span>本章暂止</span>
+        </div>
+      </div>
+    </main>
+
+    <footer class="player" aria-label="阅读播放器">
+      <div class="player__progress-wrap">
+        <input
+          class="player__progress"
+          id="progress"
+          type="range"
+          min="0"
+          max="1"
+          value="0"
+          aria-label="回退到已朗读位置"
+        />
+      </div>
+
+      <div class="player__inner">
+        <div class="player__secondary player__secondary--left">
+          <button class="icon-button" id="undoButton" type="button" title="撤回上一次续写" aria-label="撤回上一次续写" disabled>↶</button>
+          <button class="icon-button text-icon" id="fontDown" type="button" title="缩小文字" aria-label="缩小文字">A−</button>
+          <button class="icon-button text-icon" id="fontUp" type="button" title="放大文字" aria-label="放大文字">A+</button>
+        </div>
+
+        <div class="player__primary">
+          <button class="play-button" id="playButton" type="button" title="播放" aria-label="播放">
+            <span id="playIcon" aria-hidden="true">▶</span>
+          </button>
+          <button class="write-button" id="writeButton" type="button">
+            <span aria-hidden="true">✎</span>
+            <span>续写</span>
+          </button>
+        </div>
+
+        <div class="player__secondary player__secondary--right">
+          <select class="speed-select" id="speedSelect" aria-label="逐字播放速度">
+            <option value="6">6 字/秒</option>
+            <option value="10" selected>10 字/秒</option>
+            <option value="16">16 字/秒</option>
+          </select>
+          <div class="rate-control" aria-label="逐字播放速度">
+            <button type="button" data-rate="6">6 字/秒</button>
+            <button type="button" data-rate="10" class="is-active">10 字/秒</button>
+            <button type="button" data-rate="16">16 字/秒</button>
+          </div>
+          <button class="icon-button" id="downloadButton" type="button" title="导出文本" aria-label="导出文本">↓</button>
+          <button class="icon-button voice-button is-active" id="voiceButton" type="button" title="关闭声音" aria-label="关闭声音">声</button>
+        </div>
+      </div>
+    </footer>
+
+    <dialog class="write-dialog" id="writeDialog">
+      <form method="dialog" class="write-form" id="writeForm">
+        <div class="write-form__header">
+          <div>
+            <p class="write-form__eyebrow" id="writePosition">从当前字句</p>
+            <h2>写入正文</h2>
+          </div>
+          <button class="icon-button" id="closeDialog" type="button" title="关闭" aria-label="关闭">×</button>
+        </div>
+        <blockquote id="contextPreview"></blockquote>
+        <label class="sr-only" for="intervention">续写内容</label>
+        <textarea
+          id="intervention"
+          maxlength="4000"
+          rows="7"
+          placeholder="接着最后一个字写下去……"
+          required
+        ></textarea>
+        <div class="write-form__footer">
+          <span id="charCount">0 / 4000</span>
+          <div class="write-form__actions">
+            <button class="quiet-button" id="cancelWrite" type="button">取消</button>
+            <button class="commit-button" id="commitWrite" type="submit">写入并重写后文</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="library-dialog" id="libraryDialog">
+      <form method="dialog" class="library-panel" id="libraryForm">
+        <div class="library-panel__topline">
+          <span>续页 / LIBRARY</span>
+          <span>PUBLIC DOMAIN</span>
+        </div>
+        <div class="library-panel__heading">
+          <p>选择一本书</p>
+          <h2>让故事从它原来的<br />位置开始偏航</h2>
+        </div>
+        <div class="work-list" id="workList" role="radiogroup" aria-label="选择作品"></div>
+        <div class="scope-section">
+          <div class="scope-section__label">
+            <span>改写规模</span>
+            <span id="scopeHint">保留原作的气质和主要走向</span>
+          </div>
+          <div class="scope-list" id="scopeList" role="radiogroup" aria-label="选择改写规模"></div>
+        </div>
+        <div class="library-panel__footer">
+          <span id="librarySource">仅收录公共领域作品</span>
+          <button class="commit-button" id="startReading" type="submit">开始阅读</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="connection-dialog" id="connectionDialog">
+      <div class="connection-panel">
+        <div class="write-form__header">
+          <div>
+            <p class="write-form__eyebrow">模型连接</p>
+            <h2 id="connectionTitle">尚未连接</h2>
+          </div>
+          <button class="icon-button" id="closeConnection" type="button" title="关闭" aria-label="关闭">×</button>
+        </div>
+        <dl class="connection-details">
+          <div><dt>服务</dt><dd id="connectionHost">—</dd></div>
+          <div><dt>模型</dt><dd id="connectionModel">—</dd></div>
+        </dl>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
