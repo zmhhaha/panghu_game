@@ -4,6 +4,7 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "$0")/.." && pwd)"
 docker build --no-cache \
   -t arm-cluster-master:5000/xuye-server:latest .
+docker push arm-cluster-master:5000/xuye-server:latest
 kubectl apply -f "$root_dir/deploy/k8s/namespace.yaml"
 kubectl apply -f "$root_dir/../../vault/inventory/xuye-agent-externalsecret.yaml"
 kubectl apply -f "$root_dir/../../vault/inventory/xuye-externalsecret.yaml"
