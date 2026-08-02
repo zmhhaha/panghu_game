@@ -24,6 +24,26 @@ class FakeResponse:
 
 
 class ServerTests(unittest.TestCase):
+    def test_provider_selects_the_matching_environment_fields(self):
+        previous = {key: os.environ.get(key) for key in ("PROVIDER", "DEEPSEEK_BASE_URL", "DEEPSEEK_API_KEY", "DEEPSEEK_MODEL")}
+        try:
+            os.environ.update({
+                "PROVIDER": "deepseek",
+                "DEEPSEEK_BASE_URL": "https://example.test/v1",
+                "DEEPSEEK_API_KEY": "test-key",
+                "DEEPSEEK_MODEL": "test-model",
+            })
+            config = server.model_config()
+            self.assertEqual(config["provider"], "deepseek")
+            self.assertEqual(config["base_url"], "https://example.test/v1")
+            self.assertEqual(config["model"], "test-model")
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
     def test_chat_url_accepts_base_or_full_endpoint(self):
         self.assertEqual(
             server.chat_completions_url("https://example.com/v1/"),

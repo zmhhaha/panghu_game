@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xuye-server
+  namespace: xuye
+  labels: { app: xuye-server }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: xuye-server }
+  template:
+    metadata:
+      labels: { app: xuye-server }
+    spec:
+      containers:
+        - name: server
+          image: arm-cluster-master:5000/xuye-server:latest
+          imagePullPolicy: Always
+          ports: [{ name: http, containerPort: 4173 }]
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PROVIDER
+              valueFrom:
+                configMapKeyRef: { name: xuye-agent-config, key: PROVIDER }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: xuye-database, key: url }
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: xuye-agent, key: OPENAI_API_KEY, optional: true }
+            - name: OPENAI_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: xuye-agent, key: OPENAI_BASE_URL, optional: true }
+            - name: OPENAI_MODEL
+              valueFrom:
+                secretKeyRef: { name: xuye-agent, key: OPENAI_MODEL, optional: true }
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef: { name: xuye-agent, key: DEEPSEEK_API_KEY, optional: true }
+            - name: DEEPSEEK_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: xuye-agent, key: DEEPSEEK_BASE_URL, optional: true }
+            - name: DEEPSEEK_MODEL
+              valueFrom:
+                secretKeyRef: { name: xuye-agent, key: DEEPSEEK_MODEL, optional: true }
+            - name: CUSTOM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: xuye-agent, key: CUSTOM_API_KEY, optional: true }
+            - name: CUSTOM_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: xuye-agent, key: CUSTOM_BASE_URL, optional: true }
+            - name: CUSTOM_MODEL
+              valueFrom:
+                secretKeyRef: { name: xuye-agent, key: CUSTOM_MODEL, optional: true }
+            - name: XUYE_AUTH_REQUIRED
+              value: "true"
+            - name: XUYE_TRUST_PROXY_AUTH_HEADERS
+              value: "true"
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: xuye-server
+  namespace: xuye
+spec:
+  type: ClusterIP
+  selector: { app: xuye-server }
+  ports: [{ name: http, port: 4173, targetPort: http }]

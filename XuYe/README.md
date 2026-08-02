@@ -55,3 +55,19 @@ python -m unittest discover -s tests -v
 XuYe supports the same trusted-proxy boundary as QianFu. Put oauth2-proxy in front of the service and pass the verified `X-Auth-Request-Sub` (preferred) or `X-Forwarded-User` header. The server prefixes the stable subject with `casdoor:` and uses it as the save owner. `/api/state` and `/api/continue` are user-scoped; they never accept a client-supplied user ID.
 
 For production set `XUYE_AUTH_REQUIRED=true` and `XUYE_TRUST_PROXY_AUTH_HEADERS=true`. The Kubernetes Service must remain internal so users cannot forge these headers by bypassing oauth2-proxy. Set `DATABASE_URL` from the Kubernetes database Secret; the server uses PostgreSQL through `psycopg` and stores `reader_saves.user_id` as the authenticated owner. SQLite via `XUYE_DB_PATH` remains the local-development fallback.
+
+## Kubernetes LLM configuration
+
+XuYe follows QianFu's provider selection model but uses its own namespace resources. `deploy/k8s/agent-configmap.yaml` defines `xuye-agent-config` with a `PROVIDER` value of `openai`, `deepseek`, or `custom`. `deploy/k8s/server.yaml` reads that ConfigMap and reads matching credentials from the `xuye-agent` Secret in namespace `xuye`.
+
+Build and apply the baseline manifests:
+
+```bash
+docker build -t arm-cluster-master:5000/xuye-server:latest .
+docker push arm-cluster-master:5000/xuye-server:latest
+kubectl apply -f deploy/k8s/namespace.yaml
+kubectl apply -f deploy/k8s/agent-configmap.yaml
+kubectl apply -f deploy/k8s/server.yaml
+```
+
+Create `xuye-database` and `xuye-agent` through the same Vault/ExternalSecret workflow used by QianFu. Do not create plaintext LLM or database credentials in repository manifests. Put oauth2-proxy in front of `xuye-server`; do not expose the Service directly.

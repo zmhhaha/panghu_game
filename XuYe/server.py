@@ -113,15 +113,24 @@ def save_state(user_id: str, payload: dict[str, Any]) -> None:
 
 
 def model_config() -> dict[str, Any]:
-    base_url = env("LLM_BASE_URL", env("OPENAI_BASE_URL", "https://api.openai.com/v1"))
-    api_key = env("LLM_API_KEY", env("OPENAI_API_KEY"))
-    model = env("LLM_MODEL", env("OPENAI_MODEL"))
+    provider = env("PROVIDER", "legacy").lower()
+    provider_env = {
+        "openai": ("OPENAI", "https://api.openai.com/v1"),
+        "openai-compatible": ("OPENAI", "https://api.openai.com/v1"),
+        "deepseek": ("DEEPSEEK", "https://api.deepseek.com/v1"),
+        "custom": ("CUSTOM", ""),
+    }
+    prefix, fallback_url = provider_env.get(provider, ("LLM", "https://api.openai.com/v1"))
+    base_url = env(f"{prefix}_BASE_URL", fallback_url)
+    api_key = env(f"{prefix}_API_KEY")
+    model = env(f"{prefix}_MODEL")
     parsed = urllib.parse.urlparse(base_url)
     is_local = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
     return {
         "base_url": base_url.rstrip("/"),
         "api_key": api_key,
         "model": model,
+        "provider": provider,
         "temperature": float(env("LLM_TEMPERATURE", "0.9")),
         "max_tokens": int(env("LLM_MAX_TOKENS", "1400")),
         "timeout": float(env("LLM_TIMEOUT_SECONDS", "120")),
@@ -418,7 +427,8 @@ class XuYeHandler(BaseHTTPRequestHandler):
 def main() -> None:
     init_database()
     port = int(env("PORT", "4173"))
-    server = ThreadingHTTPServer(("127.0.0.1", port), XuYeHandler)
+    host = env("HOST", "127.0.0.1")
+    server = ThreadingHTTPServer((host, port), XuYeHandler)
     print(f"续页已启动：http://127.0.0.1:{port}")
     try:
         server.serve_forever()
