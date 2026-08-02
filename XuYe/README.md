@@ -70,4 +70,8 @@ kubectl apply -f deploy/k8s/agent-configmap.yaml
 kubectl apply -f deploy/k8s/server.yaml
 ```
 
+The Docker build uses the Aliyun PyPI mirror with retries because the ARM64 `psycopg[binary]` wheel is relatively large. If the mirror is unavailable in your cluster, replace `--index-url` in `Dockerfile` with your internal PyPI mirror.
+
 Create `xuye-database` and `xuye-agent` through the same Vault/ExternalSecret workflow used by QianFu. Do not create plaintext LLM or database credentials in repository manifests. Put oauth2-proxy in front of `xuye-server`; do not expose the Service directly.
+
+XuYe reuses the shared `../../oauth/k8s/game-proxy-configmap.yaml` and `game-proxy-deployment.yaml` templates unchanged. Its `ui` Service is an alias on port 80 that forwards to the XuYe server on port 4173, matching the upstream convention used by QianFu and the other game services. Vault ExternalSecrets are `../../vault/inventory/xuye-agent-externalsecret.yaml` and `xuye-externalsecret.yaml`. The Cloudflare route is in `../../cloudflare-tunnel/operator/tunnel-routes.yaml` as `xuye.panghuer.top`. Once the Cloudflare operator and External Secrets Operator are ready, run `bash deploy/deploy.sh`.

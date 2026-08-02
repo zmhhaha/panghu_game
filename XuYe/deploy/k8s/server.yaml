@@ -71,3 +71,14 @@ spec:
   type: ClusterIP
   selector: { app: xuye-server }
   ports: [{ name: http, port: 4173, targetPort: http }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  namespace: xuye
+  labels: { app: xuye-server, role: web-upstream }
+spec:
+  type: ClusterIP
+  selector: { app: xuye-server }
+  ports: [{ name: http, port: 80, targetPort: http }]
