@@ -75,3 +75,15 @@ The Docker build uses the Aliyun PyPI mirror with retries because the ARM64 `psy
 Create `xuye-database` and `xuye-agent` through the same Vault/ExternalSecret workflow used by QianFu. Do not create plaintext LLM or database credentials in repository manifests. Put oauth2-proxy in front of `xuye-server`; do not expose the Service directly.
 
 XuYe reuses the shared `../../oauth/k8s/game-proxy-configmap.yaml` and `game-proxy-deployment.yaml` templates unchanged. Its `ui` Service is an alias on port 80 that forwards to the XuYe server on port 4173, matching the upstream convention used by QianFu and the other game services. Vault ExternalSecrets are `../../vault/inventory/xuye-agent-externalsecret.yaml` and `xuye-externalsecret.yaml`. The Cloudflare route is in `../../cloudflare-tunnel/operator/tunnel-routes.yaml` as `xuye.panghuer.top`. Once the Cloudflare operator and External Secrets Operator are ready, run `bash deploy/deploy.sh`.
+
+## Works catalog
+
+The catalog is stored in `content/works.json`, with Chinese translations provided for foreign works. The server reads `/api/works` from the file on every request. Kubernetes mounts it as the `xuye-works` ConfigMap, so adding a work only requires updating that ConfigMap and refreshing the reader; no Pod restart or image rebuild is needed:
+
+```bash
+kubectl create configmap xuye-works -n xuye \
+  --from-file=works.json=content/works.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+ConfigMap volume propagation can take about a minute. Reload the browser or reopen the library after it has updated.

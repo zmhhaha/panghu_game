@@ -24,6 +24,12 @@ class FakeResponse:
 
 
 class ServerTests(unittest.TestCase):
+    def test_works_catalog_contains_translated_foreign_works(self):
+        works = server.load_works()
+        ids = {work["id"] for work in works}
+        self.assertGreaterEqual(len(works), 7)
+        self.assertTrue({"pride-prejudice", "pride-prejudice-zh", "frankenstein", "frankenstein-zh"} <= ids)
+
     def test_provider_selects_the_matching_environment_fields(self):
         previous = {key: os.environ.get(key) for key in ("PROVIDER", "DEEPSEEK_BASE_URL", "DEEPSEEK_API_KEY", "DEEPSEEK_MODEL")}
         try:

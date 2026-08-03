@@ -9,6 +9,9 @@ kubectl apply -f "$root_dir/deploy/k8s/namespace.yaml"
 kubectl apply -f "$root_dir/../../vault/inventory/xuye-agent-externalsecret.yaml"
 kubectl apply -f "$root_dir/../../vault/inventory/xuye-externalsecret.yaml"
 kubectl apply -f "$root_dir/deploy/k8s/agent-configmap.yaml"
+kubectl create configmap xuye-works -n xuye \
+  --from-file=works.json="$root_dir/content/works.json" \
+  --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f "$root_dir/deploy/k8s/server.yaml"
 sed "s/__TARGET_NAME__/xuye/g" "$root_dir/../../oauth/k8s/game-proxy-configmap.yaml" | kubectl apply -f -
 sed "s/__TARGET_NAME__/xuye/g" "$root_dir/../../oauth/k8s/game-proxy-deployment.yaml" | kubectl apply -f -

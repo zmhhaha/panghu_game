@@ -20,6 +20,8 @@ spec:
           env:
             - name: HOST
               value: "0.0.0.0"
+            - name: XUYE_WORKS_FILE
+              value: /content/works.json
             - name: PROVIDER
               valueFrom:
                 configMapKeyRef: { name: xuye-agent-config, key: PROVIDER }
@@ -57,10 +59,18 @@ spec:
               value: "true"
             - name: XUYE_TRUST_PROXY_AUTH_HEADERS
               value: "true"
+          volumeMounts:
+            - name: works
+              mountPath: /content
+              readOnly: true
           readinessProbe:
             httpGet: { path: /api/health, port: http }
           livenessProbe:
             httpGet: { path: /api/health, port: http }
+      volumes:
+        - name: works
+          configMap:
+            name: xuye-works
 ---
 apiVersion: v1
 kind: Service

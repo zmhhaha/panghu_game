@@ -1,0 +1,67 @@
+{
+  "works": [
+    {
+      "id": "journey-west",
+      "title": "西游记",
+      "chapter": "第一回 灵根育孕源流出",
+      "author": "吴承恩 · 公共领域文本",
+      "cast": "孙悟空 · 菩提祖师",
+      "language": "zh-CN",
+      "text": "盖闻天地之数，有十二万九千六百岁为一元。一元之中，分为十二会，每会该一万八百岁。且就一日而论：子时得阳气，而丑则鸡鸣；寅不通光，而卯则日出。\n\n再说东胜神洲，海外有一国土，名曰傲来国。国近大海，海中有一座名山，唤为花果山。那座山正当顶上，有一块仙石。\n\n石上有九窍八孔，按九宫八卦。四面更无树木遮阴，左右倒有芝兰相衬。盖自开辟以来，每受天真地秀，日精月华，感之既久，遂有灵通之意。"
+    },
+    {
+      "id": "dream-red-chamber",
+      "title": "红楼梦",
+      "chapter": "第一回 甄士隐梦幻识通灵",
+      "author": "曹雪芹 · 公共领域文本",
+      "cast": "甄士隐 · 贾雨村",
+      "language": "zh-CN",
+      "text": "列位看官：你道此书从何而来？说起根由虽近荒唐，细按则深有趣味。待在下将此来历注明，方使阅者了然不惑。\n\n原来女娲氏炼石补天之时，于大荒山无稽崖炼成高经十二丈、方经二十四丈顽石三万六千五百零一块。娲皇氏只用了三万六千五百块，只单单的剩下一块未用，便弃在此山青埂峰下。\n\n谁知此石自经锻炼之后，灵性已通，因见众石俱得补天，独自己无材不堪入选，遂自怨自艾，日夜悲号惭愧。"
+    },
+    {
+      "id": "strange-tales",
+      "title": "聊斋志异",
+      "chapter": "卷一 耳中人",
+      "author": "蒲松龄 · 公共领域文本",
+      "cast": "谭晋玄 · 耳中人",
+      "language": "zh-CN",
+      "text": "谭晋玄，淄川人。少读书，苦志不遑寝食。一日，方读，忽闻耳中有人小语如蝇，曰：‘可以休矣。’谛听之，又无声。\n\n心窃异之。次日，复闻如前，方悟为耳中语也。乃以两手指掩耳，俯首而听。其声益微，似在耳内。\n\n自此每读至夜深，辄闻其人相劝。晋玄初以为怪，久之竟如有一位看不见的同窗，守在灯影之外。"
+    },
+    {
+      "id": "pride-prejudice",
+      "title": "Pride and Prejudice",
+      "chapter": "Chapter I · Original",
+      "author": "Jane Austen · Public Domain",
+      "cast": "Elizabeth Bennet · Mr. Darcy",
+      "language": "en-US",
+      "text": "It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.\n\nHowever little known the feelings or views of such a man may be on his first entering a neighbourhood, this truth is so well fixed in the minds of the surrounding families, that he is considered as the rightful property of some one or other of their daughters.\n\n‘My dear Mr. Bennet,’ said his lady to him one day, ‘have you heard that Netherfield Park is let at last?’\n\nMr. Bennet replied that he had not."
+    },
+    {
+      "id": "pride-prejudice-zh",
+      "title": "傲慢与偏见",
+      "chapter": "第一章 · 中文译文",
+      "author": "Jane Austen 原作 · 本项目整理译文",
+      "cast": "伊丽莎白·班纳特 · 达西先生",
+      "language": "zh-CN",
+      "text": "凡是拥有一笔可观财产的单身男子，总免不了需要一位妻子；这几乎是人人默认的真理。\n\n这样一个人初到某地时，旁人也许并不清楚他的感情与见解；然而周围各家早已深信不疑，认定他终将成为某一位女儿的归宿。\n\n‘亲爱的班纳特先生，’一天班纳特太太说，‘你听说尼日斐花园终于租出去了吗？’\n\n班纳特先生回答说没有。"
+    },
+    {
+      "id": "frankenstein",
+      "title": "Frankenstein",
+      "chapter": "Letter I · Original",
+      "author": "Mary Shelley · Public Domain",
+      "cast": "Robert Walton · Victor Frankenstein",
+      "language": "en-US",
+      "text": "You will rejoice to hear that no disaster has accompanied the commencement of an enterprise which you have regarded with such evil forebodings. I arrived here yesterday, and my first task is to assure my dear sister of my welfare.\n\nI am already far north of London; and as I walk in the streets of Petersburgh, I feel a cold northern breeze play upon my cheeks, which braces my nerves and fills me with delight.\n\nI have hired a vessel and am preparing my companions for the voyage. We shall sail toward the pole, where the compass has no certainty and the sea keeps its own counsel."
+    },
+    {
+      "id": "frankenstein-zh",
+      "title": "弗兰肯斯坦",
+      "chapter": "书信一 · 中文译文",
+      "author": "Mary Shelley 原作 · 本项目整理译文",
+      "cast": "罗伯特·沃尔顿 · 维克多·弗兰肯斯坦",
+      "language": "zh-CN",
+      "text": "你听到这个消息一定会高兴：你曾忧虑重重的那项事业，在开端并未遭遇任何灾祸。我昨日抵达此地，首要之事便是让亲爱的妹妹知道我一切安好。\n\n我已经远在伦敦以北。当我走在彼得堡的街道上，冰冷的北风掠过面颊，令我精神振奋，心中充满喜悦。\n\n我已雇好一艘船，正为航程准备同伴。我们将驶向北极，那里罗盘不再可靠，而大海自有它沉默的意志。"
+    }
+  ]
+}

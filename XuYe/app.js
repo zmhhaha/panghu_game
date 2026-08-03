@@ -22,7 +22,7 @@ const INITIAL_STORY = `雨从下午四点开始落，到了夜里，整座临川
 
 “无论你听见谁的声音，”他说，“都不要开门。”`;
 
-const WORKS = [
+let WORKS = [
   { id: "journey-west", title: "西游记", chapter: "第一回 · 灵根育孕源流出", author: "吴承恩 · 公共领域文本", cast: "孙悟空 · 菩提祖师", language: "zh-CN", text: "盖闻天地之数，有十二万九千六百岁为一元。一元之中，分为十二会，每会该一万八百岁。且就一日而论：子时得阳气，而丑则鸡鸣；寅不通光，而卯则日出；辰时食后，而巳则挨排；日午天中，未时西蹉；申时晡，而日落酉；戌黄昏，而人定亥。譬于大数，若到戌会之终，则天地昏蒙而万物否矣。\\n\\n再说东胜神洲。海外有一国土，名曰傲来国。国近大海，海中有一座名山，唤为花果山。那座山正当顶上，有一块仙石。其石有三丈六尺五寸高，有二丈四尺围圆。\\n\\n石上有九窍八孔，按九宫八卦。四面更无树木遮阴，左右倒有芝兰相衬。盖自开辟以来，每受天真地秀，日精月华，感之既久，遂有灵通之意。内育仙胞，一日迸裂，产一石卵，似圆球样大。因见风，化作一个石猴，五官俱备，四肢皆全。\\n\\n那猴在山中，却会行走跳跃，食草木，饮涧泉，采山花，觅树果；与狼虫为伴，虎豹为群，獐鹿为友，猕猿为亲；夜宿石崖之下，朝游峰洞之中。真是“山中无甲子，寒尽不知年”。" },
   { id: "pride-prejudice", title: "Pride and Prejudice", chapter: "Chapter I", author: "Jane Austen · Public Domain", cast: "Elizabeth Bennet · Mr. Darcy", language: "en-US", text: "It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.\\n\\nHowever little known the feelings or views of such a man may be on his first entering a neighbourhood, this truth is so well fixed in the minds of the surrounding families, that he is considered as the rightful property of some one or other of their daughters.\\n\\n“My dear Mr. Bennet,” said his lady to him one day, “have you heard that Netherfield Park is let at last?”\\n\\nMr. Bennet replied that he had not.\\n\\n“But it is,” returned she; “for Mrs. Long has just been here, and she told me all about it.”\\n\\nMr. Bennet made no answer.\\n\\n“Do you not want to know who has taken it?” cried his wife impatiently.\\n\\n“You want to tell me, and I have no objection to hearing it.”" },
   { id: "frankenstein", title: "Frankenstein", chapter: "Letter I · To Mrs. Saville", author: "Mary Shelley · Public Domain", cast: "Robert Walton · Victor Frankenstein", language: "en-US", text: "You will rejoice to hear that no disaster has accompanied the commencement of an enterprise which you have regarded with such evil forebodings. I arrived here yesterday, and my first task is to assure my dear sister of my welfare, and increase your confidence in the success of my undertaking.\\n\\nI am already far north of London; and as I walk in the streets of Petersburgh, I feel a cold northern breeze play upon my cheeks, which braces my nerves, and fills me with delight. Do you understand this feeling? This breeze, which has travelled from the regions towards which I am advancing, gives me a foretaste of those icy climes.\\n\\nI have hired a vessel and am preparing my companions for the voyage. We shall sail toward the pole, where the compass has no certainty and the sea keeps its own counsel. I cannot describe the pleasure I feel when I imagine the approach of that place; it is the same as a traveller might feel before entering an unexplored country.\\n\\nI am full of hope, and ready to meet the dangers that lie before me. Yet tonight, while the crew slept, I heard a sound beneath the ice, as if something enormous had moved below the ship." },
@@ -34,7 +34,7 @@ const SCOPES = [
   { id: "large", title: "大范围改编", detail: "保留世界与人物，允许重塑后续命运。", hint: "从原作的种子长出另一条主线" },
 ];
 
-const DEFAULT_WORK = WORKS[0];
+let DEFAULT_WORK = WORKS[0];
 const STORAGE_KEY_BASE = "xuye-reader-state-v1";
 const PLAYER_ID_KEY = "xuye-player-id-v1";
 function playerStorageKey() {
@@ -105,6 +105,7 @@ const dom = {
   libraryButton: document.querySelector("#libraryButton"),
   libraryDialog: document.querySelector("#libraryDialog"),
   libraryForm: document.querySelector("#libraryForm"),
+  librarySearch: document.querySelector("#librarySearch"),
   workList: document.querySelector("#workList"),
   scopeList: document.querySelector("#scopeList"),
   scopeHint: document.querySelector("#scopeHint"),
@@ -127,6 +128,7 @@ let speechWaitTimer = 0;
 let activeUtterance = null;
 let remoteStateReady = false;
 let remoteSaveTimer = 0;
+let librarySearchTerm = "";
 
 function totalLength() {
   return state.segments.reduce((sum, segment) => sum + segment.text.length, 0);
@@ -138,6 +140,31 @@ function fullText() {
 
 function sourceText(work) {
   return work.text.replaceAll("\\n", "\n");
+}
+
+async function loadWorks() {
+  try {
+    const response = await fetch("/api/works", { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (!Array.isArray(payload.works) || !payload.works.length) return;
+    if (!payload.works.every((work) => work && typeof work.id === "string" && typeof work.text === "string")) return;
+    WORKS = payload.works;
+    DEFAULT_WORK = WORKS[0];
+    if (!WORKS.some((work) => work.id === state.workId)) {
+      state.workId = DEFAULT_WORK.id;
+      state.scope = "local";
+      state.segments = [{ id: crypto.randomUUID(), type: "author", text: sourceText(DEFAULT_WORK) }];
+      state.revealed = initialReveal(sourceText(DEFAULT_WORK));
+      state.playhead = state.revealed;
+      state.history = [];
+    }
+    pendingWorkId = WORKS.some((work) => work.id === pendingWorkId) ? pendingWorkId : state.workId;
+    renderLibrary();
+    render();
+  } catch {
+    // Keep the embedded catalog available when the server catalog is unavailable.
+  }
 }
 
 function currentWork() {
@@ -535,7 +562,22 @@ function setPlayhead(position) {
 
 function renderLibrary() {
   dom.workList.replaceChildren();
-  for (const work of WORKS) {
+  const query = librarySearchTerm.trim().toLocaleLowerCase();
+  const visibleWorks = WORKS.filter((work) => {
+    if (!query) return true;
+    return [work.title, work.chapter, work.author, work.cast, work.language]
+      .filter(Boolean)
+      .join(" ")
+      .toLocaleLowerCase()
+      .includes(query);
+  });
+  if (!visibleWorks.length) {
+    const empty = document.createElement("p");
+    empty.className = "work-list__empty";
+    empty.textContent = "没有匹配的作品";
+    dom.workList.append(empty);
+  }
+  for (const work of visibleWorks) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "work-option";
@@ -587,6 +629,7 @@ function renderLibrary() {
 }
 
 function openLibrary() {
+  void loadWorks();
   if (state.generating) {
     showToast("当前续写完成后才能更换作品。");
     return;
@@ -853,6 +896,10 @@ dom.intervention.addEventListener("input", () => {
 });
 dom.writeForm.addEventListener("submit", commitIntervention);
 dom.libraryForm.addEventListener("submit", startSelectedWork);
+dom.librarySearch.addEventListener("input", () => {
+  librarySearchTerm = dom.librarySearch.value;
+  renderLibrary();
+});
 dom.closeDialog.addEventListener("click", () => dom.writeDialog.close());
 dom.cancelWrite.addEventListener("click", () => dom.writeDialog.close());
 dom.modelState.addEventListener("click", () => dom.connectionDialog.showModal());
@@ -918,3 +965,4 @@ if (libraryNeedsChoice) {
 }
 loadModelState();
 loadRemoteState();
+loadWorks();

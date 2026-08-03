@@ -47,6 +47,7 @@ def env(name: str, fallback: str = "") -> str:
 
 DB_PATH = Path(env("XUYE_DB_PATH", str(ROOT / "xuye.db")))
 DATABASE_URL = env("DATABASE_URL")
+WORKS_FILE = Path(env("XUYE_WORKS_FILE", str(ROOT / "content" / "works.json")))
 AUTH_REQUIRED = env("XUYE_AUTH_REQUIRED", "0").lower() in {"1", "true", "yes"}
 TRUST_PROXY_AUTH_HEADERS = env("XUYE_TRUST_PROXY_AUTH_HEADERS", "0").lower() in {"1", "true", "yes"}
 
@@ -110,6 +111,17 @@ def save_state(user_id: str, payload: dict[str, Any]) -> None:
             "ON CONFLICT(user_id) DO UPDATE SET state_json=excluded.state_json, updated_at=excluded.updated_at",
             (user_id, encoded),
         )
+
+
+def load_works() -> list[dict[str, Any]]:
+    payload = json.loads(WORKS_FILE.read_text(encoding="utf-8"))
+    works = payload.get("works") if isinstance(payload, dict) else None
+    if not isinstance(works, list) or not works:
+        raise ValueError("works catalog must contain a non-empty works list")
+    required = {"id", "title", "chapter", "author", "cast", "language", "text"}
+    if not all(isinstance(work, dict) and required <= work.keys() for work in works):
+        raise ValueError("works catalog contains an invalid entry")
+    return works
 
 
 def model_config() -> dict[str, Any]:
@@ -263,6 +275,12 @@ class XuYeHandler(BaseHTTPRequestHandler):
                     "host": config["host"] or None,
                 }
             )
+            return
+        if path == "/api/works":
+            try:
+                self.send_json({"works": load_works()})
+            except (OSError, ValueError, json.JSONDecodeError):
+                self.send_json({"error": "作品目录暂不可用"}, HTTPStatus.SERVICE_UNAVAILABLE)
             return
         if path == "/api/auth/me":
             user = request_user(self)
