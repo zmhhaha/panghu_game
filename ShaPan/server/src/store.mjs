@@ -208,8 +208,22 @@ class PostgresStore {
       return { kind: "ok", order, duplicate: false };
     } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
   }
-  async advanceRunningGames() {
-    const { rows } = await this.pool.query(`select id from shapan.campaign_instances where status = 'running'`);
+  async advanceRunningGames(intervalMs = 5000) {
+    const { rows } = await this.pool.query(
+      `with due as (
+         select id from shapan.campaign_instances
+         where status = 'running' and next_tick_at <= now()
+         order by next_tick_at
+         for update skip locked
+         limit 64
+       )
+       update shapan.campaign_instances game
+       set next_tick_at = now() + ($1::text || ' milliseconds')::interval
+       from due
+       where game.id = due.id
+       returning game.id`,
+      [intervalMs]
+    );
     const events = [];
     for (const row of rows) {
       const event = await this.advanceGame(row.id);
@@ -221,6 +235,8 @@ class PostgresStore {
     const client = await this.pool.connect();
     try {
       await client.query("begin");
+      const { rows: locks } = await client.query(`select pg_try_advisory_xact_lock(hashtextextended($1, 0)) as acquired`, [gameId]);
+      if (!locks[0]?.acquired) { await client.query("rollback"); return null; }
       const { rows } = await client.query(`select id, clock_minute, last_sequence, status from shapan.campaign_instances where id = $1 for update`, [gameId]);
       const game = rows[0];
       if (!game || game.status !== "running") { await client.query("rollback"); return null; }

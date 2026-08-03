@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+html { background: #111613; }
+body { margin: 0; background: #111613; color: #e4e7df; letter-spacing: 0; }
+button, input, select, textarea { font: inherit; }
+button, a, select { -webkit-tap-highlight-color: transparent; }
+::selection { background: #b78a5a; color: #111613; }
+
+@layer components {
+  .war-grid { background-image: linear-gradient(rgba(228,231,223,.075) 1px, transparent 1px), linear-gradient(90deg, rgba(228,231,223,.075) 1px, transparent 1px); background-size: 34px 34px; }
+  .map-paper { background-color: #778971; background-image: radial-gradient(rgba(244,238,211,.14) .7px, transparent .7px); background-size: 5px 5px; }
+  .terrain-river { background: rgba(85,118,139,.75); clip-path: polygon(0 15%, 13% 26%, 30% 20%, 44% 40%, 62% 36%, 79% 55%, 100% 48%, 100% 67%, 80% 70%, 60% 53%, 42% 58%, 27% 39%, 12% 45%, 0 35%); }
+  .map-label { text-shadow: 0 1px 0 rgba(255,255,255,.5); font-family: Georgia, "Noto Serif SC", serif; letter-spacing: .05em; }
+  .mil-marker { box-shadow: 2px 2px 0 rgba(17,22,19,.35); }
+  .signal-rule { background-image: repeating-linear-gradient(90deg, rgba(228,231,223,.18) 0 5px, transparent 5px 10px); }
+}

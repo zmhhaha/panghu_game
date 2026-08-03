@@ -5,7 +5,8 @@ import { createStore } from "./store.mjs";
 import { getPrincipal } from "./auth.mjs";
 
 const store = await createStore();
-const port = Number(process.env.PORT || 3001);
+const portFlag = process.argv.indexOf("--port");
+const port = Number(portFlag >= 0 ? process.argv[portFlag + 1] : process.env.PORT || 3001);
 const maxBodyBytes = 64 * 1024;
 
 function sendJson(response, status, payload) {

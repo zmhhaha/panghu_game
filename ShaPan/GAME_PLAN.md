@@ -355,7 +355,7 @@ MVP 使用营级聚合模拟，不模拟单兵。
 - `agent-runtime`：命令解析、关键决策和报告生成。
 - `campaign-content`：地图、地图图式、单位序列、指挥官、事件和目标。
 - `map-style-runtime`：按战役加载底图来源、网格、军标、字体、语言、图例和作战标绘规则。
-- `client`：沙盘、消息台、命令台、时间控制和战后复盘。
+- `client`：沙盘、消息台、命令台、时间控制和战后复盘。正式 Web 使用 Next.js App Router、React、Tailwind CSS、`lucide-react` 与 ShaPan 自己的 shadcn/ui 风格 `components/ui`；不依赖或复制 `QianFu` 页面组件。根目录原生 HTML/CSS/JS 只作为早期视觉原型保留。
 
 ### 14.2 地图图式配置
 
@@ -477,9 +477,9 @@ Vault -> ExternalSecret -> shapan-database / shapan-agent Secret
 
 Vault 路径按项目隔离：
 
-- `secret/shapan/database`：数据库连接所需字段，ESO 读取路径为 `secret/data/shapan/database`。
+- 数据库密码沿用公共 PostgreSQL 的 `secret/postgres/app`，ESO 将它渲染为仅存在于 `shapan` namespace 的 `shapan-database.url`；应用不直接读取公共 Vault 路径，也不重复保存一份密码。
 - `secret/shapan/agent`：LLM API key、base URL 与模型名，ESO 读取路径为 `secret/data/shapan/agent`。
-- OAuth 客户端凭据继续由 OAuth 公共服务管理，但必须在 Casdoor 中为 `ShaPan` 注册独立应用和回调地址。
+- OAuth 客户端凭据继续由 OAuth 公共服务管理。第一版在现有 Casdoor 游戏应用中增加 `ShaPan` 回调地址；若以后需要独立授权策略，再拆分为独立 OIDC 客户端。
 
 初始副本建议为 Web 2、API 2、Sim Worker 1、Agent Worker 1。Sim Worker 即使后续扩容也必须遵守每战局单租约；Agent Worker 可以按待处理任务数量水平扩容。所有服务提供 readiness/liveness probe、资源 requests/limits 和结构化日志，日志使用 `request_id`、`game_id`、`event_sequence` 关联，但不输出命令全文、密钥或未公开敌情。
 

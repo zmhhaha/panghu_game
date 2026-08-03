@@ -20,11 +20,16 @@ create table if not exists shapan.campaign_instances (
   objective text not null,
   random_seed uuid not null,
   last_sequence bigint not null default 0,
+  next_tick_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table shapan.campaign_instances
+  add column if not exists next_tick_at timestamptz not null default now();
 create index if not exists campaign_instances_owner_updated_idx
   on shapan.campaign_instances (owner_user_id, updated_at desc);
+create index if not exists campaign_instances_due_tick_idx
+  on shapan.campaign_instances (next_tick_at) where status = 'running';
 
 create table if not exists shapan.world_events (
   game_id uuid not null references shapan.campaign_instances(id) on delete cascade,

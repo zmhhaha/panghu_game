@@ -16,7 +16,7 @@ spec:
         - name: web
           image: arm-cluster-master:5000/shapan-web:latest
           imagePullPolicy: Always
-          ports: [{ name: http, containerPort: 80 }]
+          ports: [{ name: http, containerPort: 3000 }]
           readinessProbe:
             httpGet: { path: /, port: http }
             initialDelaySeconds: 3
@@ -37,7 +37,7 @@ metadata:
   labels: { app: shapan-web }
 spec:
   selector: { app: shapan-web }
-  ports: [{ name: http, port: 80, targetPort: http }]
+  ports: [{ name: http, port: 3000, targetPort: http }]
 ---
 apiVersion: v1
 kind: Service

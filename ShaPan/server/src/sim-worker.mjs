@@ -7,7 +7,7 @@ let running = true;
 async function tick() {
   if (!running) return;
   try {
-    const events = await store.advanceRunningGames();
+    const events = await store.advanceRunningGames(intervalMs);
     if (events.length) console.log(`[shapan-sim] advanced ${events.length} game(s)`);
   } catch (error) {
     console.error(`[shapan-sim] tick failed: ${error.message}`);

@@ -47,21 +47,10 @@ spec:
           command: ["node", "server/src/agent-worker.mjs"]
           envFrom:
             - configMapRef: { name: shapan-config }
+            - secretRef: { name: shapan-agent, optional: true }
           env:
             - name: DATABASE_URL
               valueFrom: { secretKeyRef: { name: shapan-database, key: url } }
-            - name: OPENAI_API_KEY
-              valueFrom: { secretKeyRef: { name: shapan-agent, key: OPENAI_API_KEY, optional: true } }
-            - name: OPENAI_BASE_URL
-              valueFrom: { secretKeyRef: { name: shapan-agent, key: OPENAI_BASE_URL, optional: true } }
-            - name: OPENAI_MODEL
-              valueFrom: { secretKeyRef: { name: shapan-agent, key: OPENAI_MODEL, optional: true } }
-            - name: DEEPSEEK_API_KEY
-              valueFrom: { secretKeyRef: { name: shapan-agent, key: DEEPSEEK_API_KEY, optional: true } }
-            - name: DEEPSEEK_BASE_URL
-              valueFrom: { secretKeyRef: { name: shapan-agent, key: DEEPSEEK_BASE_URL, optional: true } }
-            - name: DEEPSEEK_MODEL
-              valueFrom: { secretKeyRef: { name: shapan-agent, key: DEEPSEEK_MODEL, optional: true } }
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits: { cpu: 500m, memory: 512Mi }

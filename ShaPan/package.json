@@ -7,10 +7,13 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "dev": "python -m http.server 4186",
-    "api": "node server/src/index.mjs",
+    "api": "node server/src/index.mjs --port 3188",
     "sim": "node server/src/sim-worker.mjs",
     "agent": "node server/src/agent-worker.mjs",
-    "check": "node --check server/src/index.mjs && node --check server/src/store.mjs && node --check server/src/sim-worker.mjs && node --check server/src/agent-worker.mjs"
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "web:typecheck": "npm --prefix web run typecheck",
+    "check": "node --check server/src/index.mjs && node --check server/src/store.mjs && node --check server/src/sim-worker.mjs && node --check server/src/agent-worker.mjs && npm --prefix web run typecheck"
   },
   "dependencies": {
     "pg": "^8.13.1"
