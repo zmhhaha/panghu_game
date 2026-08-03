@@ -10,6 +10,33 @@ ShaPan 使用独立应用服务，只复用集群已有的 PostgreSQL、Vault/ES
 - Casdoor 现有游戏 OIDC 应用已加入回调地址 `https://shapan.panghuer.top/oauth2/callback`。
 - Vault 中存在 `secret/postgres/app` 的 `POSTGRES_PASSWORD`。
 
+## 内网软件源
+
+Dockerfile 默认使用以下来源：
+
+- Node 基础镜像：`arm-cluster-master:5000/node:20-bookworm-slim`。
+- Debian APT：`https://mirrors.ustc.edu.cn`。
+- npm：`https://registry.npmmirror.com`。
+
+私有仓库首次还没有 Node 镜像时，在一台能够访问外部镜像源的机器上执行一次：
+
+```bash
+cd panghu_game/ShaPan
+BASE_REGISTRY=arm-cluster-master:5000 ./deploy/mirror-base-images.sh
+```
+
+完全隔离的内网应将外部基础镜像离线导入私有仓库，并把软件源覆盖为局域网代理：
+
+```bash
+BASE_REGISTRY=arm-cluster-master:5000 \
+APT_MIRROR=http://apt-mirror.infra.lan \
+NPM_REGISTRY=http://npm.infra.lan \
+IMAGE_TAG=$(git rev-parse --short HEAD) \
+./deploy/build-images.sh
+```
+
+`APT_MIRROR` 应提供 `/debian` 与 `/debian-security` 路径。`NPM_REGISTRY` 应为 npm 兼容 registry。当前仓库没有记录你局域网内这两个服务的实际域名，因此不能在 Dockerfile 中臆造地址。
+
 需要启用模型时，把供应商凭据写入 Vault，例如：
 
 ```bash
@@ -23,7 +50,7 @@ kubectl exec -n vault vault-0 -- vault kv put secret/shapan/agent \
 
 ```bash
 cd panghu_game/ShaPan
-REGISTRY=arm-cluster-master:5000 IMAGE_TAG=$(git rev-parse --short HEAD) ./deploy/build-images.sh
+REGISTRY=arm-cluster-master:5000 BASE_REGISTRY=arm-cluster-master:5000 IMAGE_TAG=$(git rev-parse --short HEAD) ./deploy/build-images.sh
 kubectl apply -f deploy/k8s/namespace.yaml
 kubectl apply -f deploy/integrations/vault-externalsecret.yaml
 kubectl apply -f deploy/integrations/oauth2-proxy.yaml
