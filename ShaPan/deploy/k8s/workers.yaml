@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shapan-sim-worker
+  namespace: shapan
+  labels: { app: shapan-sim-worker }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: shapan-sim-worker }
+  template:
+    metadata:
+      labels: { app: shapan-sim-worker }
+    spec:
+      containers:
+        - name: sim
+          image: arm-cluster-master:5000/shapan-api:latest
+          imagePullPolicy: Always
+          command: ["node", "server/src/sim-worker.mjs"]
+          envFrom:
+            - configMapRef: { name: shapan-config }
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: shapan-database, key: url } }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shapan-agent-worker
+  namespace: shapan
+  labels: { app: shapan-agent-worker }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: shapan-agent-worker }
+  template:
+    metadata:
+      labels: { app: shapan-agent-worker }
+    spec:
+      containers:
+        - name: agent
+          image: arm-cluster-master:5000/shapan-api:latest
+          imagePullPolicy: Always
+          command: ["node", "server/src/agent-worker.mjs"]
+          envFrom:
+            - configMapRef: { name: shapan-config }
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: shapan-database, key: url } }
+            - name: OPENAI_API_KEY
+              valueFrom: { secretKeyRef: { name: shapan-agent, key: OPENAI_API_KEY, optional: true } }
+            - name: OPENAI_BASE_URL
+              valueFrom: { secretKeyRef: { name: shapan-agent, key: OPENAI_BASE_URL, optional: true } }
+            - name: OPENAI_MODEL
+              valueFrom: { secretKeyRef: { name: shapan-agent, key: OPENAI_MODEL, optional: true } }
+            - name: DEEPSEEK_API_KEY
+              valueFrom: { secretKeyRef: { name: shapan-agent, key: DEEPSEEK_API_KEY, optional: true } }
+            - name: DEEPSEEK_BASE_URL
+              valueFrom: { secretKeyRef: { name: shapan-agent, key: DEEPSEEK_BASE_URL, optional: true } }
+            - name: DEEPSEEK_MODEL
+              valueFrom: { secretKeyRef: { name: shapan-agent, key: DEEPSEEK_MODEL, optional: true } }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }

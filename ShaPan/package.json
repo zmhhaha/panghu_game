@@ -1,0 +1,18 @@
+{
+  "name": "shapan",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A server-authoritative WWII command-and-communications sandbox",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "python -m http.server 4186",
+    "api": "node server/src/index.mjs",
+    "sim": "node server/src/sim-worker.mjs",
+    "agent": "node server/src/agent-worker.mjs",
+    "check": "node --check server/src/index.mjs && node --check server/src/store.mjs && node --check server/src/sim-worker.mjs && node --check server/src/agent-worker.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}

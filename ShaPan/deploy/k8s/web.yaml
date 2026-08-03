@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shapan-web
+  namespace: shapan
+  labels: { app: shapan-web }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: shapan-web }
+  template:
+    metadata:
+      labels: { app: shapan-web }
+    spec:
+      containers:
+        - name: web
+          image: arm-cluster-master:5000/shapan-web:latest
+          imagePullPolicy: Always
+          ports: [{ name: http, containerPort: 80 }]
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { cpu: 150m, memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shapan-web
+  namespace: shapan
+  labels: { app: shapan-web }
+spec:
+  selector: { app: shapan-web }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  namespace: shapan
+spec:
+  selector: { app: shapan-web }
+  ports: [{ name: http, port: 80, targetPort: http }]

@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oauth2-proxy-config-shapan
+  namespace: oauth
+data:
+  alpha-config.yaml: |
+    providers:
+      - id: oidc
+        provider: oidc
+        clientID: ${OIDC_CLIENT_ID}
+        clientSecret: ${OIDC_CLIENT_SECRET}
+        scope: "openid email profile"
+        oidcConfig:
+          issuerURL: ${OIDC_ISSUER_URL}
+          userIDClaim: "sub"
+          emailClaim: "email"
+          groupsClaim: "groups"
+          audienceClaims: ["aud"]
+    upstreamConfig:
+      upstreams:
+        - id: shapan-api
+          path: /api/
+          uri: http://shapan-api.shapan.svc.cluster.local:3001
+          passHostHeader: true
+        - id: shapan-web
+          path: /
+          uri: http://ui.shapan.svc.cluster.local:80
+          passHostHeader: true
+    injectRequestHeaders:
+      - name: X-Auth-Request-Sub
+        values: [{ claim: sub }]
+      - name: X-Forwarded-User
+        values: [{ claim: user }]
+      - name: X-Forwarded-Email
+        values: [{ claim: email }]
+      - name: X-Forwarded-Preferred-Username
+        values: [{ claim: preferred_username }]
+    server:
+      BindAddress: "0.0.0.0:4180"
+    metricsServer:
+      BindAddress: "0.0.0.0:44180"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy-shapan
+  namespace: oauth
+  labels: { app: oauth2-proxy-shapan }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: oauth2-proxy-shapan }
+  template:
+    metadata:
+      labels: { app: oauth2-proxy-shapan }
+    spec:
+      containers:
+        - name: oauth2-proxy
+          image: arm-cluster-master:5000/oauth2-proxy:v7.8.0
+          imagePullPolicy: Always
+          args:
+            - "--alpha-config=/etc/oauth2-proxy/alpha-config.yaml"
+            - "--cookie-secret=$(COOKIE_SECRET)"
+            - "--cookie-domain=.panghuer.top"
+            - "--cookie-secure=true"
+            - "--cookie-samesite=lax"
+            - "--cookie-expire=720h"
+            - "--cookie-refresh=24h"
+            - "--cookie-name=_shapan_oauth2_proxy"
+            - "--email-domain=$(ALLOWED_DOMAINS)"
+            - "--redirect-url=https://shapan.panghuer.top/oauth2/callback"
+            - "--reverse-proxy=true"
+            - "--silence-ping-logging=true"
+            - "--ssl-insecure-skip-verify=true"
+          ports:
+            - { containerPort: 4180, name: http }
+            - { containerPort: 44180, name: metrics }
+          envFrom:
+            - secretRef: { name: oauth2-proxy-secret }
+          volumeMounts:
+            - { name: config, mountPath: /etc/oauth2-proxy, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /ping, port: 4180 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /ping, port: 4180 }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+      volumes:
+        - name: config
+          configMap: { name: oauth2-proxy-config-shapan }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy-shapan
+  namespace: oauth
+  labels: { app: oauth2-proxy-shapan }
+spec:
+  selector: { app: oauth2-proxy-shapan }
+  ports:
+    - { name: http, port: 4180, targetPort: http }
+    - { name: metrics, port: 44180, targetPort: metrics }

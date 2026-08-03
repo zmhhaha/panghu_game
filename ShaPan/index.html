@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#171a17" />
+    <title>最后确认位置 · 台儿庄战役</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell" id="appShell" data-scenario="taierzhuang">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="unit-crest" id="unitCrest" aria-hidden="true"><span>二</span></div>
+          <div class="brand-copy">
+            <p class="eyebrow" id="commandLabel">第五战区 · 第二集团军前方指挥所</p>
+            <h1 id="battleName">台儿庄战役</h1>
+            <label class="scenario-picker" for="scenarioSelect">
+              <span>战役</span>
+              <select id="scenarioSelect" aria-label="切换战役">
+                <option value="taierzhuang">亚洲 · 台儿庄</option>
+                <option value="arnhem">欧洲 · 阿纳姆</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <section class="objective-strip" aria-label="当前战役目标">
+          <div class="objective-main">
+            <span class="objective-kicker">主要目标</span>
+            <strong id="objectiveText">坚守台儿庄核心阵地</strong>
+          </div>
+          <div class="objective-progress" aria-label="目标剩余时间">
+            <span id="deadlineText">剩余 12小时00分</span>
+            <div class="progress-track"><span id="deadlineProgress"></span></div>
+          </div>
+        </section>
+
+        <div class="clock-block">
+          <div class="clock-date" id="clockDate">1938年3月31日</div>
+          <time id="battleClock" datetime="1938-03-31T18:00">18:00</time>
+          <div class="time-controls" role="group" aria-label="时间速度">
+            <button class="icon-button" id="pauseButton" type="button" title="暂停时间" aria-label="暂停时间">
+              <span class="pause-icon" aria-hidden="true"></span>
+            </button>
+            <button class="speed-button active" type="button" data-speed="1">1×</button>
+            <button class="speed-button" type="button" data-speed="2">2×</button>
+            <button class="speed-button" type="button" data-speed="4">4×</button>
+          </div>
+        </div>
+      </header>
+
+      <nav class="mobile-tabs" aria-label="指挥台视图">
+        <button type="button" data-view="signals"><span class="tab-count" id="mobileUnread">3</span>通信</button>
+        <button class="active" type="button" data-view="map">沙盘</button>
+        <button type="button" data-view="orders">命令</button>
+      </nav>
+
+      <main class="command-grid">
+        <aside class="signals-panel app-panel" data-panel="signals">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label">SIGNALS / 通信</p>
+              <h2>收件台</h2>
+            </div>
+            <span class="unread-badge" id="unreadCount">3 未读</span>
+          </div>
+
+          <div class="signal-filters" role="tablist" aria-label="消息筛选">
+            <button class="active" type="button" data-filter="all">全部</button>
+            <button type="button" data-filter="urgent">紧急</button>
+            <button type="button" data-filter="intel">情报</button>
+            <button type="button" data-filter="sent">已发</button>
+          </div>
+
+          <div class="message-list" id="messageList" aria-live="polite"></div>
+
+          <article class="message-reader" id="messageReader">
+            <div class="reader-empty">
+              <span class="empty-mark" aria-hidden="true">···</span>
+              <p>请选择一份通信记录</p>
+            </div>
+          </article>
+        </aside>
+
+        <section class="map-panel app-panel active" data-panel="map">
+          <div class="map-toolbar">
+            <div class="map-title">
+              <p class="section-label" id="mapKicker">第五战区作战用图 / 民国二十七年</p>
+              <h2 id="mapHeading">台儿庄地区作战图</h2>
+            </div>
+            <div class="map-tools" role="group" aria-label="地图图层">
+              <button class="tool-button active" type="button" data-layer="units">部队</button>
+              <button class="tool-button active" type="button" data-layer="intel">情报</button>
+              <button class="tool-button active" type="button" data-layer="orders">军令</button>
+              <button class="tool-button active" type="button" data-layer="grid">网格</button>
+            </div>
+          </div>
+
+          <div class="map-stage" id="mapStage">
+            <div class="map-canvas" id="mapCanvas"></div>
+
+            <div class="map-status">
+              <span><i class="map-symbol friendly-symbol"></i><b id="friendlyLegend">中国军队</b></span>
+              <span><i class="map-symbol enemy-symbol"></i><b id="enemyLegend">日军敌情</b></span>
+              <span><i class="map-symbol order-symbol"></i>行动标绘</span>
+              <span><i class="status-dot confirmed"></i>已确认</span>
+              <span><i class="status-dot probable"></i>很可能</span>
+              <span><i class="status-dot unconfirmed"></i>未证实</span>
+            </div>
+
+            <article class="map-inspector" id="mapInspector"></article>
+          </div>
+
+          <footer class="map-footer">
+            <div><span class="footer-label">天气</span><strong id="weatherText">阴 · 能见度 4km</strong></div>
+            <div><span class="footer-label">日落</span><strong id="sunsetText">18:22</strong></div>
+            <div><span class="footer-label">通信态势</span><strong class="warning-text" id="signalText">城内线路多处中断</strong></div>
+            <div class="map-scale"><span></span><strong id="scaleText">2 KM</strong></div>
+          </footer>
+        </section>
+
+        <aside class="orders-panel app-panel" data-panel="orders">
+          <section class="unit-overview">
+            <div class="panel-heading compact">
+              <div>
+                <p class="section-label">COMMAND / 指挥</p>
+                <h2>部队态势</h2>
+              </div>
+              <span class="status-chip" id="contactSummary">4 / 5 联络中</span>
+            </div>
+            <div class="unit-roster" id="unitRoster"></div>
+          </section>
+
+          <section class="order-desk">
+            <div class="order-heading">
+              <div>
+                <p class="section-label">OUTGOING / 发报</p>
+                <h2>新军令</h2>
+              </div>
+              <button class="plain-button" id="clearOrder" type="button">清空</button>
+            </div>
+
+            <label class="field-label" for="recipient">收报单位</label>
+            <div class="select-wrap"><select id="recipient"></select></div>
+
+            <fieldset class="channel-fieldset">
+              <legend>通信方式</legend>
+              <div class="channel-control">
+                <button class="active" type="button" data-channel="radio">
+                  <span>无线电报</span><small data-channel-delay="radio">约 12 分钟</small>
+                </button>
+                <button type="button" data-channel="phone">
+                  <span>野战电话</span><small data-channel-delay="phone">约 5 分钟</small>
+                </button>
+                <button type="button" data-channel="courier">
+                  <span>通信员</span><small data-channel-delay="courier">约 35 分钟</small>
+                </button>
+              </div>
+            </fieldset>
+
+            <label class="field-label" for="orderText">命令正文</label>
+            <textarea id="orderText" rows="7" maxlength="420" placeholder="致第31师：固守台儿庄城内核心阵地……"></textarea>
+
+            <div class="order-meta">
+              <span id="charCount">0 / 420</span>
+              <span id="arrivalEstimate">预计 18:12 送达</span>
+            </div>
+
+            <div class="priority-row">
+              <label for="priority">优先级</label>
+              <select id="priority">
+                <option value="routine">常规</option>
+                <option value="urgent">紧急</option>
+                <option value="flash">特急</option>
+              </select>
+              <span class="risk-indicator"><i></i><span id="riskText">截获风险：中</span></span>
+            </div>
+
+            <button class="send-button" id="sendOrder" type="button">
+              <span class="send-symbol" aria-hidden="true">↗</span>
+              编码并发送
+            </button>
+          </section>
+
+          <section class="transmission-queue">
+            <div class="queue-heading">
+              <h3>传输队列</h3>
+              <span id="queueCount">2 项</span>
+            </div>
+            <div id="queueList"></div>
+          </section>
+        </aside>
+      </main>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+
+    <script src="maps.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

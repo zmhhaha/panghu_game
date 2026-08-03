@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: shapan-db-migration
+  namespace: shapan
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels: { app: shapan-db-migration }
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: arm-cluster-master:5000/shapan-api:latest
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-ec"]
+          args:
+            - for file in /app/server/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"; done
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: shapan-database, key: url }
