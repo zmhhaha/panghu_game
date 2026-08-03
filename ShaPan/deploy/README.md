@@ -15,7 +15,7 @@ ShaPan 使用独立应用服务，只复用集群已有的 PostgreSQL、Vault/ES
 Dockerfile 默认使用以下来源：
 
 - Node 基础镜像：`arm-cluster-master:5000/node:20-bookworm-slim`。
-- Debian APT：`https://mirrors.ustc.edu.cn`。
+- Debian APT：`http://mirrors.ustc.edu.cn`，使用 Debian 仓库签名校验完成 CA 证书引导。
 - npm：`https://registry.npmmirror.com`。
 
 私有仓库首次还没有 Node 镜像时，在一台能够访问外部镜像源的机器上执行一次：
@@ -36,6 +36,8 @@ IMAGE_TAG=$(git rev-parse --short HEAD) \
 ```
 
 `APT_MIRROR` 应提供 `/debian` 与 `/debian-security` 路径。`NPM_REGISTRY` 应为 npm 兼容 registry。当前仓库没有记录你局域网内这两个服务的实际域名，因此不能在 Dockerfile 中臆造地址。
+
+API 镜像会在第一次 `apt-get` 中显式安装 `ca-certificates`。不要通过 `Acquire::https::Verify-Peer=false` 绕过 TLS 校验；如果内网代理使用自签根证书，应将根证书加入基础镜像或通过受控构建上下文安装。
 
 需要启用模型时，把供应商凭据写入 Vault，例如：
 
