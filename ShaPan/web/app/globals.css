@@ -16,4 +16,16 @@ button, a, select { -webkit-tap-highlight-color: transparent; }
   .map-label { text-shadow: 0 1px 0 rgba(255,255,255,.5); font-family: Georgia, "Noto Serif SC", serif; letter-spacing: .05em; }
   .mil-marker { box-shadow: 2px 2px 0 rgba(17,22,19,.35); }
   .signal-rule { background-image: repeating-linear-gradient(90deg, rgba(228,231,223,.18) 0 5px, transparent 5px 10px); }
+  .war-console-header, .war-console-body { width: 100%; }
+  .campaign-shield { clip-path: polygon(50% 0, 92% 18%, 84% 78%, 50% 100%, 16% 78%, 8% 18%); }
+  .tactical-map { box-shadow: inset 0 0 42px rgba(50,45,33,.2); isolation: isolate; }
+  .tactical-map::after { position: absolute; inset: 0; z-index: 10; pointer-events: none; content: ""; background-image: radial-gradient(rgba(58,52,39,.13) .55px, transparent .65px); background-size: 4px 4px; mix-blend-mode: multiply; opacity: .3; }
+  .command-scroll { scrollbar-color: #566159 #1b211e; scrollbar-width: thin; }
+  .command-scroll::-webkit-scrollbar { width: 7px; }
+  .command-scroll::-webkit-scrollbar-track { background: #1b211e; }
+  .command-scroll::-webkit-scrollbar-thumb { background: #566159; border: 2px solid #1b211e; }
+}
+
+@media (max-width: 1023px) {
+  .war-console-body { gap: 1px; }
 }
