@@ -42,7 +42,7 @@ def main():
         assert desktop.get_by_role("button", name="情报", exact=True).is_visible()
         assert desktop.get_by_role("button", name="军令", exact=True).is_visible()
         assert desktop.get_by_role("button", name="网格", exact=True).is_visible()
-        assert desktop.get_by_text("0 / 5 联络中", exact=True).is_visible()
+        assert desktop.get_by_text("0 / 5 已获报告", exact=True).is_visible()
         desktop.screenshot(path=OUTPUT_DIR / "shapan-next-desktop.png", full_page=True)
         desktop_layout = layout(desktop)
 

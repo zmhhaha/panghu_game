@@ -264,12 +264,14 @@ export function WarRoom() {
   const [priority, setPriority] = useState("normal");
   const [draft, setDraft] = useState("");
   const [gameId, setGameId] = useState<string | null>(null);
+  const [controlPending, setControlPending] = useState(false);
+  const [sendingOrder, setSendingOrder] = useState(false);
   const [notice, setNotice] = useState("尚未建立服务器战局");
 
   const selectedUnit = units.find((unit) => unit.id === selectedUnitId) || units[0];
   const visibleMessages = messages.filter((message) => message.type === "sent" || message.availableAtMinute === undefined || clockMinute >= message.availableAtMinute);
   const filteredMessages = visibleMessages.filter((message) => messageFilter === "all" || message.type === messageFilter);
-  const revealedUnitIds = new Set<string>(visibleMessages.flatMap((message) => message.location ? [message.location] : []));
+  const revealedUnitIds = new Set<string>(visibleMessages.flatMap((message) => message.type !== "sent" && message.location ? [message.location] : []));
   const arrived = visibleMessages.filter((message) => message.type !== "sent").length;
   const sentMessages = visibleMessages.filter((message) => message.type === "sent");
   const progress = Math.min(100, Math.max(0, ((clockMinute - campaign.startMinute) / (campaign.deadlineMinute - campaign.startMinute)) * 100));
@@ -302,17 +304,24 @@ export function WarRoom() {
     source.addEventListener("snapshot", (event) => {
       const data = JSON.parse((event as MessageEvent).data);
       if (typeof data.game?.clockMinute === "number") setClockMinute(data.game.clockMinute);
-      const running = data.game?.status === "running";
-      setBattleStarted(running);
-      setPaused(!running);
+      if (typeof data.game?.timeScale === "number") setSpeed(data.game.timeScale);
+      const status = data.game?.status;
+      setBattleStarted(Boolean(data.game?.startedAt) || status === "running");
+      setPaused(status !== "running");
     });
     source.addEventListener("world_event", (event) => {
       const data = JSON.parse((event as MessageEvent).data);
-      if (data.type === "TIME_TICK") setClockMinute(data.clockMinute);
+      if (data.type === "TIME_TICK") {
+        setClockMinute(data.clockMinute);
+        if (typeof data.payload?.timeScale === "number") setSpeed(data.payload.timeScale);
+      }
       if (data.type === "GAME_STARTED") {
         setBattleStarted(true);
         setPaused(false);
       }
+      if (data.type === "GAME_PAUSED") setPaused(true);
+      if (data.type === "GAME_RESUMED") setPaused(false);
+      if (data.type === "GAME_SPEED_CHANGED" && typeof data.payload?.timeScale === "number") setSpeed(data.payload.timeScale);
     });
     source.onerror = () => setNotice("服务器通信暂时中断 · 正在等待重新连接");
     return () => source.close();
@@ -330,6 +339,7 @@ export function WarRoom() {
       setCampaignId(nextCampaign.id);
       setGameId(data.game.id);
       setClockMinute(data.game.clockMinute);
+      setSpeed(data.game.timeScale ?? 1);
       setNotice("战前待命 · 作战时钟尚未启动");
       setScreen("war-room");
     } catch (error) {
@@ -354,11 +364,33 @@ export function WarRoom() {
       if (!response.ok) throw new Error("开战令未能送达服务器");
       const data = await response.json();
       setClockMinute(data.game.clockMinute);
+      setSpeed(data.game.timeScale ?? 1);
       setBattleStarted(true);
       setPaused(false);
       setNotice("战役已经开始 · 等待各部队回传情报");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "开战令未能送达服务器");
+    }
+  }
+
+  async function controlBattle(action: "pause" | "resume" | "set_speed", nextSpeed?: number) {
+    if (!gameId || !battleStarted || controlPending) return;
+    setControlPending(true);
+    try {
+      const response = await fetch(`/api/v1/games/${gameId}/control`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, ...(nextSpeed ? { speed: nextSpeed } : {}) })
+      });
+      if (!response.ok) throw new Error(action === "set_speed" ? "倍速设置未能送达服务器" : "战役时钟控制失败");
+      const data = await response.json();
+      setPaused(data.game.status !== "running");
+      setSpeed(data.game.timeScale ?? speed);
+      setNotice(action === "pause" ? "战役已暂停 · 可继续阅读情报并下达军令" : action === "resume" ? "战役继续推进" : `战役速度已调整为 ${data.game.timeScale}×`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "战役时钟控制失败");
+    } finally {
+      setControlPending(false);
     }
   }
 
@@ -369,7 +401,7 @@ export function WarRoom() {
   }
 
   async function sendOrder() {
-    if (!battleStarted || draft.trim().length < 2 || !currentRecipient) return;
+    if (!battleStarted || sendingOrder || draft.trim().length < 2 || !currentRecipient) return;
     const channelName = channel === "radio" ? "无线电报" : channel === "phone" ? "野战电话" : "通信员";
     const message: Message = {
       id: `sent-${Date.now()}`,
@@ -380,17 +412,23 @@ export function WarRoom() {
       received: formatClock(clockMinute),
       location: recipient
     };
-    setMessages((items) => [message, ...items]);
-    setDraft("");
-    if (gameId) {
-      const response = await fetch(`/api/v1/games/${gameId}/orders`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ recipientId: recipient, channel, priority, text: message.body, clientCommandId: message.id })
-      });
-      setNotice(response.ok ? "命令已进入通信队列" : "命令未能送入服务器");
-    } else {
-      setNotice("命令已进入本地传输队列");
+    setSendingOrder(true);
+    try {
+      if (gameId) {
+        const response = await fetch(`/api/v1/games/${gameId}/orders`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ recipientId: recipient, channel, priority, text: message.body, clientCommandId: message.id })
+        });
+        if (!response.ok) throw new Error("命令未能送入服务器");
+      }
+      setMessages((items) => [message, ...items]);
+      setDraft("");
+      setNotice("命令已进入通信队列");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "命令未能送入服务器");
+    } finally {
+      setSendingOrder(false);
     }
   }
 
@@ -413,8 +451,8 @@ export function WarRoom() {
         <div className="flex items-center justify-between gap-3 px-4 py-2">
           <div className="text-right"><p className="text-[9px] text-muted">{campaign.startAt}</p><p className="font-mono text-3xl font-bold leading-none">{formatClock(clockMinute)}</p></div>
           <div className="flex h-8 border border-line">
-            <button type="button" disabled={!battleStarted} className="flex w-8 items-center justify-center border-r border-line text-muted disabled:opacity-40" title={battleStarted ? "战役由服务器持续推进" : "战前暂停"}><Pause size={14} /></button>
-            {[1, 2, 4].map((item) => <button key={item} type="button" onClick={() => setSpeed(item)} className={cn("w-9 border-r border-line text-xs last:border-r-0", speed === item ? "bg-field/35 text-paper" : "text-muted hover:text-paper")}>{item}×</button>)}
+            <button type="button" disabled={!battleStarted || controlPending} onClick={() => controlBattle(paused ? "resume" : "pause")} className="flex w-8 items-center justify-center border-r border-line text-muted hover:text-paper disabled:opacity-40" title={!battleStarted ? "战前暂停" : paused ? "继续战役" : "暂停战役"}>{paused && battleStarted ? <Play size={14} /> : <Pause size={14} />}</button>
+            {[1, 2, 4].map((item) => <button key={item} type="button" disabled={!battleStarted || controlPending} onClick={() => controlBattle("set_speed", item)} className={cn("w-9 border-r border-line text-xs last:border-r-0 disabled:opacity-40", speed === item ? "bg-field/35 text-paper" : "text-muted hover:text-paper")}>{item}×</button>)}
           </div>
         </div>
       </header>
@@ -449,6 +487,7 @@ export function WarRoom() {
           <TacticalMap
             campaignId={campaign.id}
             battleStarted={battleStarted}
+            paused={paused}
             canStart={Boolean(gameId)}
             layers={mapLayers}
             units={units}
@@ -467,9 +506,9 @@ export function WarRoom() {
           </div>
         </section>
 
-        <aside className="order-3 flex min-h-[760px] min-w-0 flex-col bg-panel lg:min-h-0">
+        <aside className="command-scroll order-3 flex min-h-[760px] min-w-0 flex-col bg-panel lg:min-h-0 lg:overflow-y-auto">
           <div className="shrink-0 border-b border-line">
-            <div className="flex h-[54px] items-center justify-between px-4"><div><p className="text-[9px] text-muted">COMMAND / 指挥</p><h2 className="mt-0.5 font-serif text-lg font-bold">部队态势</h2></div><span className="border border-field/70 bg-field/15 px-2 py-1 text-[10px] text-paper">{friendlyUnits.filter((unit) => revealedUnitIds.has(unit.id)).length} / {friendlyUnits.length} 联络中</span></div>
+            <div className="flex h-[54px] items-center justify-between px-4"><div><p className="text-[9px] text-muted">COMMAND / 指挥</p><h2 className="mt-0.5 font-serif text-lg font-bold">部队态势</h2></div><span className="border border-field/70 bg-field/15 px-2 py-1 text-[10px] text-paper">{friendlyUnits.filter((unit) => revealedUnitIds.has(unit.id)).length} / {friendlyUnits.length} 已获报告</span></div>
             <div className="divide-y divide-line/60 border-t border-line/70 px-3">
               {friendlyUnits.map((unit) => {
                 const known = revealedUnitIds.has(unit.id);
@@ -478,7 +517,7 @@ export function WarRoom() {
             </div>
           </div>
 
-          <div className="flex min-h-[380px] flex-1 flex-col border-b border-line px-4 py-3">
+          <div className="flex min-h-[405px] shrink-0 flex-col border-b border-line px-4 py-3">
             <div className="mb-2 flex items-center justify-between"><div><p className="text-[9px] text-muted">OUTGOING / 发报</p><h3 className="mt-0.5 font-serif text-base font-bold">新军令</h3></div><Radio size={16} className="text-copper" /></div>
             <label className="mb-1 text-[10px] text-muted" htmlFor="recipient">收报单位</label>
             <select id="recipient" disabled={!battleStarted} value={recipient} onChange={(event) => selectUnit(event.target.value)} className="mb-2 h-9 border border-line bg-ink px-2 text-xs text-paper outline-none focus:border-copper disabled:opacity-45">{friendlyUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select>
@@ -494,7 +533,7 @@ export function WarRoom() {
             <textarea id="order-text" maxLength={420} disabled={!battleStarted} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={battleStarted ? `致${currentRecipient?.name ?? "下级部队"}：写明任务、意图、时限与限制……` : "开始战役后才能发布军令"} className="min-h-[116px] flex-1 resize-none border border-line bg-ink p-3 text-xs leading-5 text-paper outline-none placeholder:text-muted/55 focus:border-copper disabled:opacity-50" />
             <div className="mt-1 flex items-center justify-between text-[9px] text-muted"><span>{draft.length} / 420</span><span>预计 {formatClock(clockMinute + (channel === "radio" ? 8 : channel === "phone" ? 5 : 25))} 送达</span></div>
             <div className="mt-2 flex items-center gap-2"><label className="text-[10px] text-muted" htmlFor="priority">优先级</label><select id="priority" value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 border border-line bg-ink px-2 text-[10px] text-paper"><option value="normal">常规</option><option value="urgent">紧急</option></select><span className="ml-auto flex items-center gap-1 text-[9px] text-copper"><i className="h-1.5 w-1.5 rounded-full bg-copper" />截获风险：{channel === "radio" ? "中高" : channel === "phone" ? "低" : "中等"}</span></div>
-            <Button className="mt-2 w-full rounded-none" variant="copper" disabled={!battleStarted || draft.trim().length < 2} onClick={sendOrder}><Send size={14} />编码并发送</Button>
+            <Button className="mt-2 w-full rounded-none" variant="copper" disabled={!battleStarted || sendingOrder || draft.trim().length < 2} onClick={sendOrder}><Send size={14} />{sendingOrder ? "正在编码…" : "编码并发送"}</Button>
           </div>
 
           <div className="h-[132px] shrink-0 overflow-hidden">

@@ -29,6 +29,7 @@ export type MapLayers = {
 type TacticalMapProps = {
   campaignId: string;
   battleStarted: boolean;
+  paused: boolean;
   canStart: boolean;
   layers: MapLayers;
   units: TacticalUnit[];
@@ -48,7 +49,7 @@ function UnitGlyph({ unit }: { unit: TacticalUnit }) {
   return <span className="text-base leading-none">X</span>;
 }
 
-function EuropeMap({ layers, hasReports }: { layers: MapLayers; hasReports: boolean }) {
+function EuropeMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<string> }) {
   return (
     <svg className="absolute inset-0 h-full w-full" viewBox="0 0 900 720" preserveAspectRatio="xMidYMid slice" role="img" aria-label="阿纳姆地区认知作战图">
       <defs>
@@ -94,16 +95,16 @@ function EuropeMap({ layers, hasReports }: { layers: MapLayers; hasReports: bool
         <text x="702" y="562" fontSize="12" fontWeight="700">ROAD BRIDGE</text>
       </g>
       <g transform="translate(810 62)" fill="#4e5349"><path d="M0 42 L12 0 L24 42 L12 32 Z" /><text x="8" y="58" fontSize="10">N</text></g>
-      {layers.orders && hasReports ? <path d="M180 410 C330 395 440 355 555 335 C626 323 663 316 693 305" fill="none" stroke="#2e6ea4" strokeWidth="10" markerEnd="url(#eu-blue-arrow)" opacity=".92" /> : null}
-      {layers.orders && hasReports ? <path d="M284 265 C385 298 470 314 564 325" fill="none" stroke="#2e6ea4" strokeWidth="6" strokeDasharray="12 8" markerEnd="url(#eu-blue-arrow)" opacity=".9" /> : null}
-      {layers.intel && hasReports ? <path d="M858 314 C782 324 740 355 700 398" fill="none" stroke="#a9493f" strokeWidth="7" markerEnd="url(#eu-red-arrow)" opacity=".9" /> : null}
-      {layers.intel && hasReports ? <path d="M816 642 C760 590 720 552 688 500" fill="none" stroke="#a9493f" strokeWidth="5" markerEnd="url(#eu-red-arrow)" opacity=".9" /> : null}
+      {layers.orders && knownUnits.has("uk1para") ? <path d="M180 410 C330 395 440 355 555 335 C626 323 663 316 693 305" fill="none" stroke="#2e6ea4" strokeWidth="10" markerEnd="url(#eu-blue-arrow)" opacity=".92" /> : null}
+      {layers.orders && knownUnits.has("uk2para") ? <path d="M284 265 C385 298 470 314 564 325" fill="none" stroke="#2e6ea4" strokeWidth="6" strokeDasharray="12 8" markerEnd="url(#eu-blue-arrow)" opacity=".9" /> : null}
+      {layers.intel && knownUnits.has("deinf") ? <path d="M858 314 C782 324 740 355 700 398" fill="none" stroke="#a9493f" strokeWidth="7" markerEnd="url(#eu-red-arrow)" opacity=".9" /> : null}
+      {layers.intel && knownUnits.has("de9ss") ? <path d="M816 642 C760 590 720 552 688 500" fill="none" stroke="#a9493f" strokeWidth="5" markerEnd="url(#eu-red-arrow)" opacity=".9" /> : null}
       <text x="25" y="695" fill="#496c95" fontSize="11" fontWeight="700">MODIFIED BRITISH SYSTEM · EACH SMALL SQUARE 1 KM</text>
     </svg>
   );
 }
 
-function ChinaMap({ layers, hasReports }: { layers: MapLayers; hasReports: boolean }) {
+function ChinaMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<string> }) {
   return (
     <svg className="absolute inset-0 h-full w-full" viewBox="0 0 900 720" preserveAspectRatio="xMidYMid slice" role="img" aria-label="台儿庄地区认知作战图">
       <defs>
@@ -145,15 +146,15 @@ function ChinaMap({ layers, hasReports }: { layers: MapLayers; hasReports: boole
         <text x="483" y="611" fill="#547c91" fontSize="14" fontStyle="italic">大运河</text>
       </g>
       <g transform="translate(810 56)" fill="#4e5349"><path d="M0 42 L12 0 L24 42 L12 32 Z" /><text x="8" y="58" fontSize="10">N</text></g>
-      {layers.orders && hasReports ? <path d="M230 652 C290 584 343 524 391 470" fill="none" stroke="#a9493f" strokeWidth="9" markerEnd="url(#cn-red-arrow)" opacity=".92" /> : null}
-      {layers.orders && hasReports ? <path d="M88 348 C166 344 220 350 273 369" fill="none" stroke="#a9493f" strokeWidth="7" markerEnd="url(#cn-red-arrow)" opacity=".92" /> : null}
-      {layers.intel && hasReports ? <path d="M834 257 C762 265 708 285 671 324" fill="none" stroke="#2e6ea4" strokeWidth="6" strokeDasharray="12 8" markerEnd="url(#cn-blue-arrow)" opacity=".9" /> : null}
-      {layers.intel && hasReports ? <path d="M807 443 C750 430 704 403 675 370" fill="none" stroke="#2e6ea4" strokeWidth="5" strokeDasharray="10 7" markerEnd="url(#cn-blue-arrow)" opacity=".9" /> : null}
+      {layers.orders && knownUnits.has("cn30") ? <path d="M230 652 C290 584 343 524 391 470" fill="none" stroke="#a9493f" strokeWidth="9" markerEnd="url(#cn-red-arrow)" opacity=".92" /> : null}
+      {layers.orders && knownUnits.has("cn27") ? <path d="M88 348 C166 344 220 350 273 369" fill="none" stroke="#a9493f" strokeWidth="7" markerEnd="url(#cn-red-arrow)" opacity=".92" /> : null}
+      {layers.intel && knownUnits.has("jpseya") ? <path d="M834 257 C762 265 708 285 671 324" fill="none" stroke="#2e6ea4" strokeWidth="6" strokeDasharray="12 8" markerEnd="url(#cn-blue-arrow)" opacity=".9" /> : null}
+      {layers.intel && knownUnits.has("jparmor") ? <path d="M807 443 C750 430 704 403 675 370" fill="none" stroke="#2e6ea4" strokeWidth="5" strokeDasharray="10 7" markerEnd="url(#cn-blue-arrow)" opacity=".9" /> : null}
     </svg>
   );
 }
 
-export function TacticalMap({ campaignId, battleStarted, canStart, layers, units, revealedUnitIds, selectedUnit, visibleReportCount, onSelectUnit, onSetRecipient, onStartBattle }: TacticalMapProps) {
+export function TacticalMap({ campaignId, battleStarted, paused, canStart, layers, units, revealedUnitIds, selectedUnit, visibleReportCount, onSelectUnit, onSetRecipient, onStartBattle }: TacticalMapProps) {
   const isAsia = campaignId === "taierzhuang";
   const hasReports = battleStarted && visibleReportCount > 0;
   const selectedKnown = revealedUnitIds.has(selectedUnit.id);
@@ -166,7 +167,7 @@ export function TacticalMap({ campaignId, battleStarted, canStart, layers, units
 
   return (
     <div className="tactical-map relative min-h-[560px] flex-1 overflow-hidden bg-[#d8cfaa] lg:min-h-0">
-      {isAsia ? <ChinaMap layers={layers} hasReports={hasReports} /> : <EuropeMap layers={layers} hasReports={hasReports} />}
+      {isAsia ? <ChinaMap layers={layers} knownUnits={revealedUnitIds} /> : <EuropeMap layers={layers} knownUnits={revealedUnitIds} />}
 
       {layers.units ? units.filter((unit) => revealedUnitIds.has(unit.id)).map((unit) => (
         <button
@@ -208,6 +209,8 @@ export function TacticalMap({ campaignId, battleStarted, canStart, layers, units
       ) : !hasReports ? (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#d8cfaa]/35"><div className="border border-[#4e5a4c]/60 bg-[#d8cfaa]/90 px-5 py-3 text-xs font-bold text-[#3e493f]">等待第一批战场回报</div></div>
       ) : null}
+
+      {battleStarted && paused ? <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 border border-copper/70 bg-panel/95 px-4 py-2 text-xs font-bold text-paper shadow-lg">战役已暂停 · 可阅读情报并下达军令</div> : null}
 
       <div className="absolute bottom-4 left-4 z-30 flex flex-wrap gap-3 border border-[#3b433c] bg-[#172019]/92 px-3 py-2 text-[10px] text-paper shadow-lg">
         <span className="flex items-center gap-1"><i className={cn("h-2.5 w-2.5 border-2", isAsia ? "border-alert" : "border-blueMark")} />己方已确认</span>

@@ -76,6 +76,22 @@ async function handle(request, response) {
       return;
     }
 
+    const controlId = routeId(url.pathname, "/control");
+    if (request.method === "POST" && controlId) {
+      const body = await readJson(request);
+      if (!["pause", "resume", "set_speed"].includes(body.action)) {
+        const error = new Error("unsupported control action"); error.statusCode = 400; throw error;
+      }
+      if (body.action === "set_speed" && ![1, 2, 4].includes(Number(body.speed))) {
+        const error = new Error("speed must be 1, 2, or 4"); error.statusCode = 400; throw error;
+      }
+      const result = await store.controlGame(principal.id, controlId, body);
+      if (result.kind === "missing") { const error = new Error("game not found"); error.statusCode = 404; throw error; }
+      if (result.kind === "invalid") { const error = new Error(result.message); error.statusCode = 409; throw error; }
+      sendJson(response, 200, result);
+      return;
+    }
+
     const stateId = routeId(url.pathname, "/state");
     if (request.method === "GET" && stateId) {
       const state = await store.getState(principal.id, stateId);
