@@ -1,6 +1,7 @@
 -- ShaPan owns this schema inside the shared appdb database.
 create schema if not exists shapan;
 create extension if not exists pgcrypto;
+set search_path to shapan, public;
 
 create table if not exists shapan.users (
   id text primary key,

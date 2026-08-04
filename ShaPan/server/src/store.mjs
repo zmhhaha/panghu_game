@@ -257,7 +257,11 @@ export async function createStore() {
   if (process.env.DATABASE_URL) {
     try {
       const { Pool } = await import("pg");
-      return new PostgresStore(new Pool({ connectionString: process.env.DATABASE_URL, max: Number(process.env.DB_POOL_MAX || 10) }));
+      return new PostgresStore(new Pool({
+        connectionString: process.env.DATABASE_URL,
+        max: Number(process.env.DB_POOL_MAX || 10),
+        options: "-c search_path=shapan,public"
+      }));
     } catch (error) {
       if (process.env.NODE_ENV === "production") throw error;
       console.warn(`[shapan] pg unavailable, using memory store: ${error.message}`);

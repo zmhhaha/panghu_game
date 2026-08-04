@@ -1,9 +1,0 @@
-apiVersion: cf.armbianbegin.io/v1
-kind: TunnelRoute
-metadata:
-  name: shapan
-  namespace: default
-spec:
-  tunnelRef: main
-  hostname: shapan.panghuer.top
-  backend: oauth2-proxy-shapan.oauth.svc.cluster.local:4180

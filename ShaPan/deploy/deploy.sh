@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+project_dir="$(cd -- "$script_dir/.." && pwd)"
+
 namespace=shapan
 registry="${REGISTRY:-arm-cluster-master:5000}"
 tag="${IMAGE_TAG:-latest}"
 api_image="${registry}/shapan-api:${tag}"
 web_image="${registry}/shapan-web:${tag}"
 
-kubectl apply -f deploy/k8s/namespace.yaml
+kubectl apply -f "$project_dir/deploy/k8s/namespace.yaml"
 
 if ! kubectl get secret shapan-database -n "$namespace" >/dev/null 2>&1; then
   echo "missing secret shapan-database in namespace ${namespace}" >&2
@@ -16,10 +19,10 @@ if ! kubectl get secret shapan-database -n "$namespace" >/dev/null 2>&1; then
 fi
 
 kubectl delete job shapan-db-migration -n "$namespace" --ignore-not-found
-sed "s#arm-cluster-master:5000/shapan-api:latest#${api_image}#g" deploy/k8s/migration-job.yaml | kubectl apply -f -
+sed "s#arm-cluster-master:5000/shapan-api:latest#${api_image}#g" "$project_dir/deploy/k8s/migration-job.yaml" | kubectl apply -f -
 kubectl wait --for=condition=complete job/shapan-db-migration -n "$namespace" --timeout=180s
-kubectl apply -f deploy/k8s/configmap.yaml
-kubectl apply -f deploy/k8s/api.yaml -f deploy/k8s/web.yaml -f deploy/k8s/workers.yaml
+kubectl apply -f "$project_dir/deploy/k8s/configmap.yaml"
+kubectl apply -f "$project_dir/deploy/k8s/api.yaml" -f "$project_dir/deploy/k8s/web.yaml" -f "$project_dir/deploy/k8s/workers.yaml"
 kubectl set image deployment/shapan-api api="$api_image" -n "$namespace"
 kubectl set image deployment/shapan-web web="$web_image" -n "$namespace"
 kubectl set image deployment/shapan-sim-worker sim="$api_image" -n "$namespace"

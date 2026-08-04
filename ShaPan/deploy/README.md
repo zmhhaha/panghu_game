@@ -10,6 +10,10 @@ ShaPan 使用独立应用服务，只复用集群已有的 PostgreSQL、Vault/ES
 - Casdoor 现有游戏 OIDC 应用已加入回调地址 `https://shapan.panghuer.top/oauth2/callback`。
 - Vault 中存在 `secret/postgres/app` 的 `POSTGRES_PASSWORD`。
 
+ShaPan 不需要单独创建 PostgreSQL 数据库或用户：它复用 `appdb` / `appuser`，只在其中创建自己的 `shapan` schema。连接地址在集群内固定为 `postgres.data.svc.cluster.local:5432`。
+
+密码建议使用 URL 安全字符（字母、数字、`-`、`_`）。当前 ExternalSecret 会把密码渲染进 PostgreSQL URL；如果密码含有 `@`、`:`、`/`、`#` 等字符，需要先 URL 编码，或者换成 URL 安全密码，否则 `pg` 无法解析连接串。
+
 ## 内网软件源
 
 Dockerfile 默认使用以下来源：
@@ -54,13 +58,18 @@ kubectl exec -n vault vault-0 -- vault kv put secret/shapan/agent \
 cd panghu_game/ShaPan
 REGISTRY=arm-cluster-master:5000 BASE_REGISTRY=arm-cluster-master:5000 IMAGE_TAG=$(git rev-parse --short HEAD) ./deploy/build-images.sh
 kubectl apply -f deploy/k8s/namespace.yaml
-kubectl apply -f deploy/integrations/vault-externalsecret.yaml
-kubectl apply -f deploy/integrations/oauth2-proxy.yaml
-kubectl apply -f deploy/integrations/cloudflare-tunnelroute.yaml
+kubectl apply -f ../../vault/inventory/shapan-externalsecret.yaml
+kubectl apply -f ../../vault/inventory/shapan-agent-externalsecret.yaml
+kubectl apply -f ../../vault/inventory/oauth-externalsecret.yaml
+sed "s/__TARGET_NAME__/shapan/g" ../../oauth/k8s/game-proxy-configmap.yaml | kubectl apply -f -
+sed "s/__TARGET_NAME__/shapan/g" ../../oauth/k8s/game-proxy-deployment.yaml | kubectl apply -f -
+kubectl apply -f ../../cloudflare-tunnel/operator/tunnel-routes.yaml
 IMAGE_TAG=$(git rev-parse --short HEAD) ./deploy/deploy.sh
 ```
 
 `deploy.sh` 会先等待 `shapan-database`，用 `IMAGE_TAG` 对应的 API 镜像运行 SQL migration，再把同一版本设置到 API、Web、模拟器和 Agent Worker。不要对同一次发布分别使用不同 tag。
+
+公共服务清单不属于 ShaPan 应用目录：Vault ExternalSecret 位于 `vault/inventory/`，OAuth2 Proxy 使用 `oauth/k8s/game-proxy-configmap.yaml` 与 `game-proxy-deployment.yaml` 公共模板，Cloudflare TunnelRoute 统一维护在 `cloudflare-tunnel/operator/tunnel-routes.yaml`。
 
 ## 本地验证
 
