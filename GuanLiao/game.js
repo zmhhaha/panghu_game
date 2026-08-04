@@ -8,6 +8,25 @@
     reputation: "官声",
     favor: "圣眷"
   };
+  const STAT_KEYS = Object.keys(STAT_LABELS);
+  const STAT_LIMIT_EVENTS = {
+    livelihood: {
+      full: { type: "reward", title: "民生大治", text: "仓廪渐实、讼狱稍平，百姓开始把这位官员视作可托之人。", merit: 12, effects: { reputation: 5 } },
+      zero: { type: "penalty", title: "民生崩坏", text: "逃户、饥民与积讼一并涌来，地方已经没有余力替衙门遮掩失政。", merit: -18, effects: { reputation: -8, favor: -5 } }
+    },
+    treasury: {
+      full: { type: "reward", title: "库帑充盈", text: "钱粮账面终于有了余裕，既能应急，也给上司留下了能办实事的印象。", merit: 10, effects: { reputation: 2, favor: 4 } },
+      zero: { type: "penalty", title: "库帑告罄", text: "库底无银，下一场急务只能靠摊派、借贷或失信硬撑，考成先记一笔亏空。", merit: -14, effects: { reputation: -5, favor: -5 } }
+    },
+    reputation: {
+      full: { type: "reward", title: "清名远播", text: "清议与民间口碑同时上扬，弹劾者再想落笔也必须先面对这层声望。", merit: 12, effects: { favor: 3 } },
+      zero: { type: "penalty", title: "官声扫地", text: "百姓不再相信公文上的自称清慎，任何新政令都会先被当作又一层盘剥。", merit: -18, effects: { favor: -8 } }
+    },
+    favor: {
+      full: { type: "reward", title: "圣眷正隆", text: "密折与考成接连得到上意肯定，升迁和调任的门缝已经打开。", merit: 15, effects: {} },
+      zero: { type: "penalty", title: "上意断绝", text: "上峰不再替你解释迟误与失误，旧日功劳也开始被重新翻检。", merit: -20, effects: { reputation: -4 } }
+    }
+  };
 
   const ERAS = {
     ming: {
@@ -703,6 +722,22 @@
     return merged;
   }
 
+  function thresholdForValue(value) {
+    if (value <= 0) return "zero";
+    if (value >= 100) return "full";
+    return "middle";
+  }
+
+  function normalizeThresholds(stats, existing = {}) {
+    return STAT_KEYS.reduce((thresholds, key) => {
+      const saved = existing[key];
+      thresholds[key] = ["zero", "middle", "full"].includes(saved)
+        ? saved
+        : thresholdForValue(Number(stats?.[key] ?? 0));
+      return thresholds;
+    }, {});
+  }
+
   function createState(era, route, name, difficulty = "guided") {
     const seed = Math.floor(Date.now() % 2147483647) || 1709;
     return {
@@ -714,6 +749,7 @@
       day: 1,
       seed,
       stats: { ...ROUTES[route].baseStats },
+      thresholds: normalizeThresholds(ROUTES[route].baseStats),
       merit: 0,
       rankIndex: 0,
       docket: [],
@@ -759,6 +795,7 @@
     state.agents = Array.isArray(state.agents) && state.agents.length
       ? state.agents
       : createAgentNetwork(state.route, state.seed || 1709);
+    state.thresholds = normalizeThresholds(state.stats, state.thresholds);
 
     Object.entries(state.decisions || {}).forEach(([caseId, decision]) => {
       if (!Number.isInteger(decision)) return;
@@ -915,22 +952,62 @@
   }
 
   function applyEffects(effects, animate = false) {
-    Object.entries(effects || {}).forEach(([key, change]) => {
+    state.thresholds = normalizeThresholds(state.stats, state.thresholds);
+    const thresholdEvents = [];
+    const thresholdEffects = {};
+    const pendingThresholds = [];
+
+    const applyStatChange = (key, change, isThresholdConsequence = false) => {
       if (!(key in state.stats)) return;
-      state.stats[key] = clamp(state.stats[key] + change);
+      const before = state.stats[key];
+      const next = clamp(before + change);
+      state.stats[key] = next;
+      if (isThresholdConsequence) thresholdEffects[key] = (thresholdEffects[key] || 0) + (next - before);
+      const previousThreshold = state.thresholds[key];
+      const nextThreshold = thresholdForValue(next);
+      state.thresholds[key] = nextThreshold;
+      if (nextThreshold !== previousThreshold && (nextThreshold === "zero" || nextThreshold === "full")) {
+        pendingThresholds.push({ key, boundary: nextThreshold });
+      }
       if (animate) {
         const element = document.querySelector(`[data-stat="${key}"]`);
         element?.classList.remove("changed");
         requestAnimationFrame(() => element?.classList.add("changed"));
       }
+    };
+
+    Object.entries(effects || {}).forEach(([key, change]) => {
+      applyStatChange(key, change);
     });
+
+    while (pendingThresholds.length) {
+      const trigger = pendingThresholds.shift();
+      const consequence = STAT_LIMIT_EVENTS[trigger.key]?.[trigger.boundary];
+      if (!consequence) continue;
+      state.merit = Math.max(0, state.merit + consequence.merit);
+      thresholdEvents.push({
+        key: trigger.key,
+        boundary: trigger.boundary,
+        type: consequence.type,
+        title: consequence.title,
+        text: consequence.text,
+        merit: consequence.merit,
+        effects: { ...consequence.effects }
+      });
+      Object.entries(consequence.effects).forEach(([key, change]) => applyStatChange(key, change, true));
+    }
+    return { thresholdEvents, thresholdEffects };
   }
 
   function renderStats() {
     Object.entries(state.stats).forEach(([key, value]) => {
       const label = key.charAt(0).toUpperCase() + key.slice(1);
+      const element = document.querySelector(`[data-stat="${key}"]`);
       $(`#stat${label}`).textContent = value;
-      document.querySelector(`[data-stat="${key}"] .meter i`).style.width = `${value}%`;
+      element?.classList.toggle("threshold-zero", value === 0);
+      element?.classList.toggle("threshold-full", value === 100);
+      element?.setAttribute("data-threshold", thresholdForValue(value));
+      element?.querySelector(".meter i")?.style.setProperty("width", `${value}%`);
     });
   }
 
@@ -1139,6 +1216,17 @@
     `).join("");
   }
 
+  function thresholdEventsHtml(events) {
+    if (!events?.length) return "";
+    return `<div class="threshold-events">${events.map((event) => `
+      <article class="threshold-event ${event.type}">
+        <strong>${escapeHtml(event.title)}</strong>
+        <p>${escapeHtml(event.text)}</p>
+        <small>${STAT_LABELS[event.key]}${event.boundary === "full" ? "达到 100" : "归零"} · 考成 ${event.merit > 0 ? "+" : ""}${event.merit}</small>
+      </article>
+    `).join("")}</div>`;
+  }
+
   function renderReports() {
     $("#reportBadge").textContent = String(state.unreadReports);
     $("#reportBadge").dataset.count = String(state.unreadReports);
@@ -1176,6 +1264,7 @@
           <p>${escapeHtml(visibleText)}</p>
           ${visibleCause ? `<p class="report-cause">${escapeHtml(visibleCause)}</p>` : ""}
           ${state.difficulty === "guided" ? `<div class="effects">${effectsHtml(report.effects)}</div>` : ""}
+          ${thresholdEventsHtml(report.thresholdEvents)}
           ${guidedCompletion}
           ${report.chain?.length ? detail : ""}
         </article>
@@ -1643,7 +1732,8 @@
     const completionChain = enrichedCompletion.chain;
     const directOfficialReport = completionChain.at(-1)?.reportText || `奉结。${outcome.title}。`;
     const finalOfficialReport = directOfficialReport;
-    applyEffects(finalEffects, true);
+    const thresholdResult = applyEffects(finalEffects, true);
+    const reportEffects = mergeEffects(finalEffects, thresholdResult.thresholdEffects);
     state.merit = Math.max(0, state.merit + (success ? Math.max(5, Math.round(averageFidelity / 10)) : -6));
     const report = {
       id: item.id,
@@ -1656,7 +1746,8 @@
       title: outcome.title,
       text: `${outcome.text} 政令最终以“${item.chain[item.chain.length - 1].action}”的口径落地。`,
       cause: buildCausalText(item),
-      effects: finalEffects,
+      effects: reportEffects,
+      thresholdEvents: thresholdResult.thresholdEvents,
       chain: item.chain,
       completionChain,
       agentProvider: enrichedCompletion.provider,
@@ -1746,6 +1837,7 @@
           <p>${escapeHtml(visibleText)}</p>
           ${state.difficulty === "guided" && report.cause ? `<p class="report-cause">${escapeHtml(report.cause)}</p>` : ""}
           ${state.difficulty === "guided" && report.effects && Object.keys(report.effects).length ? `<div class="effects">${effectsHtml(report.effects)}</div>` : ""}
+          ${thresholdEventsHtml(report.thresholdEvents)}
           ${guidedCompletion}
           ${report.chain?.length ? flow : ""}
         </article>
