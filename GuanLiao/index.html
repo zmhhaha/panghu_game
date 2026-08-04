@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#173f36">
+  <title>GuanLiao · 官僚</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="rail" aria-label="主导航">
+      <div class="brand-block">
+        <div class="brand-seal" aria-hidden="true">官</div>
+        <div>
+          <strong>GuanLiao</strong>
+          <span>案牍之间</span>
+        </div>
+      </div>
+
+      <nav class="rail-nav">
+        <button class="nav-item active" data-view="desk" type="button">
+          <span class="nav-glyph" aria-hidden="true">案</span>
+          <span>今日案头</span>
+          <b id="deskBadge">0</b>
+        </button>
+        <button class="nav-item" data-view="reports" type="button">
+          <span class="nav-glyph" aria-hidden="true">报</span>
+          <span>回报簿</span>
+          <b id="reportBadge">0</b>
+        </button>
+        <button class="nav-item" data-view="career" type="button">
+          <span class="nav-glyph" aria-hidden="true">阶</span>
+          <span>仕途考成</span>
+        </button>
+      </nav>
+
+      <div class="rail-foot">
+        <p>凡一纸批红，皆有后文。</p>
+        <button id="newGameButton" class="icon-command" type="button" title="重新开局" aria-label="重新开局">
+          <span aria-hidden="true">↻</span>
+          <span>重新开局</span>
+        </button>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="identity">
+          <span id="eraMark">大明</span>
+          <div>
+            <p><span id="difficultyMark" class="difficulty-mark">引导模式</span> · <span id="roleTitle">正七品 · 知县</span></p>
+            <strong id="playerName">顾惟诚</strong>
+          </div>
+        </div>
+        <div class="calendar">
+          <span id="reignYear">万历二十年</span>
+          <strong id="lunarDate">三月初七</strong>
+          <small id="dayCount">在任第 1 日</small>
+        </div>
+        <button id="mobileNewGameButton" class="mobile-reset" type="button" title="重新开局" aria-label="重新开局">↻</button>
+      </header>
+
+      <section class="stat-strip" aria-label="施政状态">
+        <article class="stat-item" data-stat="livelihood">
+          <div><span>民生</span><strong id="statLivelihood">62</strong></div>
+          <div class="meter"><i></i></div>
+        </article>
+        <article class="stat-item" data-stat="treasury">
+          <div><span>库银</span><strong id="statTreasury">54</strong></div>
+          <div class="meter"><i></i></div>
+        </article>
+        <article class="stat-item" data-stat="reputation">
+          <div><span>官声</span><strong id="statReputation">50</strong></div>
+          <div class="meter"><i></i></div>
+        </article>
+        <article class="stat-item" data-stat="favor">
+          <div><span>圣眷</span><strong id="statFavor">48</strong></div>
+          <div class="meter"><i></i></div>
+        </article>
+      </section>
+
+      <main class="content">
+        <section id="deskView" class="view active" aria-labelledby="deskHeading">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">吏房晨送 · 辰时</p>
+              <h1 id="deskHeading">今日案牍</h1>
+            </div>
+            <div class="daily-progress">
+              <span id="docketProgress">已批 0 / 3</span>
+              <div><i id="docketProgressBar"></i></div>
+            </div>
+          </div>
+
+          <div class="desk-layout">
+            <section class="document-column" aria-live="polite">
+              <div id="documentStack"></div>
+              <div id="emptyDesk" class="empty-state" hidden>
+                <div class="empty-seal" aria-hidden="true">毕</div>
+                <h2>今日案牍已清</h2>
+                <p>可退堂更衣。待明日，政令自有回响。</p>
+              </div>
+              <button id="endDayButton" class="end-day" type="button" disabled>
+                <span>退堂 · 进入次日</span>
+                <span aria-hidden="true">→</span>
+              </button>
+            </section>
+
+            <aside class="dispatch-board" aria-label="政令追踪">
+              <div class="board-head">
+                <div>
+                  <p class="eyebrow">驿路传递中</p>
+                  <h2>政令追踪</h2>
+                </div>
+                <strong id="pendingCount">0</strong>
+              </div>
+              <div id="pendingList" class="pending-list"></div>
+              <div class="board-note">
+                <span aria-hidden="true">※</span>
+                <p>每经一手，原批便多一层理解，也多一份私心。</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="reportsView" class="view" aria-labelledby="reportsHeading">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">施政有迹 · 成败入册</p>
+              <h1 id="reportsHeading">回报簿</h1>
+            </div>
+            <button id="markReportsRead" class="quiet-button" type="button">悉数阅毕</button>
+          </div>
+          <div id="reportTimeline" class="report-timeline"></div>
+        </section>
+
+        <section id="careerView" class="view" aria-labelledby="careerHeading">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">三年大计 · 黜陟幽明</p>
+              <h1 id="careerHeading">仕途考成</h1>
+            </div>
+          </div>
+          <div class="career-layout">
+            <section class="career-summary">
+              <div id="careerSeal" class="career-seal" aria-hidden="true">七</div>
+              <p>现任</p>
+              <h2 id="careerTitle">正七品 · 知县</h2>
+              <span id="careerRoute">州县亲民官</span>
+              <div class="career-score">
+                <div><span>考成</span><strong id="meritScore">0 / 100</strong></div>
+                <div><i id="meritBar"></i></div>
+              </div>
+              <p id="careerAdvice" class="career-advice">勤理案牍，先求一县安稳。</p>
+            </section>
+            <section>
+              <h2 class="subheading">品秩阶序</h2>
+              <div id="rankLadder" class="rank-ladder"></div>
+            </section>
+          </div>
+          <section class="agent-registry-section" aria-labelledby="agentRegistryHeading">
+            <div class="registry-heading">
+              <div>
+                <p class="eyebrow">识人用人 · 察其所图</p>
+                <h2 id="agentRegistryHeading">经手官僚</h2>
+              </div>
+              <span>任期内人物与作风保持不变</span>
+            </div>
+            <div id="agentRoster" class="agent-roster"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="onboarding" class="overlay" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle" hidden>
+    <div class="onboarding-panel">
+      <div class="onboarding-heading">
+        <div class="large-seal" aria-hidden="true">官</div>
+        <div>
+          <p class="eyebrow">一纸任命 · 宦海开局</p>
+          <h1 id="onboardingTitle">择一处衙门入仕</h1>
+          <p>所处层级不同，来文与掣肘亦不同。</p>
+        </div>
+      </div>
+
+      <fieldset>
+        <legend>时代</legend>
+        <div class="segmented" id="eraOptions">
+          <button class="active" data-era="ming" type="button"><strong>大明</strong><span>万历二十年</span></button>
+          <button data-era="qing" type="button"><strong>大清</strong><span>康熙二十三年</span></button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>视野</legend>
+        <div class="segmented three" id="difficultyOptions">
+          <button class="active" data-difficulty="guided" type="button"><strong>引导模式</strong><span>尽览底稿</span></button>
+          <button data-difficulty="reports" type="button"><strong>官场模式</strong><span>只阅回文</span></button>
+          <button data-difficulty="opaque" type="button"><strong>上意模式</strong><span>仅见直属</span></button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>官署</legend>
+        <div class="route-options" id="routeOptions">
+          <button class="route-card active" data-route="local" type="button">
+            <span class="route-number">01</span>
+            <strong>州县亲民官</strong>
+            <small>正七品 · 知县</small>
+            <p>直面钱粮、讼狱与民生，权小而责重。</p>
+          </button>
+          <button class="route-card" data-route="central" type="button">
+            <span class="route-number">02</span>
+            <strong>六部司官</strong>
+            <small>正六品 · 主事</small>
+            <p>承上驳下，周旋于部院、科道与台阁。</p>
+          </button>
+          <button class="route-card" data-route="regional" type="button">
+            <span class="route-number">03</span>
+            <strong>封疆方面官</strong>
+            <small>正四品 · 知府</small>
+            <p>总理一府，须平衡地方、军务与朝廷。</p>
+          </button>
+        </div>
+      </fieldset>
+
+      <label class="name-field">
+        <span>名讳</span>
+        <input id="nameInput" maxlength="8" value="顾惟诚" autocomplete="off">
+      </label>
+
+      <button id="startGameButton" class="start-game" type="button">
+        <span>接印视事</span>
+        <span aria-hidden="true">→</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="resultModal" class="overlay" role="dialog" aria-modal="true" aria-labelledby="resultTitle" hidden>
+    <div class="result-panel">
+      <p class="eyebrow">驿报新至</p>
+      <h1 id="resultTitle">前令已有回音</h1>
+      <div id="resultList"></div>
+      <button id="closeResultButton" class="start-game" type="button">知悉，升堂办事</button>
+    </div>
+  </div>
+
+  <div id="confirmModal" class="overlay" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" hidden>
+    <div class="confirm-panel">
+      <p class="eyebrow">重整案卷</p>
+      <h1 id="confirmTitle">重新开局？</h1>
+      <p>现有任期、批复与回报将从本机存档中清除。</p>
+      <div class="confirm-actions">
+        <button id="cancelReset" class="quiet-button" type="button">暂且不必</button>
+        <button id="confirmReset" class="danger-button" type="button">重新开局</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="agent-client.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

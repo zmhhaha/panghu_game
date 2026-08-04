@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: guanliao-agent-config
+  namespace: guanliao
+data:
+  # Values: fallback, openai, deepseek, anthropic, custom.
+  PROVIDER: deepseek
+  LLM_TIMEOUT_MS: "20000"
+  LLM_MAX_TOKENS: "1000"
