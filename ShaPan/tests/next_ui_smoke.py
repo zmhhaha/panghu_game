@@ -30,13 +30,15 @@ def main():
         desktop.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
         desktop.goto(BASE_URL, wait_until="networkidle")
 
-        assert desktop.locator("h1").inner_text() == "台儿庄战役"
-        desktop.select_option("#campaign", "arnhem")
-        assert desktop.locator("h1").inner_text() == "阿纳姆战役"
-        desktop.select_option("#campaign", "taierzhuang")
+        assert desktop.locator("h1").inner_text() == "选择一场战役，接管一段不完整的战场态势。"
+        assert desktop.get_by_text("台儿庄战役").is_visible()
+        assert desktop.get_by_text("阿纳姆战役").is_visible()
 
-        desktop.get_by_role("button", name="连接战局").click()
-        desktop.get_by_text("服务器战局已建立").wait_for(timeout=5000)
+        desktop.get_by_role("button", name="进入战局").first.click()
+        desktop.get_by_text("战前待命 · 点击“开始战役”后接收第一批情报").wait_for(timeout=5000)
+        assert desktop.get_by_text("战役尚未开始，收件台保持静默。").is_visible()
+        desktop.get_by_role("button", name="开始战役").click()
+        desktop.get_by_text("战役已开始 · 等待各部队回传情报").wait_for(timeout=5000)
         desktop.locator("textarea").fill("致第31师：固守东门，确认城墙缺口后立即回报。")
         desktop.get_by_role("button", name="发令").click()
         desktop.get_by_text("命令已进入通信队列").wait_for(timeout=5000)

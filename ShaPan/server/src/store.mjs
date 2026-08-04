@@ -53,7 +53,7 @@ class MemoryStore {
       ownerUserId: userId,
       campaignId,
       contentVersion: campaign.contentVersion,
-      status: "running",
+      status: "paused",
       clockMinute: campaign.startMinute,
       lastSequence: 0,
       objective: campaign.objective,
@@ -66,6 +66,17 @@ class MemoryStore {
     this.games.set(game.id, game);
     this.appendEvent(game, "GAME_CREATED", { campaignId });
     return gameView(game);
+  }
+
+  async startGame(userId, gameId) {
+    const game = await this.getGame(userId, gameId);
+    if (!game) return { kind: "missing" };
+    if (game.status === "running") return { kind: "ok", game: gameView(game), alreadyStarted: true };
+    if (game.status !== "paused") return { kind: "invalid", message: "game cannot be started in its current state" };
+    game.status = "running";
+    game.updatedAt = new Date().toISOString();
+    this.appendEvent(game, "GAME_STARTED", { campaignId: game.campaignId });
+    return { kind: "ok", game: gameView(game), alreadyStarted: false };
   }
 
   async getGame(userId, gameId) {
@@ -88,6 +99,7 @@ class MemoryStore {
   async createOrder(userId, gameId, input) {
     const game = await this.getGame(userId, gameId);
     if (!game) return { kind: "missing" };
+    if (game.status !== "running") return { kind: "invalid", message: "game has not started" };
     const key = input.clientCommandId || randomUUID();
     if (game.orders.has(key)) return { kind: "ok", order: game.orders.get(key), duplicate: true };
     const channel = input.channel || "radio";
@@ -160,13 +172,40 @@ class PostgresStore {
       const state = { units: campaign.units, contacts: [], lastTickMinute: campaign.startMinute };
       await client.query(
         `insert into shapan.campaign_instances (id, owner_user_id, campaign_id, content_version, status, clock_minute, objective, random_seed, last_sequence)
-         values ($1, $2, $3, $4, 'running', $5, $6, $7, 1)`,
+         values ($1, $2, $3, $4, 'paused', $5, $6, $7, 1)`,
         [id, userId, campaign.id, campaign.contentVersion, campaign.startMinute, campaign.objective, randomUUID()]
       );
       await client.query(`insert into shapan.world_snapshots (game_id, sequence, state) values ($1, 1, $2)`, [id, state]);
       await client.query(`insert into shapan.world_events (game_id, sequence, type, clock_minute, payload) values ($1, 1, 'GAME_CREATED', $2, $3)`, [id, campaign.startMinute, { campaignId }]);
       await client.query("commit");
-      return { id, campaignId: campaign.id, ownerUserId: userId, status: "running", clockMinute: campaign.startMinute, eventSequence: 1, contentVersion: campaign.contentVersion, objective: campaign.objective };
+      return { id, campaignId: campaign.id, ownerUserId: userId, status: "paused", clockMinute: campaign.startMinute, eventSequence: 1, contentVersion: campaign.contentVersion, objective: campaign.objective };
+    } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
+  }
+  async startGame(userId, gameId) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const { rows } = await client.query(
+        `select id, owner_user_id, campaign_id, status, clock_minute, last_sequence, content_version, objective, created_at, updated_at
+         from shapan.campaign_instances where id = $1 and owner_user_id = $2 for update`,
+        [gameId, userId]
+      );
+      const row = rows[0];
+      if (!row) { await client.query("rollback"); return { kind: "missing" }; }
+      const game = { id: row.id, ownerUserId: row.owner_user_id, campaignId: row.campaign_id, status: row.status, clockMinute: row.clock_minute, lastSequence: row.last_sequence, contentVersion: row.content_version, objective: row.objective, createdAt: row.created_at, updatedAt: row.updated_at };
+      if (game.status === "running") { await client.query("commit"); return { kind: "ok", game: gameView(game), alreadyStarted: true }; }
+      if (game.status !== "paused") { await client.query("rollback"); return { kind: "invalid", message: "game cannot be started in its current state" }; }
+      const sequence = Number(game.lastSequence) + 1;
+      await client.query(
+        `update shapan.campaign_instances set status = 'running', next_tick_at = now(), last_sequence = $2, updated_at = now() where id = $1`,
+        [gameId, sequence]
+      );
+      await client.query(
+        `insert into shapan.world_events (game_id, sequence, type, clock_minute, payload) values ($1, $2, 'GAME_STARTED', $3, $4)`,
+        [gameId, sequence, game.clockMinute, { campaignId: game.campaignId }]
+      );
+      await client.query("commit");
+      return { kind: "ok", game: gameView({ ...game, status: "running", lastSequence: sequence, updatedAt: new Date().toISOString() }), alreadyStarted: false };
     } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
   }
   async getGame(userId, gameId) {
@@ -196,6 +235,7 @@ class PostgresStore {
       const { rows: games } = await client.query(`select * from shapan.campaign_instances where id = $1 and owner_user_id = $2 for update`, [gameId, userId]);
       if (!games[0]) { await client.query("rollback"); return { kind: "missing" }; }
       const game = games[0];
+      if (game.status !== "running") { await client.query("rollback"); return { kind: "invalid", message: "game has not started" }; }
       const key = input.clientCommandId || randomUUID();
       const { rows: existing } = await client.query(`select id, client_command_id, recipient_id, channel, text, status, sent_at_minute, arrive_at_minute from shapan.orders where game_id = $1 and client_command_id = $2`, [gameId, key]);
       if (existing[0]) { await client.query("commit"); return { kind: "ok", order: existing[0], duplicate: true }; }

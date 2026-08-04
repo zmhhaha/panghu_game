@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays, Clock3, Inbox, MapPinned, Pause, Play, Radio, Send, Signal, TimerReset, UserRound } from "lucide-react";
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays, Clock3, Inbox, MapPinned, Play, Radio, Send, TimerReset, UserRound } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 
 type Campaign = { id: string; title: string; theater: string; mapStyle: string; objective: string; startAt: string; startMinute: number; deadlineMinute: number };
-type Message = { id: string; type: "urgent" | "intel" | "normal" | "sent"; source: string; subject: string; body: string; received: string; location?: string };
+type Message = { id: string; type: "urgent" | "intel" | "normal" | "sent"; source: string; subject: string; body: string; received: string; availableAtMinute?: number; location?: string };
 type Unit = { id: string; name: string; side: "friendly" | "enemy"; x: number; y: number; detail: string; status: string; summary: string };
 
 const campaigns: Campaign[] = [
@@ -33,14 +33,14 @@ const unitsByCampaign: Record<string, Unit[]> = {
 
 const initialMessages: Record<string, Message[]> = {
   taierzhuang: [
-    { id: "tz-1", type: "urgent", source: "第31师师部", subject: "东门火力增强，请示是否投入预备连", body: "东门外敌火力在十分钟内明显增强，预备连已经抵达师部附近，是否立即投入东门？", received: "17:42", location: "cn31" },
-    { id: "tz-2", type: "intel", source: "第五战区情报处", subject: "台枣支线东北方向有连续炮声", body: "地方情报转报：暂不能判断为日军炮兵还是运输队。航空观察尚未印证。", received: "17:30", location: "jparmor" },
-    { id: "tz-3", type: "normal", source: "第30师", subject: "南岸先头营开始渡过堤桥", body: "桥面狭窄，车辆必须分批通过。预计18时15分可向城南发起支援行动。", received: "17:39", location: "cn30" }
+    { id: "tz-1", type: "urgent", source: "第31师师部", subject: "东门火力增强，请示是否投入预备连", body: "东门外敌火力在十分钟内明显增强，预备连已经抵达师部附近，是否立即投入东门？", received: "17:42", availableAtMinute: 1086, location: "cn31" },
+    { id: "tz-2", type: "intel", source: "第五战区情报处", subject: "台枣支线东北方向有连续炮声", body: "地方情报转报：暂不能判断为日军炮兵还是运输队。航空观察尚未印证。", received: "17:30", availableAtMinute: 1094, location: "jparmor" },
+    { id: "tz-3", type: "normal", source: "第30师", subject: "南岸先头营开始渡过堤桥", body: "桥面狭窄，车辆必须分批通过。预计18时15分可向城南发起支援行动。", received: "17:39", availableAtMinute: 1106, location: "cn30" }
   ],
   arnhem: [
-    { id: "ar-1", type: "urgent", source: "第2伞兵营", subject: "桥西建筑区遭射击", body: "先头连进入桥西建筑区后遭轻武器射击，桥梁北端仍在视线之外。", received: "14:52", location: "uk2para" },
-    { id: "ar-2", type: "intel", source: "师部情报官", subject: "阿纳姆附近装甲部队情报未决", body: "战前航空照片显示周边存在履带车辆，但没有可靠消息证明其已恢复战斗。", received: "14:45", location: "de9ss" },
-    { id: "ar-3", type: "normal", source: "第1机降旅", subject: "DZ X 集结完成约七成", body: "部分反坦克武器和无线电设备尚未找到，可按原计划向奥斯特贝克东侧推进。", received: "14:39", location: "ukairland" }
+    { id: "ar-1", type: "urgent", source: "第2伞兵营", subject: "桥西建筑区遭射击", body: "先头连进入桥西建筑区后遭轻武器射击，桥梁北端仍在视线之外。", received: "14:52", availableAtMinute: 906, location: "uk2para" },
+    { id: "ar-2", type: "intel", source: "师部情报官", subject: "阿纳姆附近装甲部队情报未决", body: "战前航空照片显示周边存在履带车辆，但没有可靠消息证明其已恢复战斗。", received: "14:45", availableAtMinute: 914, location: "de9ss" },
+    { id: "ar-3", type: "normal", source: "第1机降旅", subject: "DZ X 集结完成约七成", body: "部分反坦克武器和无线电设备尚未找到，可按原计划向奥斯特贝克东侧推进。", received: "14:39", availableAtMinute: 928, location: "ukairland" }
   ]
 };
 
@@ -133,7 +133,8 @@ export function WarRoom() {
   const campaign = campaigns.find((item) => item.id === campaignId) || campaigns[0];
   const [clockMinute, setClockMinute] = useState(campaign.startMinute);
   const [speed, setSpeed] = useState(1);
-  const [paused, setPaused] = useState(false);
+  const [paused, setPaused] = useState(true);
+  const [battleStarted, setBattleStarted] = useState(false);
   const [selectedUnitId, setSelectedUnitId] = useState("cn31");
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>(initialMessages.taierzhuang);
@@ -144,7 +145,9 @@ export function WarRoom() {
   const [notice, setNotice] = useState("本地演示状态 · 尚未建立服务器战局");
   const units = unitsByCampaign[campaign.id];
   const selectedUnit = units.find((unit) => unit.id === selectedUnitId) || units[0];
-  const unread = messages.filter((message) => message.type !== "sent").length;
+  const visibleMessages = messages.filter((message) => message.type === "sent" || message.availableAtMinute === undefined || clockMinute >= message.availableAtMinute);
+  const revealedUnitIds = new Set(visibleMessages.map((message) => message.location).filter(Boolean));
+  const unread = visibleMessages.filter((message) => message.type !== "sent").length;
   const progress = Math.min(100, Math.max(0, ((clockMinute - campaign.startMinute) / (campaign.deadlineMinute - campaign.startMinute)) * 100));
 
   useEffect(() => {
@@ -153,22 +156,35 @@ export function WarRoom() {
     setMessages(initialMessages[next.id]);
     setSelectedUnitId(next.id === "taierzhuang" ? "cn31" : "uk2para");
     setSelectedMessage(null);
+    setBattleStarted(false);
+    setPaused(true);
   }, [campaignId]);
 
   useEffect(() => {
-    if (screen !== "war-room" || paused) return;
+    if (screen !== "war-room" || !battleStarted || paused) return;
     const timer = window.setInterval(() => setClockMinute((value) => Math.min(campaign.deadlineMinute, value + speed)), 1000);
     return () => window.clearInterval(timer);
-  }, [campaign.deadlineMinute, paused, screen, speed]);
+  }, [battleStarted, campaign.deadlineMinute, paused, screen, speed]);
 
   useEffect(() => {
     if (!gameId) return;
     const source = new EventSource(`/api/v1/games/${gameId}/events`);
+    source.addEventListener("snapshot", (event) => {
+      const data = JSON.parse((event as MessageEvent).data);
+      if (typeof data.game?.clockMinute === "number") setClockMinute(data.game.clockMinute);
+      const running = data.game?.status === "running";
+      setBattleStarted(running);
+      setPaused(!running);
+    });
     source.addEventListener("world_event", (event) => {
       const data = JSON.parse((event as MessageEvent).data);
       if (data.type === "TIME_TICK") setClockMinute(data.clockMinute);
+      if (data.type === "GAME_STARTED") {
+        setBattleStarted(true);
+        setPaused(false);
+      }
     });
-    source.onerror = () => setNotice("服务器通信暂时中断 · 本地时钟继续");
+    source.onerror = () => setNotice("服务器通信暂时中断 · 请检查战役连接");
     return () => source.close();
   }, [gameId]);
 
@@ -187,8 +203,12 @@ export function WarRoom() {
       setCampaignId(nextCampaign.id);
       setGameId(data.game.id);
       setClockMinute(data.game.clockMinute);
-      setPaused(false);
-      setNotice("服务器战局已建立 · 事件流已连接");
+      setMessages(initialMessages[nextCampaign.id]);
+      setSelectedUnitId(nextCampaign.id === "taierzhuang" ? "cn31" : "uk2para");
+      setSelectedMessage(null);
+      setBattleStarted(false);
+      setPaused(true);
+      setNotice("战前待命 · 点击“开始战役”后接收第一批情报");
       setScreen("war-room");
     } catch (error) { setArchiveNotice(error instanceof Error ? error.message : "无法建立服务器战局"); }
     finally { setPendingCampaignId(null); }
@@ -196,11 +216,28 @@ export function WarRoom() {
 
   function returnToArchive() {
     setPaused(true);
+    setBattleStarted(false);
     setScreen("archive");
   }
 
+  async function startBattle() {
+    if (!gameId || battleStarted) return;
+    setNotice("正在向战区下达开战令…");
+    try {
+      const response = await fetch(`/api/v1/games/${gameId}/start`, { method: "POST" });
+      if (!response.ok) throw new Error("开战令未能送达服务器");
+      const data = await response.json();
+      setClockMinute(data.game.clockMinute);
+      setBattleStarted(true);
+      setPaused(false);
+      setNotice("战役已开始 · 等待各部队回传情报");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "开战令未能送达服务器");
+    }
+  }
+
   async function sendOrder() {
-    if (draft.trim().length < 2 || !currentRecipient) return;
+    if (!battleStarted || draft.trim().length < 2 || !currentRecipient) return;
     const message: Message = { id: `sent-${Date.now()}`, type: "sent", source: "本级指挥所", subject: `致${currentRecipient.name} · ${channel === "radio" ? "无线电报" : channel === "phone" ? "野战电话" : "通信员"}`, body: draft.trim(), received: formatClock(campaign, clockMinute), location: recipient };
     setMessages((items) => [message, ...items]);
     setDraft("");
@@ -232,9 +269,9 @@ export function WarRoom() {
           <div className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="text-[10px] tracking-[.2em] text-muted">SIGNALS / 通信</p><h2 className="mt-1 font-serif text-lg">收件台</h2></div><span className="rounded-sm bg-alert/15 px-2 py-1 text-xs text-alert">{unread} 未读</span></div>
           <div className="flex gap-1 border-b border-line p-2">{["全部", "紧急", "情报", "已发"].map((filter) => <button key={filter} className="flex-1 rounded px-1 py-1.5 text-xs text-muted hover:bg-white/5 hover:text-paper">{filter}</button>)}</div>
           <div className="divide-y divide-line/70 overflow-auto">
-            {messages.map((message) => <button key={message.id} onClick={() => { setSelectedMessage(message.id); if (message.location) setSelectedUnitId(message.location); }} className={cn("block w-full px-4 py-3 text-left transition hover:bg-white/5", selectedMessage === message.id && "bg-white/5") }><div className="flex items-center justify-between gap-2"><span className={cn("text-[10px] uppercase tracking-wider", message.type === "urgent" ? "text-alert" : message.type === "intel" ? "text-copper" : message.type === "sent" ? "text-blueMark" : "text-muted")}>{message.type === "urgent" ? "紧急" : message.type === "intel" ? "情报" : message.type === "sent" ? "已发" : "常规"}</span><time className="text-[10px] text-muted">{message.received}</time></div><p className="mt-1 line-clamp-2 text-sm text-paper">{message.subject}</p><p className="mt-1 text-xs text-muted">{message.source}</p></button>)}
+            {visibleMessages.length ? visibleMessages.map((message) => <button key={message.id} onClick={() => { setSelectedMessage(message.id); if (message.location) setSelectedUnitId(message.location); }} className={cn("block w-full px-4 py-3 text-left transition hover:bg-white/5", selectedMessage === message.id && "bg-white/5") }><div className="flex items-center justify-between gap-2"><span className={cn("text-[10px] uppercase tracking-wider", message.type === "urgent" ? "text-alert" : message.type === "intel" ? "text-copper" : message.type === "sent" ? "text-blueMark" : "text-muted")}>{message.type === "urgent" ? "紧急" : message.type === "intel" ? "情报" : message.type === "sent" ? "已发" : "常规"}</span><time className="text-[10px] text-muted">{message.received}</time></div><p className="mt-1 line-clamp-2 text-sm text-paper">{message.subject}</p><p className="mt-1 text-xs text-muted">{message.source}</p></button>) : <div className="px-4 py-8 text-center text-xs leading-6 text-muted">{battleStarted ? "暂无已抵达情报，继续等待各部回报。" : "战役尚未开始，收件台保持静默。"}</div>}
           </div>
-          <div className="mt-auto border-t border-line p-4 text-xs text-muted"><Inbox size={14} className="mb-2 text-copper" />{selectedMessage ? messages.find((message) => message.id === selectedMessage)?.body : "请选择通信记录查看全文。"}</div>
+          <div className="mt-auto border-t border-line p-4 text-xs text-muted"><Inbox size={14} className="mb-2 text-copper" />{selectedMessage ? visibleMessages.find((message) => message.id === selectedMessage)?.body : "请选择通信记录查看全文。"}</div>
         </aside>
 
         <section className="order-1 min-h-[560px] bg-[#2a332b] lg:order-2">
@@ -251,9 +288,8 @@ export function WarRoom() {
             <div className="absolute left-[46%] top-[48%] h-px w-52 rotate-[12deg] bg-[#554e3d]/75" />
             <div className="absolute left-[42%] top-[52%] h-px w-44 rotate-[-23deg] bg-[#554e3d]/60" />
             <div className="absolute left-[44%] top-[39%] h-28 w-1 rotate-[35deg] bg-alert/80" />
-            {units.map((unit) => <button key={unit.id} onClick={() => setSelectedUnitId(unit.id)} className="absolute -translate-x-1/2 -translate-y-1/2 text-left" style={{ left: `${unit.x}%`, top: `${unit.y}%` }}><span className={cn("mil-marker flex h-9 min-w-9 items-center justify-center border-2 bg-paper px-1 text-xs font-bold text-ink", unit.side === "friendly" ? "border-blueMark" : "border-alert", selectedUnitId === unit.id && "ring-2 ring-copper ring-offset-2 ring-offset-[#778971]")}>{unit.side === "friendly" ? "X" : "?"}</span><span className="mt-1 block whitespace-nowrap rounded-sm bg-ink/80 px-1.5 py-0.5 text-[10px] text-paper">{unit.name}</span></button>)}
-            <div className="absolute left-[31%] top-[57%] flex items-center gap-1 text-alert"><ArrowUpRight size={48} strokeWidth={1.4} /><span className="hidden text-[10px] font-bold md:inline">增援计划</span></div>
-            <div className="absolute right-[19%] top-[31%] flex items-center gap-1 text-blueMark"><ArrowDownRight size={44} strokeWidth={1.4} /><span className="hidden text-[10px] font-bold md:inline">敌情推测</span></div>
+            {units.filter((unit) => revealedUnitIds.has(unit.id)).map((unit) => <button key={unit.id} onClick={() => setSelectedUnitId(unit.id)} className="absolute -translate-x-1/2 -translate-y-1/2 text-left" style={{ left: `${unit.x}%`, top: `${unit.y}%` }}><span className={cn("mil-marker flex h-9 min-w-9 items-center justify-center border-2 bg-paper px-1 text-xs font-bold text-ink", unit.side === "friendly" ? "border-blueMark" : "border-alert", selectedUnitId === unit.id && "ring-2 ring-copper ring-offset-2 ring-offset-[#778971]")}>{unit.side === "friendly" ? "X" : "?"}</span><span className="mt-1 block whitespace-nowrap rounded-sm bg-ink/80 px-1.5 py-0.5 text-[10px] text-paper">{unit.name}</span></button>)}
+            {battleStarted && visibleMessages.length > 0 ? <><div className="absolute left-[31%] top-[57%] flex items-center gap-1 text-alert"><ArrowUpRight size={48} strokeWidth={1.4} /><span className="hidden text-[10px] font-bold md:inline">增援计划</span></div><div className="absolute right-[19%] top-[31%] flex items-center gap-1 text-blueMark"><ArrowDownRight size={44} strokeWidth={1.4} /><span className="hidden text-[10px] font-bold md:inline">敌情推测</span></div></> : <div className="absolute inset-0 flex items-center justify-center"><div className="border border-[#304936]/50 bg-[#c5b98a]/45 px-4 py-3 text-center text-xs tracking-widest text-[#304936]">{battleStarted ? "等待第一批战场回报" : "战前待命 · 地图等待情报注入"}</div></div>}
             <div className="absolute bottom-3 left-3 rounded-sm border border-[#304936]/60 bg-[#c5b98a]/65 px-2 py-1 text-[10px] text-[#304936]">网格 · {campaign.mapStyle} · 认知图层</div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-panel px-4 py-3 text-xs"><div className="flex items-center gap-4 text-muted"><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-blueMark" />己方</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-alert" />敌情</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-copper" />计划</span></div><span className="text-muted">天气：阴 · 能见度 4km</span></div>
@@ -261,9 +297,9 @@ export function WarRoom() {
 
         <aside className="order-3 flex min-h-[560px] flex-col bg-panel">
           <div className="border-b border-line px-4 py-3"><p className="text-[10px] tracking-[.2em] text-muted">COMMAND / 命令</p><h2 className="mt-1 font-serif text-lg">指挥台</h2></div>
-          <div className="border-b border-line px-4 py-4"><div className="mb-3 flex items-center justify-between"><span className="text-xs text-muted">战役时钟</span><span className="font-mono text-xl text-copper">{formatClock(campaign, clockMinute)}</span></div><div className="mb-3 h-1 overflow-hidden rounded bg-line"><div className="h-full bg-copper transition-all" style={{ width: `${progress}%` }} /></div><div className="flex items-center gap-1"><Button variant="outline" size="icon" title={paused ? "继续时间" : "暂停时间"} aria-label={paused ? "继续时间" : "暂停时间"} onClick={() => setPaused((value) => !value)}>{paused ? <Play size={15} /> : <Pause size={15} />}</Button>{[1, 2, 4].map((item) => <Button key={item} variant={speed === item ? "copper" : "ghost"} size="sm" onClick={() => setSpeed(item)}>{item}×</Button>)}<span className="ml-auto text-[10px] text-muted">截止 {formatClock(campaign, campaign.deadlineMinute)}</span></div></div>
-          <div className="border-b border-line px-4 py-4"><div className="mb-3 flex items-center gap-2"><UserRound size={15} className="text-copper" /><h3 className="text-sm">选中单位</h3></div><p className="font-serif text-base">{selectedUnit.name}</p><p className="mt-1 text-xs text-muted">{selectedUnit.detail} · {selectedUnit.status}</p><p className="mt-3 text-sm leading-6 text-paper/85">{selectedUnit.summary}</p></div>
-          <div className="flex flex-1 flex-col px-4 py-4"><div className="mb-3 flex items-center gap-2"><Radio size={15} className="text-copper" /><h3 className="text-sm">发送命令</h3></div><select value={recipient} onChange={(event) => setRecipient(event.target.value)} className="mb-2 h-9 rounded border border-line bg-ink px-2 text-xs text-paper outline-none focus:border-copper">{units.filter((unit) => unit.side === "friendly").map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select><div className="mb-2 grid grid-cols-3 gap-1">{["radio", "phone", "courier"].map((item) => <button key={item} onClick={() => setChannel(item)} className={cn("rounded border px-2 py-1.5 text-[11px]", channel === item ? "border-copper bg-copper/15 text-copper" : "border-line text-muted hover:text-paper")}>{item === "radio" ? "无线电" : item === "phone" ? "野战电话" : "通信员"}</button>)}</div><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="写下给下级指挥官的意图与限制……" className="min-h-28 flex-1 resize-none rounded border border-line bg-ink p-3 text-sm leading-6 text-paper outline-none placeholder:text-muted/70 focus:border-copper" /><div className="mt-2 flex items-center justify-between gap-2"><span className="flex items-center gap-1 text-[10px] text-muted"><TimerReset size={12} />预计延迟 {channel === "radio" ? "12" : channel === "phone" ? "5" : "35"} 分钟</span><Button variant="copper" size="sm" disabled={draft.trim().length < 2} onClick={sendOrder}><Send size={14} />发令</Button></div></div>
+          <div className="border-b border-line px-4 py-4"><div className="mb-3 flex items-center justify-between"><span className="text-xs text-muted">战役时钟</span><span className="font-mono text-xl text-copper">{formatClock(campaign, clockMinute)}</span></div><div className="mb-3 h-1 overflow-hidden rounded bg-line"><div className="h-full bg-copper transition-all" style={{ width: `${progress}%` }} /></div>{battleStarted ? <div className="flex items-center gap-1">{[1, 2, 4].map((item) => <Button key={item} variant={speed === item ? "copper" : "ghost"} size="sm" onClick={() => setSpeed(item)}>{item}×</Button>)}<span className="ml-auto text-[10px] text-muted">战役进行中 · 截止 {formatClock(campaign, campaign.deadlineMinute)}</span></div> : <div className="flex items-center justify-between gap-3"><span className="text-xs text-copper">战前待命 · 时间尚未推进</span><Button variant="copper" size="sm" disabled={!gameId} onClick={startBattle}><Play size={14} />开始战役</Button></div>}</div>
+          <div className="border-b border-line px-4 py-4"><div className="mb-3 flex items-center gap-2"><UserRound size={15} className="text-copper" /><h3 className="text-sm">选中单位</h3></div>{battleStarted && revealedUnitIds.has(selectedUnit.id) ? <><p className="font-serif text-base">{selectedUnit.name}</p><p className="mt-1 text-xs text-muted">{selectedUnit.detail} · {selectedUnit.status}</p><p className="mt-3 text-sm leading-6 text-paper/85">{selectedUnit.summary}</p></> : <p className="text-sm leading-6 text-muted">尚无已确认的单位报告。收到电报或通信员回报后，单位标记和状态将在地图上出现。</p>}</div>
+          <div className="flex flex-1 flex-col px-4 py-4"><div className="mb-3 flex items-center gap-2"><Radio size={15} className="text-copper" /><h3 className="text-sm">发送命令</h3></div><select disabled={!battleStarted} value={recipient} onChange={(event) => setRecipient(event.target.value)} className="mb-2 h-9 rounded border border-line bg-ink px-2 text-xs text-paper outline-none focus:border-copper">{units.filter((unit) => unit.side === "friendly").map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select><div className="mb-2 grid grid-cols-3 gap-1">{["radio", "phone", "courier"].map((item) => <button key={item} disabled={!battleStarted} onClick={() => setChannel(item)} className={cn("rounded border px-2 py-1.5 text-[11px] disabled:cursor-not-allowed disabled:opacity-45", channel === item ? "border-copper bg-copper/15 text-copper" : "border-line text-muted hover:text-paper")}>{item === "radio" ? "无线电" : item === "phone" ? "野战电话" : "通信员"}</button>)}</div><textarea disabled={!battleStarted} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={battleStarted ? "写下给下级指挥官的意图与限制……" : "开始战役后才能发布军令"} className="min-h-28 flex-1 resize-none rounded border border-line bg-ink p-3 text-sm leading-6 text-paper outline-none placeholder:text-muted/70 focus:border-copper disabled:cursor-not-allowed disabled:opacity-60" /><div className="mt-2 flex items-center justify-between gap-2"><span className="flex items-center gap-1 text-[10px] text-muted"><TimerReset size={12} />预计延迟 {channel === "radio" ? "12" : channel === "phone" ? "5" : "35"} 分钟</span><Button variant="copper" size="sm" disabled={!battleStarted || draft.trim().length < 2} onClick={sendOrder}><Send size={14} />发令</Button></div></div>
           <div className="signal-rule border-t border-line px-4 py-3 text-[11px] text-muted">{notice}</div>
         </aside>
       </div>

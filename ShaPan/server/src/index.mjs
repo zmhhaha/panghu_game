@@ -67,6 +67,15 @@ async function handle(request, response) {
       return;
     }
 
+    const startId = routeId(url.pathname, "/start");
+    if (request.method === "POST" && startId) {
+      const result = await store.startGame(principal.id, startId);
+      if (result.kind === "missing") { const error = new Error("game not found"); error.statusCode = 404; throw error; }
+      if (result.kind === "invalid") { const error = new Error(result.message); error.statusCode = 409; throw error; }
+      sendJson(response, 200, result);
+      return;
+    }
+
     const stateId = routeId(url.pathname, "/state");
     if (request.method === "GET" && stateId) {
       const state = await store.getState(principal.id, stateId);
@@ -83,7 +92,7 @@ async function handle(request, response) {
       }
       const result = await store.createOrder(principal.id, orderId, { ...body, text: body.text.trim() });
       if (result.kind === "missing") { const error = new Error("game not found"); error.statusCode = 404; throw error; }
-      if (result.kind === "invalid") { const error = new Error(result.message); error.statusCode = 400; throw error; }
+      if (result.kind === "invalid") { const error = new Error(result.message); error.statusCode = result.message === "game has not started" ? 409 : 400; throw error; }
       sendJson(response, result.duplicate ? 200 : 201, result);
       return;
     }
