@@ -20,6 +20,8 @@ COPY --from=build /app/dist ./dist
 COPY index.html styles.css agent-client.js game.js ./
 COPY assets ./assets
 COPY migrations ./migrations
-USER node
+# The node user in node:20-bookworm-slim is UID/GID 1000. Keep this numeric
+# so Kubernetes can verify runAsNonRoot before starting the container.
+USER 1000:1000
 EXPOSE 4173
 CMD ["node", "dist/index.js"]

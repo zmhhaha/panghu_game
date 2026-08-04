@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, ChevronDown, Clock3, Inbox, MapPinned, Pause, Play, Radio, Send, Signal, TimerReset, UserRound } from "lucide-react";
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays, Clock3, Inbox, MapPinned, Pause, Play, Radio, Send, Signal, TimerReset, UserRound } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 
@@ -51,8 +51,85 @@ function formatClock(campaign: Campaign, minute: number) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
+function CampaignMapPreview({ campaign }: { campaign: Campaign }) {
+  const isAsia = campaign.id === "taierzhuang";
+  return (
+    <div className={cn("map-paper relative h-48 overflow-hidden border-b border-line/80", isAsia ? "map-china" : "map-europe")}>
+      <div className="pointer-events-none absolute inset-0 war-grid opacity-50" />
+      <div className="terrain-river pointer-events-none absolute inset-x-[-10%] top-[38%] h-24 rotate-[-7deg] opacity-75" />
+      <div className="absolute left-[42%] top-[43%] h-12 w-24 border-2 border-[#554e3d]/60 bg-[#c5b98a]/35" />
+      <div className="absolute left-[43%] top-[48%] h-px w-40 rotate-[12deg] bg-[#554e3d]/70" />
+      <div className="absolute left-[36%] top-[58%] flex items-center gap-1 text-alert"><ArrowUpRight size={34} strokeWidth={1.5} /><span className="text-[9px] font-bold">推进</span></div>
+      <div className="absolute right-[18%] top-[27%] flex items-center gap-1 text-blueMark"><ArrowDownRight size={30} strokeWidth={1.5} /><span className="text-[9px] font-bold">情报</span></div>
+      <span className="map-label absolute left-[10%] top-[12%] text-xs text-[#304936]">{isAsia ? "峄县" : "奥斯特贝克"}</span>
+      <span className="map-label absolute left-[51%] top-[45%] text-sm font-semibold text-[#263c2b]">{isAsia ? "台儿庄" : "阿纳姆桥"}</span>
+      <span className="map-label absolute bottom-[13%] right-[9%] text-xs text-[#304936]">{isAsia ? "运河" : "下莱茵河"}</span>
+      <div className="absolute bottom-2 left-2 rounded-sm border border-[#304936]/60 bg-[#c5b98a]/65 px-2 py-1 text-[9px] text-[#304936]">{campaign.mapStyle} · 认知图层</div>
+    </div>
+  );
+}
+
+function CampaignArchive({ pendingCampaignId, notice, onEnter }: { pendingCampaignId: string | null; notice: string; onEnter: (campaignId: string) => void }) {
+  return (
+    <main className="min-h-screen bg-ink text-paper">
+      <header className="border-b border-line bg-panel px-4 py-3 md:px-8">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center border border-copper/70 bg-copper/15 font-serif text-xl text-copper">二</div>
+            <div><p className="text-[10px] uppercase tracking-[.22em] text-muted">SHAPAN · 战役指挥所</p><p className="font-serif text-lg tracking-wide">战役档案</p></div>
+          </div>
+          <div className="hidden items-center gap-2 text-xs text-muted sm:flex"><span className="h-2 w-2 rounded-full bg-blueMark" />2 个可用战场</div>
+        </div>
+      </header>
+
+      <section className="mx-auto max-w-6xl px-4 pb-14 pt-10 md:px-8 md:pt-16">
+        <div className="grid gap-8 border-b border-line pb-10 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-end">
+          <div>
+            <p className="text-[10px] uppercase tracking-[.3em] text-copper">OPERATIONS ARCHIVE / 战区选择</p>
+            <h1 className="mt-3 max-w-2xl font-serif text-3xl leading-tight tracking-wide text-paper md:text-5xl">选择一场战役，接管一段不完整的战场态势。</h1>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-muted">你将以战役指挥者身份进入真实历史节点。地图只显示已获情报，命令必须通过通信链路抵达下级部队。</p>
+          </div>
+          <div className="border-l border-copper/50 pl-4 text-xs leading-6 text-muted">
+            <p className="font-mono text-copper">1944 / 1938</p>
+            <p className="mt-1">亚洲与欧洲两个战场，分别使用对应作战地图与编制。</p>
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-5 lg:grid-cols-2">
+          {campaigns.map((item) => {
+            const pending = pendingCampaignId === item.id;
+            return (
+              <article key={item.id} className="overflow-hidden border border-line bg-panel transition-colors hover:border-copper/70">
+                <CampaignMapPreview campaign={item} />
+                <div className="p-5 md:p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] uppercase tracking-[.18em] text-muted">
+                    <span className="text-copper">{item.theater}</span>
+                    <span className="flex items-center gap-1"><CalendarDays size={12} />{item.startAt}</span>
+                  </div>
+                  <h2 className="mt-3 font-serif text-2xl tracking-wide">{item.title}</h2>
+                  <p className="mt-2 text-sm text-paper/80">{item.objective}</p>
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+                    <div className="flex items-center gap-3 text-xs text-muted"><span className="flex items-center gap-1"><MapPinned size={13} className="text-copper" />{item.mapStyle}</span><span className="flex items-center gap-1"><Clock3 size={13} className="text-copper" />限时战局</span></div>
+                    <Button variant="copper" size="sm" disabled={pendingCampaignId !== null} onClick={() => onEnter(item.id)}>{pending ? "接入中…" : "进入战局"}<ArrowRight size={14} /></Button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        {notice ? <div className="mt-5 border border-alert/40 bg-alert/10 px-4 py-3 text-xs text-alert">{notice}</div> : null}
+        <div className="mt-8 flex items-center gap-2 text-[11px] text-muted"><span className="h-2 w-2 rounded-full bg-copper" />战役实例将在进入后建立，地图状态与通信记录按用户隔离。</div>
+      </section>
+    </main>
+  );
+}
+
 export function WarRoom() {
+  const [screen, setScreen] = useState<"archive" | "war-room">("archive");
   const [campaignId, setCampaignId] = useState("taierzhuang");
+  const [pendingCampaignId, setPendingCampaignId] = useState<string | null>(null);
+  const [archiveNotice, setArchiveNotice] = useState("");
   const campaign = campaigns.find((item) => item.id === campaignId) || campaigns[0];
   const [clockMinute, setClockMinute] = useState(campaign.startMinute);
   const [speed, setSpeed] = useState(1);
@@ -76,15 +153,13 @@ export function WarRoom() {
     setMessages(initialMessages[next.id]);
     setSelectedUnitId(next.id === "taierzhuang" ? "cn31" : "uk2para");
     setSelectedMessage(null);
-    setGameId(null);
-    setNotice("本地演示状态 · 尚未建立服务器战局");
   }, [campaignId]);
 
   useEffect(() => {
-    if (paused) return;
+    if (screen !== "war-room" || paused) return;
     const timer = window.setInterval(() => setClockMinute((value) => Math.min(campaign.deadlineMinute, value + speed)), 1000);
     return () => window.clearInterval(timer);
-  }, [campaign.deadlineMinute, paused, speed]);
+  }, [campaign.deadlineMinute, paused, screen, speed]);
 
   useEffect(() => {
     if (!gameId) return;
@@ -100,15 +175,28 @@ export function WarRoom() {
   const mapStyle = campaign.id === "taierzhuang" ? "map-china" : "map-europe";
   const currentRecipient = useMemo(() => units.find((unit) => unit.id === recipient), [recipient, units]);
 
-  async function createServerGame() {
+  async function enterCampaign(nextCampaignId: string) {
+    const nextCampaign = campaigns.find((item) => item.id === nextCampaignId);
+    if (!nextCampaign) return;
+    setPendingCampaignId(nextCampaignId);
+    setArchiveNotice("");
     try {
-      const response = await fetch("/api/v1/games", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ campaignId: campaign.id }) });
-      if (!response.ok) throw new Error("登录或 API 不可用");
+      const response = await fetch("/api/v1/games", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ campaignId: nextCampaign.id }) });
+      if (!response.ok) throw new Error("无法建立服务器战局，请稍后重试");
       const data = await response.json();
+      setCampaignId(nextCampaign.id);
       setGameId(data.game.id);
       setClockMinute(data.game.clockMinute);
+      setPaused(false);
       setNotice("服务器战局已建立 · 事件流已连接");
-    } catch (error) { setNotice(error instanceof Error ? error.message : "无法建立服务器战局"); }
+      setScreen("war-room");
+    } catch (error) { setArchiveNotice(error instanceof Error ? error.message : "无法建立服务器战局"); }
+    finally { setPendingCampaignId(null); }
+  }
+
+  function returnToArchive() {
+    setPaused(true);
+    setScreen("archive");
   }
 
   async function sendOrder() {
@@ -122,6 +210,8 @@ export function WarRoom() {
     } else setNotice("命令已进入本地传输队列 · 建立服务器战局后可持久化");
   }
 
+  if (screen === "archive") return <CampaignArchive pendingCampaignId={pendingCampaignId} notice={archiveNotice} onEnter={enterCampaign} />;
+
   return (
     <main className="min-h-screen bg-ink text-paper">
       <header className="border-b border-line bg-panel px-4 py-3 md:px-6">
@@ -131,11 +221,8 @@ export function WarRoom() {
             <div><p className="text-[10px] uppercase tracking-[.22em] text-muted">SHAPAN · 战役指挥所</p><h1 className="font-serif text-xl tracking-wide">{campaign.title}</h1></div>
           </div>
           <div className="flex items-center gap-2">
-            <label className="sr-only" htmlFor="campaign">选择战役</label>
-            <select id="campaign" value={campaignId} onChange={(event) => setCampaignId(event.target.value)} className="h-9 rounded border border-line bg-ink px-2 text-sm text-paper outline-none focus:border-copper">
-              {campaigns.map((item) => <option key={item.id} value={item.id}>{item.theater} · {item.title}</option>)}
-            </select>
-            <Button variant="outline" size="sm" onClick={createServerGame}><Signal size={14} />连接战局</Button>
+            <Button variant="ghost" size="sm" onClick={returnToArchive}><ArrowLeft size={14} />战役档案</Button>
+            <span className="hidden border-l border-line pl-3 text-xs text-muted sm:inline">{campaign.theater}</span>
           </div>
         </div>
       </header>
