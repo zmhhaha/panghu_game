@@ -6,7 +6,7 @@ metadata:
 data:
   NODE_ENV: production
   TRUST_PROXY_AUTH_HEADERS: "true"
-  PROVIDER: fallback
+  PROVIDER: deepseek
   LLM_TIMEOUT_MS: "20000"
   SIM_TICK_MS: "5000"
   AGENT_POLL_MS: "2000"
