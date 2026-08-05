@@ -42,6 +42,7 @@ function objectiveStatus(campaign, state, clockMinute) {
 
 export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = [] }) {
   const state = normalizeWorldState(campaign, worldState);
+  const startingProgress = state.objectiveProgress;
   const messages = [];
   const events = [];
   const jobs = [];
@@ -108,12 +109,13 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
   state.messages = state.messages.slice(0, 200);
   state.lastTickMinute = clockMinute;
   const status = objectiveStatus(campaign, state, clockMinute);
-  events.push({ type: "OBJECTIVE_UPDATED", payload: { progress: state.objectiveProgress, status } });
+  events.push({ type: "OBJECTIVE_UPDATED", payload: { progress: state.objectiveProgress, delta: state.objectiveProgress - startingProgress, status } });
   return { state, messages, events, jobs, deliveredOrderIds, status };
 }
 
 export function applyAgentDecision(campaign, worldState, job, decision, clockMinute) {
   const state = normalizeWorldState(campaign, worldState);
+  const startingProgress = state.objectiveProgress;
   const unit = job.input.unit ?? getUnitProfile(campaign.id, decision.unitId);
   const enemy = job.jobType === "enemy_action";
   const orderResponse = job.jobType === "order_response";
@@ -146,5 +148,5 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
   state.messages.unshift(message);
   state.messages = state.messages.slice(0, 200);
   const status = objectiveStatus(campaign, state, clockMinute);
-  return { state, message, status, objectiveProgress: state.objectiveProgress };
+  return { state, message, status, objectiveProgress: state.objectiveProgress, objectiveDelta: state.objectiveProgress - startingProgress };
 }

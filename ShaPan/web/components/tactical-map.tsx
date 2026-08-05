@@ -31,6 +31,7 @@ type TacticalMapProps = {
   campaignId: string;
   battleStarted: boolean;
   paused: boolean;
+  battleEnded?: boolean;
   canStart: boolean;
   layers: MapLayers;
   units: TacticalUnit[];
@@ -155,7 +156,7 @@ function ChinaMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<s
   );
 }
 
-export function TacticalMap({ campaignId, battleStarted, paused, canStart, layers, units, revealedUnitIds, selectedUnit, visibleReportCount, onSelectUnit, onSetRecipient, onStartBattle }: TacticalMapProps) {
+export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = false, canStart, layers, units, revealedUnitIds, selectedUnit, visibleReportCount, onSelectUnit, onSetRecipient, onStartBattle }: TacticalMapProps) {
   const isAsia = campaignId === "taierzhuang";
   const hasReports = battleStarted && visibleReportCount > 0;
   const selectedKnown = revealedUnitIds.has(selectedUnit.id);
@@ -247,7 +248,7 @@ export function TacticalMap({ campaignId, battleStarted, paused, canStart, layer
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#d8cfaa]/35"><div className="border border-[#4e5a4c]/60 bg-[#d8cfaa]/90 px-5 py-3 text-xs font-bold text-[#3e493f]">等待第一批战场回报</div></div>
       ) : null}
 
-      {battleStarted && paused ? <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 border border-copper/70 bg-panel/95 px-4 py-2 text-xs font-bold text-paper shadow-lg">战役已暂停 · 可阅读情报并下达军令</div> : null}
+      {battleStarted && paused && !battleEnded ? <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 border border-copper/70 bg-panel/95 px-4 py-2 text-xs font-bold text-paper shadow-lg">战役已暂停 · 可阅读情报并下达军令</div> : null}
 
       <div className="absolute bottom-4 left-4 z-30 flex flex-wrap gap-3 border border-[#3b433c] bg-[#172019]/92 px-3 py-2 text-[10px] text-paper shadow-lg">
         <span className="flex items-center gap-1"><i className={cn("h-2.5 w-2.5 border-2", isAsia ? "border-alert" : "border-blueMark")} />己方已确认</span>
