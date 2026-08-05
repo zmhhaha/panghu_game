@@ -88,7 +88,7 @@ function isHolding(unit: TacticalUnit) {
 }
 
 function DynamicArrows({ units, layers, isAsia, knownUnits, focusUnitId }: { units: TacticalUnit[]; layers: MapLayers; isAsia: boolean; knownUnits: Set<string>; focusUnitId: string | null }) {
-  const routes = units.filter((unit) => knownUnits.has(unit.id) && unit.movement && ((unit.side === "friendly" && layers.orders) || (unit.side === "enemy" && layers.intel)));
+  const routes = units.filter((unit) => knownUnits.has(unit.id) && unit.movement && (!focusUnitId || focusUnitId === unit.id) && ((unit.side === "friendly" && layers.orders) || (unit.side === "enemy" && layers.intel)));
   if (!routes.length) return null;
   return (
     <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full" viewBox={`0 0 ${TACTICAL_MAP_DIMENSIONS.width} ${TACTICAL_MAP_DIMENSIONS.height}`} preserveAspectRatio="xMidYMid slice" aria-label="部队当前行动标绘">
@@ -251,6 +251,9 @@ export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = f
   const selectedKnown = revealedUnitIds.has(selectedUnit.id);
   const [unitPanelExpanded, setUnitPanelExpanded] = useState(false);
   const [focusUnitId, setFocusUnitId] = useState<string | null>(null);
+  useEffect(() => {
+    if (selectedUnit?.id) setFocusUnitId(selectedUnit.id);
+  }, [selectedUnit?.id]);
 
   useEffect(() => {
     setUnitPanelExpanded(false);
@@ -272,7 +275,7 @@ export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = f
           key={unit.id}
           type="button"
           onClick={() => { setFocusUnitId(unit.id); onSelectUnit(unit.id); }}
-          className={cn("group absolute z-20 -translate-x-1/2 -translate-y-1/2 text-left transition-opacity", focusUnitId && focusUnitId !== unit.id && "opacity-35")}
+          className={cn("group absolute z-20 -translate-x-1/2 -translate-y-1/2 text-left transition-opacity", focusUnitId && focusUnitId !== unit.id && "pointer-events-none opacity-10")}
           style={{ left: `${unit.x}%`, top: `${unit.y}%` }}
           aria-label={`${unit.name}，${unit.status}`}
         >
