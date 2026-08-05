@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Crosshair, Play, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Crosshair, Globe2, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
@@ -351,7 +351,7 @@ export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = f
         <span className="flex items-center gap-1"><i className={cn("h-0.5 w-5", isAsia ? "bg-alert" : "bg-blueMark")} />行军</span>
         <span className="flex items-center gap-1"><i className={cn("h-2 w-4 border-b-2 border-x-2", isAsia ? "border-alert" : "border-blueMark")} />固守</span>
         <span className="flex items-center gap-1"><i className="text-alert">×</i>交战</span>
-        {focusUnitId ? <button type="button" onClick={() => setFocusUnitId(null)} className="ml-auto flex items-center gap-1 text-muted hover:text-paper" title="取消部队焦点"><X size={11} />取消焦点</button> : null}
+        {focusUnitId ? <button type="button" onClick={() => setFocusUnitId(null)} className="ml-auto flex items-center gap-1 border border-copper/60 px-2 py-1 text-copper hover:bg-copper/15" title="显示全局态势"><Globe2 size={11} />全局态势</button> : null}
       </div>
       <div className="absolute bottom-4 right-4 z-30 flex items-end gap-2 text-[10px] font-bold text-[#354039]"><span className="block h-2 w-20 border-x border-b-2 border-[#354039]" />2 KM</div>
     </div>
