@@ -54,6 +54,7 @@ type Message = {
   location?: string;
   orderId?: string;
   orderStatus?: "queued" | "delivered" | "intercepted" | "failed";
+  deliveredAtMinute?: number | null;
 };
 
 type GameSummary = {
@@ -152,7 +153,7 @@ function formatRemaining(minutes: number) {
   return `${Math.floor(safe / 60)}小时${String(safe % 60).padStart(2, "0")}分`;
 }
 
-function serverMessage(raw: Partial<Message> & { deliveredAtMinute?: number; message_type?: string }): Message {
+function serverMessage(raw: Partial<Message> & { deliveredAtMinute?: number | null; message_type?: string }): Message {
   return {
     id: String(raw.id),
     type: (raw.type || raw.message_type || "normal") as Message["type"],
@@ -167,7 +168,7 @@ function serverMessage(raw: Partial<Message> & { deliveredAtMinute?: number; mes
   };
 }
 
-function orderMessage(order: { id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; status: Message["orderStatus"] }, recipientName: string): Message {
+function orderMessage(order: { id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; deliveredAtMinute?: number | null; status: Message["orderStatus"] }, recipientName: string): Message {
   const channelName = order.channel === "radio" ? "无线电报" : order.channel === "phone" ? "野战电话" : order.channel === "courier" ? "通信员" : "地下交通线";
   return {
     id: `order-${order.id}`,
@@ -178,7 +179,8 @@ function orderMessage(order: { id: string; recipientId: string; channel: string;
     received: formatClock(order.sentAtMinute),
     location: order.recipientId,
     orderId: order.id,
-    orderStatus: order.status
+    orderStatus: order.status,
+    deliveredAtMinute: order.deliveredAtMinute
   };
 }
 
@@ -351,6 +353,11 @@ export function WarRoom() {
       if (data.type === "GAME_PAUSED") setPaused(true);
       if (data.type === "GAME_RESUMED") setPaused(false);
       if (data.type === "GAME_SPEED_CHANGED" && typeof data.payload?.timeScale === "number") setSpeed(data.payload.timeScale);
+      if (data.type === "GAME_FINISHED") {
+        setGameStatus("finished");
+        setPaused(true);
+        setNotice("当前战局已被新建战局替代，作战时钟已停止");
+      }
       if (data.type === "REPORT_RECEIVED" || data.type === "AGENT_REPORT" || data.type === "ENEMY_ACTION") {
         const message = data.payload?.message;
         if (message) setMessages((items) => [serverMessage(message), ...items.filter((item) => item.id !== message.id)]);
@@ -364,7 +371,7 @@ export function WarRoom() {
     return () => source.close();
   }, [gameId]);
 
-  function hydrateState(data: { game?: GameSummary; state?: { messages?: Message[]; orders?: Array<{ id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; status: Message["orderStatus"] }>; unitStates?: Record<string, Partial<TacticalUnit>>; objectiveProgress?: number } }, sourceCampaignId = campaignId) {
+  function hydrateState(data: { game?: GameSummary; state?: { messages?: Message[]; orders?: Array<{ id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; deliveredAtMinute?: number | null; status: Message["orderStatus"] }>; unitStates?: Record<string, Partial<TacticalUnit>>; objectiveProgress?: number } }, sourceCampaignId = campaignId) {
     const state = data.state;
     if (!state) return;
     const restoredReports = (state.messages || []).map(serverMessage);
@@ -376,7 +383,7 @@ export function WarRoom() {
 
   function updateOrderMessage(order?: { id?: string; status?: Message["orderStatus"]; deliveredAtMinute?: number }) {
     if (!order?.id) return;
-    setMessages((items) => items.map((item) => item.orderId === order.id ? { ...item, orderStatus: order.status, ...(typeof order.deliveredAtMinute === "number" ? { received: formatClock(order.deliveredAtMinute) } : {}) } : item));
+    setMessages((items) => items.map((item) => item.orderId === order.id ? { ...item, orderStatus: order.status, deliveredAtMinute: order.deliveredAtMinute } : item));
   }
 
   function resetBattleView(nextCampaignId: string) {
@@ -629,13 +636,13 @@ export function WarRoom() {
             <label className="mb-1 text-[10px] text-muted" htmlFor="order-text">命令正文</label>
             <textarea id="order-text" maxLength={420} disabled={!battleStarted} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={battleStarted ? `致${currentRecipient?.name ?? "下级部队"}：写明任务、意图、时限与限制……` : "开始战役后才能发布军令"} className="min-h-[116px] flex-1 resize-none border border-line bg-ink p-3 text-xs leading-5 text-paper outline-none placeholder:text-muted/55 focus:border-copper disabled:opacity-50" />
             <div className="mt-1 flex items-center justify-between text-[9px] text-muted"><span>{draft.length} / 420</span><span>预计 {formatClock(clockMinute + (channel === "radio" ? 8 : channel === "phone" ? 5 : 25))} 送达</span></div>
-            <div className="mt-2 flex items-center gap-2"><label className="text-[10px] text-muted" htmlFor="priority">优先级</label><select id="priority" value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 border border-line bg-ink px-2 text-[10px] text-paper"><option value="normal">常规</option><option value="urgent">紧急</option></select><span className="ml-auto flex items-center gap-1 text-[9px] text-copper"><i className="h-1.5 w-1.5 rounded-full bg-copper" />截获风险：{channel === "radio" ? "中高" : channel === "phone" ? "低" : "中等"}</span></div>
+            <div className="mt-2 flex items-center gap-2"><label className="text-[10px] text-muted" htmlFor="priority">优先级</label><select id="priority" disabled={!battleStarted} value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 border border-line bg-ink px-2 text-[10px] text-paper disabled:opacity-45"><option value="normal">常规</option><option value="urgent">紧急</option></select><span className="ml-auto flex items-center gap-1 text-[9px] text-copper"><i className="h-1.5 w-1.5 rounded-full bg-copper" />截获风险：{channel === "radio" ? "中高" : channel === "phone" ? "低" : "中等"}</span></div>
             <Button className="mt-2 w-full rounded-none" variant="copper" disabled={!battleStarted || sendingOrder || ["won", "lost", "finished"].includes(gameStatus) || draft.trim().length < 2} onClick={sendOrder}><Send size={14} />{sendingOrder ? "正在编码…" : "编码并发送"}</Button>
           </div>
 
           <div className="h-[132px] shrink-0 overflow-hidden">
             <div className="flex h-9 items-center justify-between border-b border-line px-4"><span className="text-[10px] font-bold">传输队列</span><span className="text-[9px] text-muted">{sentMessages.length} 项</span></div>
-            {sentMessages.length ? <div className="command-scroll max-h-[93px] divide-y divide-line/60 overflow-y-auto">{sentMessages.slice(0, 4).map((message) => <div key={message.id} className="flex items-center gap-2 px-4 py-2"><TimerReset size={12} className="shrink-0 text-copper" /><div className="min-w-0 flex-1"><p className="truncate text-[10px] font-semibold">{message.subject}</p><p className="mt-0.5 text-[9px] text-muted">{message.received} · {message.orderStatus === "delivered" ? "已送达 · 等待回报" : message.orderStatus === "failed" ? "传输失败" : message.subject.includes("通信员") ? "通信员在途" : "等待送达"}</p></div><span className="text-[9px] text-copper">{message.orderStatus === "delivered" ? "已达" : "发送"}</span></div>)}</div> : <div className="flex h-[92px] items-center justify-center text-[10px] text-muted">尚无正在传输的命令</div>}
+            {sentMessages.length ? <div className="command-scroll max-h-[93px] divide-y divide-line/60 overflow-y-auto">{sentMessages.slice(0, 4).map((message) => <div key={message.id} className="flex items-center gap-2 px-4 py-2"><TimerReset size={12} className="shrink-0 text-copper" /><div className="min-w-0 flex-1"><p className="truncate text-[10px] font-semibold">{message.subject}</p><p className="mt-0.5 text-[9px] text-muted">{message.received} 发 · {message.orderStatus === "delivered" ? `${typeof message.deliveredAtMinute === "number" ? `${formatClock(message.deliveredAtMinute)} 达 · ` : "已送达 · "}等待回报` : message.orderStatus === "failed" ? "传输失败" : message.subject.includes("通信员") ? "通信员在途" : "等待送达"}</p></div><span className="text-[9px] text-copper">{message.orderStatus === "delivered" ? "已达" : "发送"}</span></div>)}</div> : <div className="flex h-[92px] items-center justify-center text-[10px] text-muted">尚无正在传输的命令</div>}
           </div>
           <div className="signal-rule shrink-0 border-t border-line px-4 py-2 text-[9px] text-muted">{notice}</div>
         </aside>

@@ -100,6 +100,17 @@ export class MemoryStore {
     const campaign = getCampaign(campaignId);
     if (!campaign) return null;
     const now = new Date().toISOString();
+    const supersededGameIds = new Set();
+    for (const existing of this.games.values()) {
+      if (existing.ownerUserId !== userId || existing.campaignId !== campaignId || !["running", "paused"].includes(existing.status)) continue;
+      existing.status = "finished";
+      existing.updatedAt = now;
+      supersededGameIds.add(existing.id);
+      this.appendEvent(existing, "GAME_FINISHED", { reason: "superseded" });
+    }
+    for (const job of this.agentJobs.values()) {
+      if (supersededGameIds.has(job.gameId) && ["queued", "running"].includes(job.status)) job.status = "failed";
+    }
     const game = {
       id: randomUUID(), ownerUserId: userId, campaignId, contentVersion: campaign.contentVersion,
       status: "paused", clockMinute: campaign.startMinute, lastSequence: 0, objective: campaign.objective,
@@ -245,7 +256,7 @@ export class MemoryStore {
   }
 }
 
-class PostgresStore {
+export class PostgresStore {
   constructor(pool) { this.pool = pool; }
   async close() { await this.pool.end(); }
   async health() { await this.pool.query("select 1"); return { database: "postgres", ok: true }; }
@@ -264,6 +275,14 @@ class PostgresStore {
     const client = await this.pool.connect();
     try {
       await client.query("begin");
+      await client.query(`select pg_advisory_xact_lock(hashtextextended($1, 0))`, [`${userId}:${campaign.id}`]);
+      const { rows: superseded } = await client.query(`update shapan.campaign_instances set status = 'finished', last_sequence = last_sequence + 1, updated_at = now() where owner_user_id = $1 and campaign_id = $2 and status in ('running', 'paused') returning id, last_sequence, clock_minute`, [userId, campaign.id]);
+      for (const previous of superseded) {
+        await client.query(`insert into shapan.world_events (game_id, sequence, type, clock_minute, payload) values ($1, $2, 'GAME_FINISHED', $3, $4)`, [previous.id, previous.last_sequence, previous.clock_minute, { reason: "superseded" }]);
+      }
+      if (superseded.length) {
+        await client.query(`update shapan.agent_jobs set status = 'failed', updated_at = now() where game_id = any($1::uuid[]) and status in ('queued', 'running')`, [superseded.map((game) => game.id)]);
+      }
       const id = randomUUID();
       const state = createInitialWorldState(campaign);
       await client.query(`insert into shapan.campaign_instances (id, owner_user_id, campaign_id, content_version, status, clock_minute, objective, random_seed, last_sequence) values ($1, $2, $3, $4, 'paused', $5, $6, $7, 1)`, [id, userId, campaign.id, campaign.contentVersion, campaign.startMinute, campaign.objective, randomUUID()]);
@@ -313,7 +332,7 @@ class PostgresStore {
       else { await client.query("rollback"); return { kind: "invalid", message: "unsupported control action" }; }
       const sequence = Number(row.last_sequence) + 1;
       await client.query(`update shapan.campaign_instances set status = $2::text, time_scale = $3::smallint, next_tick_at = case when $2::text = 'running' then now() else next_tick_at end, last_sequence = $4::bigint, updated_at = now() where id = $1`, [gameId, status, speed, sequence]);
-      await client.query(`insert into shapan.world_events (game_id, sequence, type, clock_minute, payload) values ($1, $2, $3, $4, $5)`, [gameId, sequence, row.clock_minute, type, payload]);
+      await client.query(`insert into shapan.world_events (game_id, sequence, type, clock_minute, payload) values ($1, $2, $3::text, $4::integer, $5::jsonb)`, [gameId, sequence, type, row.clock_minute, payload]);
       await client.query("commit");
       return { kind: "ok", game: gameView({ ...gameFromRow(row), status, timeScale: speed, lastSequence: sequence }) };
     } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }

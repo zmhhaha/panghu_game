@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MemoryStore } from "../src/store.mjs";
+import { MemoryStore, PostgresStore } from "../src/store.mjs";
 import { runAgentJob } from "../src/agent-provider.mjs";
 
 const user = { id: "test-commander", email: "commander@example.test", name: "Test Commander" };
@@ -67,6 +67,53 @@ test("server-authoritative time controls pause, resume, and change speed", async
     "ORDER_SENT",
     "GAME_RESUMED"
   ]);
+});
+
+test("PostgreSQL time controls persist event fields in schema order", async () => {
+  const statements = [];
+  const row = {
+    id: "11111111-1111-4111-8111-111111111111",
+    owner_user_id: user.id,
+    campaign_id: "taierzhuang",
+    status: "running",
+    clock_minute: 1089,
+    last_sequence: 7,
+    content_version: "test",
+    objective: "Hold",
+    time_scale: 1,
+    started_at: new Date("2026-01-01T00:00:00Z")
+  };
+  const client = {
+    async query(sql, params = []) {
+      statements.push({ sql, params });
+      if (sql.includes("select * from shapan.campaign_instances")) return { rows: [row] };
+      return { rows: [] };
+    },
+    release() {}
+  };
+  const store = new PostgresStore({ connect: async () => client });
+
+  const result = await store.controlGame(user.id, row.id, { action: "set_speed", speed: 4 });
+
+  assert.equal(result.kind, "ok");
+  const eventInsert = statements.find(({ sql }) => sql.includes("insert into shapan.world_events") && sql.includes("$3::text"));
+  assert.ok(eventInsert);
+  assert.deepEqual(eventInsert.params, [row.id, 8, "GAME_SPEED_CHANGED", 1089, { timeScale: 4 }]);
+});
+
+test("creating a new campaign retires the previous active instance", async () => {
+  const store = new MemoryStore();
+  await store.ensureUser(user);
+  const first = await store.createGame(user.id, "taierzhuang");
+  await store.startGame(user.id, first.id);
+
+  const second = await store.createGame(user.id, "taierzhuang");
+
+  assert.equal((await store.getGame(user.id, first.id)).status, "finished");
+  assert.equal(second.status, "paused");
+  assert.equal((await store.getEvents(user.id, first.id, 0)).at(-1).type, "GAME_FINISHED");
+  const activeGames = (await store.listGames(user.id)).filter((game) => game.campaignId === "taierzhuang" && ["running", "paused"].includes(game.status));
+  assert.deepEqual(activeGames.map((game) => game.id), [second.id]);
 });
 
 test("reports, order delivery, and Agent response are persisted in the world state", async () => {
