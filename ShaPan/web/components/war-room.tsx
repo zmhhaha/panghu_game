@@ -59,6 +59,8 @@ type Message = {
   orderId?: string;
   orderStatus?: "queued" | "delivered" | "intercepted" | "failed";
   deliveredAtMinute?: number | null;
+  confidence?: "confirmed" | "estimated" | "stale";
+  expiresAtMinute?: number;
 };
 
 type GameSummary = {
@@ -169,6 +171,8 @@ function serverMessage(raw: Partial<Message> & { deliveredAtMinute?: number | nu
     location: raw.location,
     orderId: raw.orderId,
     orderStatus: raw.orderStatus
+    ,confidence: raw.confidence as Message["confidence"] | undefined,
+    expiresAtMinute: raw.expiresAtMinute
   };
 }
 
@@ -320,6 +324,7 @@ export function WarRoom() {
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
   const [messageFilter, setMessageFilter] = useState<MessageFilter>("all");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [timeline, setTimeline] = useState<Array<{ id?: number; type: string; clockMinute?: number; payload?: { message?: Message; delta?: number } }>>([]);
   const [mapLayers, setMapLayers] = useState<MapLayers>({ units: true, intel: true, orders: true, grid: true });
   const [channel, setChannel] = useState("radio");
   const [recipient, setRecipient] = useState("cn31");
@@ -341,7 +346,11 @@ export function WarRoom() {
   const visibleMessages = messages.filter((message) => message.type === "sent" || message.availableAtMinute === undefined || clockMinute >= message.availableAtMinute);
   const filteredMessages = visibleMessages.filter((message) => messageFilter === "all" || message.type === messageFilter);
   const decisionMessages = visibleMessages.filter((message) => message.type !== "sent" && needsDecision(message));
-  const revealedUnitIds = new Set<string>(visibleMessages.flatMap((message) => message.type !== "sent" && message.location ? [message.location] : []));
+  const revealedUnitIds = new Set<string>(visibleMessages.flatMap((message) => {
+    if (message.type === "sent" || !message.location) return [];
+    if (typeof message.expiresAtMinute === "number" && clockMinute > message.expiresAtMinute) return [];
+    return [message.location];
+  }));
   const arrived = visibleMessages.filter((message) => message.type !== "sent").length;
   const sentMessages = visibleMessages.filter((message) => message.type === "sent");
   const friendlyUnits = units.filter((unit) => unit.side === "friendly");
@@ -370,6 +379,7 @@ export function WarRoom() {
     const source = new EventSource(`/api/v1/games/${gameId}/events`);
     source.addEventListener("snapshot", (event) => {
       const data = JSON.parse((event as MessageEvent).data);
+      setTimeline((items) => [...items, data].slice(-300));
       if (typeof data.game?.clockMinute === "number") setClockMinute(data.game.clockMinute);
       if (typeof data.game?.timeScale === "number") setSpeed(data.game.timeScale);
       const status = data.game?.status;
@@ -422,7 +432,7 @@ export function WarRoom() {
     return () => source.close();
   }, [gameId]);
 
-  function hydrateState(data: { game?: GameSummary; state?: { messages?: Message[]; orders?: Array<{ id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; deliveredAtMinute?: number | null; status: Message["orderStatus"] }>; unitStates?: Record<string, Partial<TacticalUnit>>; objectiveProgress?: number } }, sourceCampaignId = campaignId) {
+  function hydrateState(data: { game?: GameSummary; state?: { messages?: Message[]; timeline?: Array<{ id?: number; type: string; clockMinute?: number; payload?: { message?: Message; delta?: number } }>; orders?: Array<{ id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; deliveredAtMinute?: number | null; status: Message["orderStatus"] }>; unitStates?: Record<string, Partial<TacticalUnit>>; objectiveProgress?: number } }, sourceCampaignId = campaignId) {
     const state = data.state;
     if (!state) return;
     const restoredReports = (state.messages || []).map(serverMessage);
@@ -431,6 +441,7 @@ export function WarRoom() {
     pendingOrderUpdates.current.clear();
     setMessages([...restoredOrders, ...restoredReports.filter((message) => !restoredOrders.some((order) => order.id === message.id))]);
     setServerUnitStates(state.unitStates || {});
+    setTimeline(state.timeline || []);
     if (typeof state.objectiveProgress === "number") setObjectiveProgress(state.objectiveProgress);
   }
 
@@ -447,6 +458,7 @@ export function WarRoom() {
     setClockMinute(next.startMinute);
     setSpeed(1);
     setMessages([]);
+    setTimeline([]);
     knownOrderIds.current.clear();
     pendingOrderUpdates.current.clear();
     setServerUnitStates({});
@@ -671,6 +683,7 @@ export function WarRoom() {
             onStartBattle={startBattle}
           />
           {["won", "lost"].includes(gameStatus) ? <div className="border-t border-copper/60 bg-panel px-4 py-3"><div className="flex items-center justify-center gap-2"><p className="text-[10px] text-copper">OPERATIONS RESULT / 战役结算</p>{gameStatus === "won" ? <TrendingUp size={13} className="text-blueMark" /> : <TrendingDown size={13} className="text-alert" />}</div><p className="mt-1 text-center font-serif text-lg font-bold">{gameStatus === "won" ? "战役目标已达成" : "战役目标未能达成"}</p><div className="mt-3 grid grid-cols-3 border-y border-line py-2 text-center text-[10px]"><div><p className="text-muted">最终态势</p><b className={gameStatus === "won" ? "text-blueMark" : "text-alert"}>{objectiveProgress}%</b></div><div><p className="text-muted">已获回报</p><b>{arrived} 条</b></div><div><p className="text-muted">军令送达</p><b>{deliveredOrders} 条</b></div></div><p className="mt-2 text-center text-[10px] text-muted">{gameStatus === "won" ? "守备态势达到 50% 达标线。" : `截止时刻守备态势低于 50% 达标线，期间处理 ${decisionCount} 条待决断情报。`}</p><p className="mt-1 text-center text-[10px] text-copper">服务器已停止时钟推进 · 可返回档案查看复盘</p></div> : null}
+          {["won", "lost"].includes(gameStatus) && timeline.length ? <div className="border-t border-line bg-panel px-4 py-3"><div className="flex items-center justify-between"><p className="text-[10px] text-muted">AFTER ACTION / 战役时间线</p><span className="text-[9px] text-copper">{timeline.length} 个节点</span></div><div className="mt-2 max-h-28 overflow-y-auto divide-y divide-line/60">{timeline.slice(-8).reverse().map((event, index) => <div key={`${event.id ?? "event"}-${index}`} className="flex items-center gap-2 py-1.5 text-[10px]"><time className="w-10 shrink-0 text-muted">{typeof event.clockMinute === "number" ? formatClock(event.clockMinute) : "--:--"}</time><span className="truncate text-paper">{event.payload?.message?.subject || event.type}</span>{typeof event.payload?.delta === "number" ? <b className={event.payload.delta >= 0 ? "text-blueMark" : "text-alert"}>{event.payload.delta > 0 ? "+" : ""}{event.payload.delta}</b> : null}</div>)}</div></div> : null}
           <div className="grid min-h-[40px] shrink-0 grid-cols-2 gap-y-1 border-t border-line bg-panel px-4 py-2 text-[10px] text-muted sm:flex sm:items-center sm:justify-between">
             <span className="flex items-center gap-1"><CloudSun size={12} />天气 <b className="text-paper">{campaign.weather} · 能见度 {campaign.visibility}</b></span>
             <span className="flex items-center gap-1"><Sunset size={12} />日落 <b className="text-paper">{campaign.sunset}</b></span>

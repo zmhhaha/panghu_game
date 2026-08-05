@@ -31,9 +31,12 @@ export type TacticalUnit = {
   movement?: {
     from: { x: number; y: number };
     to: { x: number; y: number };
+    route?: Array<{ x: number; y: number }>;
     label?: string;
     kind?: "order" | "intel";
     confidence?: string;
+    phase?: "moving" | "halted" | "delayed" | "engaged" | "retreating";
+    progress?: number;
     updatedAtMinute?: number;
   } | null;
 };
@@ -89,9 +92,11 @@ function DynamicArrows({ units, layers, isAsia, knownUnits }: { units: TacticalU
         const fromY = from.y;
         const toX = to.x;
         const toY = to.y;
-        const midX = (fromX + toX) / 2;
-        const midY = (fromY + toY) / 2 - 22;
-        return <g key={`dynamic-${unit.id}`} opacity=".92"><path d={`M ${fromX} ${fromY} Q ${midX} ${midY} ${toX} ${toY}`} fill="none" stroke={color} strokeWidth="3.2" strokeDasharray={friendly ? undefined : "10 7"} markerEnd={marker} /><circle cx={fromX} cy={fromY} r="4" fill={color} /><text x={toX + 10} y={toY - 8} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{movement.label || unit.name}</text></g>;
+        const points = (movement.route?.length ? movement.route : [movement.from, movement.to]).map(percentToMapPoint);
+        const pathData = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+        const target = points[points.length - 1];
+        const phaseDash = movement.phase === "halted" ? "3 7" : friendly ? undefined : "10 7";
+        return <g key={`dynamic-${unit.id}`} opacity=".92"><path d={pathData} fill="none" stroke={color} strokeWidth="3.2" strokeDasharray={phaseDash} markerEnd={marker} /><circle cx={fromX} cy={fromY} r="4" fill={color} /><text x={target.x + 10} y={target.y - 8} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{movement.label || unit.name}</text></g>;
       })}
     </svg>
   );

@@ -165,7 +165,7 @@ export class MemoryStore {
   async getState(userId, gameId) {
     const game = await this.getGame(userId, gameId);
     if (!game) return null;
-    return { game: gameView(game), state: game.state };
+    return { game: gameView(game), state: { ...game.state, timeline: game.events.slice(-300) } };
   }
 
   async getEvents(userId, gameId, after = 0) {
@@ -347,6 +347,8 @@ export class PostgresStore {
     const { rows: messages } = await this.pool.query(`select external_id, source, message_type, subject, body, delivered_at_minute, payload from shapan.messages where game_id = $1 order by delivered_at_minute desc nulls last, created_at desc limit 200`, [gameId]);
     state.orders = orders.map(orderView);
     state.messages = messages.filter((row) => row.external_id).map((row) => reportMessageView({ id: row.external_id, source: row.source, type: row.message_type, subject: row.subject, body: row.body, deliveredAtMinute: row.delivered_at_minute, ...(row.payload || {}) }));
+    const { rows: timeline } = await this.pool.query(`select sequence as id, type, clock_minute, payload, created_at from shapan.world_events where game_id = $1 order by sequence desc limit 300`, [gameId]);
+    state.timeline = timeline.reverse();
     return { game: gameView(game), state };
   }
   async getEvents(userId, gameId, after = 0) {
