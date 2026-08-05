@@ -1,6 +1,7 @@
 "use client";
 
-import { Crosshair, Play } from "lucide-react";
+import { ChevronDown, ChevronUp, Crosshair, Play } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 
@@ -158,6 +159,11 @@ export function TacticalMap({ campaignId, battleStarted, paused, canStart, layer
   const isAsia = campaignId === "taierzhuang";
   const hasReports = battleStarted && visibleReportCount > 0;
   const selectedKnown = revealedUnitIds.has(selectedUnit.id);
+  const [unitPanelExpanded, setUnitPanelExpanded] = useState(false);
+
+  useEffect(() => {
+    setUnitPanelExpanded(false);
+  }, [selectedUnit.id]);
 
   function markerClasses(unit: TacticalUnit) {
     const friendly = unit.side === "friendly";
@@ -188,12 +194,43 @@ export function TacticalMap({ campaignId, battleStarted, paused, canStart, layer
       )) : null}
 
       {selectedKnown ? (
-        <div className="absolute left-4 top-4 z-30 w-[276px] border border-[#4b544c] bg-[#172019]/95 p-4 text-paper shadow-xl">
-          <div className="flex items-center justify-between gap-3 text-[10px] text-muted"><span className={cn("border px-2 py-1", markerClasses(selectedUnit))}>{selectedUnit.side === "friendly" ? "己方部队" : "敌情标记"}</span><span>{selectedUnit.detail.split("·").at(-1)?.trim()} 报告</span></div>
-          <h3 className="mt-3 text-xl font-bold">{selectedUnit.name}</h3>
-          <p className="mt-2 text-xs leading-5 text-paper/85">{selectedUnit.summary}</p>
-          <dl className="mt-4 grid grid-cols-3 border-y border-line py-3 text-xs"><div><dt className="text-[10px] text-muted">兵力</dt><dd className="mt-1 font-bold">{selectedUnit.strength}</dd></div><div><dt className="text-[10px] text-muted">士气</dt><dd className="mt-1 font-bold">{selectedUnit.morale}</dd></div><div><dt className="text-[10px] text-muted">通信</dt><dd className="mt-1 font-bold">{selectedUnit.comms}</dd></div></dl>
-          {selectedUnit.side === "friendly" ? <button type="button" onClick={() => onSetRecipient(selectedUnit.id)} className={cn("mt-3 flex h-8 w-full items-center justify-center gap-2 border text-xs text-paper", isAsia ? "border-alert/70 bg-alert/20" : "border-blueMark/70 bg-blueMark/20")}><Crosshair size={13} />设为命令对象</button> : null}
+        <div className={cn(
+          "absolute left-3 top-3 z-30 border border-[#4b544c] bg-[#172019]/95 text-paper shadow-xl transition-[width,padding] duration-150",
+          unitPanelExpanded ? "w-[min(276px,calc(100%-1.5rem))] p-3" : "w-[min(220px,calc(100%-1.5rem))] p-2",
+        )}>
+          <button
+            type="button"
+            onClick={() => setUnitPanelExpanded((expanded) => !expanded)}
+            className="flex w-full min-w-0 items-center gap-2 text-left"
+            aria-expanded={unitPanelExpanded}
+            aria-controls="selected-unit-details"
+            title={unitPanelExpanded ? "收起部队详情" : "展开部队详情"}
+          >
+            <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center border text-[10px] font-bold", markerClasses(selectedUnit))}>
+              <UnitGlyph unit={selectedUnit} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-bold">{selectedUnit.name}</span>
+              <span className="mt-0.5 block truncate text-[10px] text-muted">{selectedUnit.status} · {selectedUnit.detail.split("·").at(-1)?.trim()}报告</span>
+            </span>
+            {unitPanelExpanded ? <ChevronUp size={15} className="shrink-0 text-muted" /> : <ChevronDown size={15} className="shrink-0 text-muted" />}
+          </button>
+
+          {unitPanelExpanded ? (
+            <div id="selected-unit-details">
+              <div className="mt-3 flex items-center justify-between gap-3 text-[10px] text-muted">
+                <span className={cn("border px-2 py-1", markerClasses(selectedUnit))}>{selectedUnit.side === "friendly" ? "己方部队" : "敌情标记"}</span>
+                <span>{selectedUnit.detail.split("·").at(-1)?.trim()} 报告</span>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-paper/85">{selectedUnit.summary}</p>
+              <dl className="mt-3 grid grid-cols-3 border-y border-line py-2.5 text-xs">
+                <div><dt className="text-[10px] text-muted">兵力</dt><dd className="mt-1 font-bold">{selectedUnit.strength}</dd></div>
+                <div><dt className="text-[10px] text-muted">士气</dt><dd className="mt-1 font-bold">{selectedUnit.morale}</dd></div>
+                <div><dt className="text-[10px] text-muted">通信</dt><dd className="mt-1 font-bold">{selectedUnit.comms}</dd></div>
+              </dl>
+              {selectedUnit.side === "friendly" ? <button type="button" onClick={() => onSetRecipient(selectedUnit.id)} className={cn("mt-3 flex h-8 w-full items-center justify-center gap-2 border text-xs text-paper", isAsia ? "border-alert/70 bg-alert/20" : "border-blueMark/70 bg-blueMark/20")}><Crosshair size={13} />设为命令对象</button> : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

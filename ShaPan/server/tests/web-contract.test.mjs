@@ -10,6 +10,12 @@ test("delivering an order preserves its sent timestamp", () => {
   assert.doesNotMatch(warRoomSource, /received: formatClock\(order\.deliveredAtMinute\)/);
 });
 
+test("delivery events that race the order response are retained", () => {
+  assert.match(warRoomSource, /pendingOrderUpdates/);
+  assert.match(warRoomSource, /knownOrderIds\.current\.has\(order\.id\)/);
+  assert.match(warRoomSource, /Object\.assign\(message, pendingUpdate\)/);
+});
+
 test("all order controls remain disabled before the battle starts", () => {
   assert.match(warRoomSource, /id="priority" disabled=\{!battleStarted\}/);
 });

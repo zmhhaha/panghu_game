@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownRight,
   ArrowLeft,
@@ -299,6 +299,8 @@ export function WarRoom() {
   const [sendingOrder, setSendingOrder] = useState(false);
   const [games, setGames] = useState<GameSummary[]>([]);
   const [notice, setNotice] = useState("尚未建立服务器战局");
+  const knownOrderIds = useRef(new Set<string>());
+  const pendingOrderUpdates = useRef(new Map<string, { status?: Message["orderStatus"]; deliveredAtMinute?: number }>());
 
   const units = useMemo(() => baseUnits.map((unit) => ({ ...unit, ...(serverUnitStates[unit.id] || {}) })), [baseUnits, serverUnitStates]);
   const selectedUnit = units.find((unit) => unit.id === selectedUnitId) || units[0];
@@ -376,6 +378,8 @@ export function WarRoom() {
     if (!state) return;
     const restoredReports = (state.messages || []).map(serverMessage);
     const restoredOrders = (state.orders || []).map((order) => orderMessage(order, unitsByCampaign[sourceCampaignId].find((unit) => unit.id === order.recipientId)?.name || order.recipientId));
+    knownOrderIds.current = new Set(restoredOrders.map((order) => order.orderId).filter((orderId): orderId is string => Boolean(orderId)));
+    pendingOrderUpdates.current.clear();
     setMessages([...restoredOrders, ...restoredReports.filter((message) => !restoredOrders.some((order) => order.id === message.id))]);
     setServerUnitStates(state.unitStates || {});
     if (typeof state.objectiveProgress === "number") setObjectiveProgress(state.objectiveProgress);
@@ -383,6 +387,7 @@ export function WarRoom() {
 
   function updateOrderMessage(order?: { id?: string; status?: Message["orderStatus"]; deliveredAtMinute?: number }) {
     if (!order?.id) return;
+    if (!knownOrderIds.current.has(order.id)) pendingOrderUpdates.current.set(order.id, { status: order.status, deliveredAtMinute: order.deliveredAtMinute });
     setMessages((items) => items.map((item) => item.orderId === order.id ? { ...item, orderStatus: order.status, deliveredAtMinute: order.deliveredAtMinute } : item));
   }
 
@@ -393,6 +398,8 @@ export function WarRoom() {
     setClockMinute(next.startMinute);
     setSpeed(1);
     setMessages([]);
+    knownOrderIds.current.clear();
+    pendingOrderUpdates.current.clear();
     setServerUnitStates({});
     setObjectiveProgress(30);
     setSelectedUnitId(defaultUnit);
@@ -514,7 +521,7 @@ export function WarRoom() {
     if (!battleStarted || sendingOrder || draft.trim().length < 2 || !currentRecipient) return;
     setSendingOrder(true);
     try {
-      let orderPayload: { order?: { id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; status: Message["orderStatus"] } } | null = null;
+      let orderPayload: { order?: { id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; deliveredAtMinute?: number | null; status: Message["orderStatus"] } } | null = null;
       if (gameId) {
         const response = await fetch(`/api/v1/games/${gameId}/orders`, {
           method: "POST",
@@ -525,6 +532,14 @@ export function WarRoom() {
         orderPayload = await response.json();
       }
       const message = orderPayload?.order ? orderMessage(orderPayload.order, currentRecipient.name) : serverMessage({ id: `sent-${Date.now()}`, type: "sent", source: "本级指挥所", subject: `致${currentRecipient.name}`, body: draft.trim(), received: formatClock(clockMinute), location: recipient, orderStatus: "queued" });
+      if (message.orderId) {
+        knownOrderIds.current.add(message.orderId);
+        const pendingUpdate = pendingOrderUpdates.current.get(message.orderId);
+        if (pendingUpdate) {
+          Object.assign(message, pendingUpdate);
+          pendingOrderUpdates.current.delete(message.orderId);
+        }
+      }
       setMessages((items) => [message, ...items.filter((item) => item.orderId !== message.orderId)]);
       setDraft("");
       setNotice(orderPayload?.order?.status === "delivered" ? "命令已送达 · 等待部队回报" : "命令已进入通信队列");
