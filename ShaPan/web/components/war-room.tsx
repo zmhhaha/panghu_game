@@ -61,6 +61,7 @@ type Message = {
   deliveredAtMinute?: number | null;
   confidence?: "confirmed" | "estimated" | "stale";
   expiresAtMinute?: number;
+  outcome?: string;
 };
 
 type GameSummary = {
@@ -446,6 +447,34 @@ export function WarRoom() {
     return () => source.close();
   }, [gameId]);
 
+  // SSE is the fast path, but a reconnect or a proxy buffering event-stream
+  // data must not leave the command queue in a stale state. Reconcile the
+  // authoritative snapshot periodically while a game is open.
+  useEffect(() => {
+    if (!gameId) return;
+    let active = true;
+    const reconcile = async () => {
+      try {
+        const response = await fetch(`/api/v1/games/${gameId}/state`, { cache: "no-store" });
+        if (!response.ok || !active) return;
+        const data = await response.json();
+        if (!active) return;
+        if (typeof data.game?.clockMinute === "number") setClockMinute(data.game.clockMinute);
+        if (typeof data.game?.timeScale === "number") setSpeed(data.game.timeScale);
+        if (data.game?.status) {
+          setGameStatus(data.game.status);
+          setPaused(data.game.status !== "running");
+          setBattleStarted(Boolean(data.game.startedAt) || ["running", "won", "lost", "finished"].includes(data.game.status));
+        }
+        hydrateState(data);
+      } catch {
+        // The SSE connection continues to provide updates; reconciliation is best effort.
+      }
+    };
+    const timer = window.setInterval(reconcile, 4000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [gameId]);
+
   function hydrateState(data: { game?: GameSummary; state?: { messages?: Message[]; timeline?: Array<{ id?: number; type: string; clockMinute?: number; payload?: { message?: Message; delta?: number } }>; orders?: Array<{ id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; deliveredAtMinute?: number | null; status: Message["orderStatus"] }>; unitStates?: Record<string, Partial<TacticalUnit>>; objectiveProgress?: number } }, sourceCampaignId = campaignId) {
     const state = data.state;
     if (!state) return;
@@ -673,7 +702,7 @@ export function WarRoom() {
             )) : <div className="flex h-full min-h-44 items-center justify-center px-6 text-center text-xs leading-6 text-muted">{battleStarted ? "当前筛选下没有已抵达的通信。" : "战役尚未开始，收件台保持静默。"}</div>}
           </div>
           <div className="h-[174px] shrink-0 border-t border-line p-4">
-            {selectedMessageBody ? <><div className="flex items-center justify-between gap-3"><span className="text-[10px] text-copper">通信原文</span><time className="font-mono text-[10px] text-muted">{selectedMessageBody.received}</time></div><p className="mt-2 text-xs font-bold">{selectedMessageBody.subject}</p><p className="mt-2 line-clamp-4 text-xs leading-5 text-muted">{selectedMessageBody.body}</p></> : <div className="flex h-full flex-col items-center justify-center text-muted"><Inbox size={17} /><p className="mt-3 text-xs">请选择一份通信记录</p></div>}
+            {selectedMessageBody ? <><div className="flex items-center justify-between gap-3"><span className="text-[10px] text-copper">通信原文</span><time className="font-mono text-[10px] text-muted">{selectedMessageBody.received}</time></div><p className="mt-2 text-xs font-bold">{selectedMessageBody.subject}</p><p className="mt-2 line-clamp-4 text-xs leading-5 text-muted">{selectedMessageBody.body}</p>{selectedMessageBody.outcome ? <p className="mt-2 border-l-2 border-copper/70 pl-2 text-[10px] text-copper">行动结果 · {selectedMessageBody.outcome}</p> : null}{selectedMessageBody.type === "sent" ? <p className="mt-2 text-[10px] text-muted">军令状态 · {orderQueueLabel(selectedMessageBody, clockMinute, gameStatus)}</p> : null}</> : <div className="flex h-full flex-col items-center justify-center text-muted"><Inbox size={17} /><p className="mt-3 text-xs">请选择一份通信记录</p></div>}
           </div>
         </aside>
 

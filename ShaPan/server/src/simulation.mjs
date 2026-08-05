@@ -82,7 +82,8 @@ function updateUnitMovements(campaign, state, clockMinute) {
     const duration = Math.max(1, Number(movement.durationMinutes || 30));
     const position = interpolateRoute(movement.route, (clockMinute - movement.startedAtMinute) / duration);
     if (!position) continue;
-    state.unitStates[unitId] = { ...unitState, x: position.x, y: position.y, movement: { ...movement, progress: position.progress, segment: position.segment, phase: position.progress >= 1 ? "halted" : "moving" } };
+    const activePhase = movement.phase === "retreating" ? "retreating" : movement.phase === "engaged" ? "engaged" : position.progress >= 1 ? "halted" : "moving";
+    state.unitStates[unitId] = { ...unitState, x: position.x, y: position.y, movement: { ...movement, progress: position.progress, segment: position.segment, phase: activePhase } };
   }
 }
 
@@ -226,6 +227,9 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
   const baseUnit = campaign.units.find((candidate) => candidate.id === unitId) || unit;
   const defaultPosition = movementRoutes[campaign.id]?.[unitId]?.from || { x: Number(baseUnit.x) || 50, y: Number(baseUnit.y) || 50 };
   const objectiveDelta = enemy ? -3 : orderResponse ? 5 : 2;
+  const orderText = String(job.input.order?.text || "");
+  const retreating = orderResponse && /撤|退|回撤/.test(orderText);
+  const engaged = /交战|接敌|受阻|遭到射击/.test(String(decision.status || "")) || /交战|接敌|受阻|遭到射击/.test(String(decision.body || ""));
   state.objectiveProgress = clamp(state.objectiveProgress + objectiveDelta, 0, 100);
   state.enemyPressure = clamp(state.enemyPressure + (enemy ? 5 : -1), 0, 100);
   state.unitStates[unitId] = {
@@ -236,7 +240,7 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
     comms: decision.comms,
     updatedAtMinute: clockMinute,
     movement: orderResponse
-      ? { from: { x: Number(state.unitStates[unitId]?.x ?? defaultPosition.x), y: Number(state.unitStates[unitId]?.y ?? defaultPosition.y) }, to: routeForOrder(campaign.id, { ...baseUnit, ...defaultPosition, ...state.unitStates[unitId] }, job.input.order?.text).at(-1), route: routeForOrder(campaign.id, { ...baseUnit, ...defaultPosition, ...state.unitStates[unitId] }, job.input.order?.text), label: "军令路线", kind: "order", confidence: "已确认", startedAtMinute: clockMinute, durationMinutes: job.input.order?.priority === "urgent" ? 18 : 30, progress: 0, phase: "moving", updatedAtMinute: clockMinute }
+      ? { from: { x: Number(state.unitStates[unitId]?.x ?? defaultPosition.x), y: Number(state.unitStates[unitId]?.y ?? defaultPosition.y) }, to: routeForOrder(campaign.id, { ...baseUnit, ...defaultPosition, ...state.unitStates[unitId] }, job.input.order?.text).at(-1), route: routeForOrder(campaign.id, { ...baseUnit, ...defaultPosition, ...state.unitStates[unitId] }, job.input.order?.text), label: "军令路线", kind: "order", confidence: "已确认", startedAtMinute: clockMinute, durationMinutes: job.input.order?.priority === "urgent" ? 18 : 30, progress: 0, phase: retreating ? "retreating" : engaged ? "engaged" : "moving", updatedAtMinute: clockMinute }
       : movementFor(campaign.id, unitId, clockMinute, enemy)
   };
   if (state.unitStates[unitId].movement?.route?.[0]) {

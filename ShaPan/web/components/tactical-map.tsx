@@ -108,6 +108,7 @@ function DynamicArrows({ units, layers, isAsia, knownUnits, focusUnitId }: { uni
         const pathData = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
         const target = points[points.length - 1];
         const dimmed = Boolean(focusUnitId && focusUnitId !== unit.id);
+        const labelShift = ((unit.id.charCodeAt(0) + unit.id.length) % 3 - 1) * 16;
         const confidence = movement.confidence === "已确认" || movement.confidence === "confirmed" ? "confirmed" : "estimated";
 
         if (!friendly) {
@@ -116,7 +117,7 @@ function DynamicArrows({ units, layers, isAsia, knownUnits, focusUnitId }: { uni
           return <g key={`intel-${unit.id}`} opacity={dimmed ? ".18" : confidence === "confirmed" ? ".7" : ".5"}>
             <ellipse cx={current.x} cy={current.y} rx={radius} ry={radius * .62} fill={color} fillOpacity=".08" stroke={color} strokeDasharray={confidence === "confirmed" ? "5 5" : "2 7"} strokeWidth="2" />
             <path d={`M ${current.x} ${current.y} L ${direction.x} ${direction.y}`} fill="none" stroke={color} strokeDasharray="5 7" strokeWidth="2" markerEnd={marker} />
-            <text x={current.x + radius + 6} y={current.y - radius * .62} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{unitCode(unit)} · {confidence === "confirmed" ? "确认" : "推定"}</text>
+            <text x={current.x + radius + 6} y={current.y - radius * .62 + labelShift} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{unitCode(unit)} · {confidence === "confirmed" ? "确认" : "推定"}</text>
           </g>;
         }
 
@@ -139,8 +140,8 @@ function DynamicArrows({ units, layers, isAsia, knownUnits, focusUnitId }: { uni
         return <g key={`dynamic-${unit.id}`} opacity={dimmed ? ".2" : ".96"}>
           <path d={pathData} fill="none" stroke={color} strokeWidth="4" strokeDasharray={movement.phase === "retreating" ? "8 6" : movement.phase === "delayed" ? "2 7" : undefined} markerEnd={marker} />
           <circle cx={current.x} cy={current.y} r="4" fill={color} />
-          <text x={current.x + 8} y={current.y - 10} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{unitCode(unit)}</text>
-          {points.length > 1 ? <text x={target.x + 9} y={target.y - 8} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="9" fontWeight="700">{movement.label || "当前目标"}</text> : null}
+          <text x={current.x + 8} y={current.y - 10 + labelShift} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{unitCode(unit)}</text>
+          {points.length > 1 ? <text x={target.x + 9} y={target.y - 8 + labelShift} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="9" fontWeight="700">{movement.label || "当前目标"}</text> : null}
         </g>;
       })}
     </svg>
