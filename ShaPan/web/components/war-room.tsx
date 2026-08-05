@@ -480,7 +480,7 @@ export function WarRoom() {
   function hydrateState(data: { game?: GameSummary; state?: { messages?: Message[]; timeline?: Array<{ id?: number; type: string; clockMinute?: number; payload?: { message?: Message; delta?: number } }>; orders?: Array<{ id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; deliveredAtMinute?: number | null; status: Message["orderStatus"] }>; unitStates?: Record<string, Partial<TacticalUnit>>; objectiveProgress?: number } }, sourceCampaignId = campaignId) {
     const state = data.state;
     if (!state) return;
-    const restoredReports = (state.messages || []).map(serverMessage);
+    const restoredReports = (state.messages || []).map(serverMessage).sort((a, b) => (b.deliveredAtMinute ?? b.availableAtMinute ?? -1) - (a.deliveredAtMinute ?? a.availableAtMinute ?? -1));
     const restoredOrders = (state.orders || []).map((order) => orderMessage(order, unitsByCampaign[sourceCampaignId].find((unit) => unit.id === order.recipientId)?.name || order.recipientId));
     const reportedOrderIds = new Set(restoredReports.map((message) => message.orderId).filter((orderId): orderId is string => Boolean(orderId)));
     restoredOrders.forEach((order) => {
@@ -682,9 +682,9 @@ export function WarRoom() {
 
         <div className="flex items-center justify-between gap-3 px-4 py-2">
           <div className="text-right"><p className="text-[9px] text-muted">{campaign.startAt}</p><p className="font-mono text-3xl font-bold leading-none">{formatClock(clockMinute)}</p></div>
-          <div className="flex h-8 border border-line">
+          <div className="flex h-8 border border-line" aria-label={`当前速度 ${speed}倍`}>
             <button type="button" disabled={!battleStarted || controlPending || ["won", "lost", "finished"].includes(gameStatus)} onClick={() => controlBattle(paused ? "resume" : "pause")} className="flex w-8 items-center justify-center border-r border-line text-muted hover:text-paper disabled:opacity-40" title={!battleStarted ? "战前暂停" : paused ? "继续战役" : "暂停战役"}>{paused && battleStarted ? <Play size={14} /> : <Pause size={14} />}</button>
-            {[1, 2, 4].map((item) => <button key={item} type="button" disabled={!battleStarted || controlPending || ["won", "lost", "finished"].includes(gameStatus)} onClick={() => controlBattle("set_speed", item)} className={cn("w-9 border-r border-line text-xs last:border-r-0 disabled:opacity-40", speed === item ? "bg-field/35 text-paper" : "text-muted hover:text-paper")}>{item}×</button>)}
+            {[1, 2, 4].map((item) => <button key={item} type="button" disabled={!battleStarted || controlPending || ["won", "lost", "finished"].includes(gameStatus)} onClick={() => controlBattle("set_speed", item)} className={cn("relative z-40 w-9 border-r border-line text-xs last:border-r-0 disabled:opacity-40", speed === item ? "bg-field/35 text-paper" : "text-muted hover:text-paper")} title={`设置${item}倍速`}>{item}×</button>)}
           </div>
         </div>
       </header>
@@ -770,7 +770,7 @@ export function WarRoom() {
             <textarea id="order-text" maxLength={420} disabled={!battleStarted} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={battleStarted ? `致${currentRecipient?.name ?? "下级部队"}：写明任务、意图、时限与限制……` : "开始战役后才能发布军令"} className="min-h-[116px] flex-1 resize-none border border-line bg-ink p-3 text-xs leading-5 text-paper outline-none placeholder:text-muted/55 focus:border-copper disabled:opacity-50" />
             <div className="mt-1 flex items-center justify-between text-[9px] text-muted"><span>{draft.length} / 420</span><span>预计 {formatClock(clockMinute + (channel === "radio" ? 8 : channel === "phone" ? 5 : 25))} 送达</span></div>
             <div className="mt-2 flex items-center gap-2"><label className="text-[10px] text-muted" htmlFor="priority">优先级</label><select id="priority" disabled={!battleStarted} value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 border border-line bg-ink px-2 text-[10px] text-paper disabled:opacity-45"><option value="normal">常规</option><option value="urgent">紧急</option></select><span className="ml-auto flex items-center gap-1 text-[9px] text-copper"><i className="h-1.5 w-1.5 rounded-full bg-copper" />截获风险：{channel === "radio" ? "中高" : channel === "phone" ? "低" : "中等"}</span></div>
-            <Button className="mt-2 w-full rounded-none" variant="copper" disabled={!battleStarted || sendingOrder || ["won", "lost", "finished"].includes(gameStatus) || draft.trim().length < 2} onClick={sendOrder}><Send size={14} />{sendingOrder ? "正在编码…" : "编码并发送"}</Button>
+            <Button className="relative z-40 mt-2 w-full rounded-none" variant="copper" disabled={!battleStarted || sendingOrder || ["won", "lost", "finished"].includes(gameStatus) || draft.trim().length < 2} onClick={sendOrder}><Send size={14} />{sendingOrder ? "正在编码…" : "编码并发送"}</Button>
           </div>
 
           <div className="h-[132px] shrink-0 overflow-hidden">
