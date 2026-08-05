@@ -138,6 +138,8 @@ test("reports, order delivery, and Agent response are persisted in the world sta
   const stateAfterAgent = await store.getState(user.id, game.id);
   assert.ok(stateAfterAgent.state.messages.some((message) => message.orderId === order.order.id));
   assert.equal(stateAfterAgent.state.unitStates.cn31.status, "执行军令");
+  assert.deepEqual(stateAfterAgent.state.unitStates.cn31.movement.from, { x: 46, y: 55 });
+  assert.equal(stateAfterAgent.state.unitStates.cn31.movement.kind, "order");
 });
 
 test("prebattle games cannot resume, change speed, or accept orders", async () => {

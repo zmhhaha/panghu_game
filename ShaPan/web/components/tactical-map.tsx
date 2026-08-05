@@ -18,6 +18,14 @@ export type TacticalUnit = {
   strength: string;
   morale: string;
   comms: string;
+  movement?: {
+    from: { x: number; y: number };
+    to: { x: number; y: number };
+    label?: string;
+    kind?: "order" | "intel";
+    confidence?: string;
+    updatedAtMinute?: number;
+  } | null;
 };
 
 export type MapLayers = {
@@ -49,6 +57,28 @@ function UnitGlyph({ unit }: { unit: TacticalUnit }) {
   if (unit.symbol === "recon") return <span className="text-sm leading-none">◇</span>;
   if (unit.symbol === "hq") return <span className="text-[10px] leading-none">HQ</span>;
   return <span className="text-base leading-none">X</span>;
+}
+
+function DynamicArrows({ units, layers, isAsia, knownUnits }: { units: TacticalUnit[]; layers: MapLayers; isAsia: boolean; knownUnits: Set<string> }) {
+  const routes = units.filter((unit) => knownUnits.has(unit.id) && unit.movement && ((unit.side === "friendly" && layers.orders) || (unit.side === "enemy" && layers.intel)));
+  if (!routes.length) return null;
+  return (
+    <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="部队动态行动箭头">
+      <defs>
+        <marker id="dynamic-blue-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#2e6ea4" /></marker>
+        <marker id="dynamic-red-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#a9493f" /></marker>
+      </defs>
+      {routes.map((unit) => {
+        const movement = unit.movement!;
+        const friendly = unit.side === "friendly";
+        const color = (isAsia ? friendly : !friendly) ? "#a9493f" : "#2e6ea4";
+        const marker = color === "#a9493f" ? "url(#dynamic-red-arrow)" : "url(#dynamic-blue-arrow)";
+        const midX = (movement.from.x + movement.to.x) / 2;
+        const midY = (movement.from.y + movement.to.y) / 2 - 3;
+        return <g key={`dynamic-${unit.id}`} opacity=".92"><path d={`M ${movement.from.x} ${movement.from.y} Q ${midX} ${midY} ${movement.to.x} ${movement.to.y}`} fill="none" stroke={color} strokeWidth="1.1" strokeDasharray={friendly ? undefined : "2.2 1.3"} markerEnd={marker} /><circle cx={movement.from.x} cy={movement.from.y} r="1.1" fill={color} /><text x={movement.to.x + 1.5} y={movement.to.y - 1.5} fill={color} fontSize="2.4" fontWeight="700">{movement.label || unit.name}</text></g>;
+      })}
+    </svg>
+  );
 }
 
 function EuropeMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<string> }) {
@@ -175,6 +205,7 @@ export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = f
   return (
     <div className="tactical-map relative min-h-[560px] flex-1 overflow-hidden bg-[#d8cfaa] lg:min-h-0">
       {isAsia ? <ChinaMap layers={layers} knownUnits={revealedUnitIds} /> : <EuropeMap layers={layers} knownUnits={revealedUnitIds} />}
+      <DynamicArrows units={units} layers={layers} isAsia={isAsia} knownUnits={revealedUnitIds} />
 
       {layers.units ? units.filter((unit) => revealedUnitIds.has(unit.id)).map((unit) => (
         <button

@@ -9,6 +9,40 @@ function clone(value) {
   return structuredClone(value);
 }
 
+const movementRoutes = {
+  taierzhuang: {
+    cn31: { from: { x: 46, y: 55 }, to: { x: 52, y: 49 }, label: "东门防御" },
+    cn30: { from: { x: 29, y: 78 }, to: { x: 43, y: 64 }, label: "增援台儿庄" },
+    cn27: { from: { x: 18, y: 35 }, to: { x: 34, y: 43 }, label: "牵制西北" },
+    cnart: { from: { x: 77, y: 25 }, to: { x: 66, y: 36 }, label: "火力支援" },
+    cnreserve: { from: { x: 78, y: 69 }, to: { x: 67, y: 58 }, label: "预备队机动" },
+    jpseya: { from: { x: 73, y: 44 }, to: { x: 61, y: 50 }, label: "城东突击" },
+    jparmor: { from: { x: 78, y: 61 }, to: { x: 65, y: 53 }, label: "战车突进" }
+  },
+  arnhem: {
+    uk1para: { from: { x: 29, y: 59 }, to: { x: 46, y: 52 }, label: "向桥区推进" },
+    uk2para: { from: { x: 60, y: 48 }, to: { x: 69, y: 42 }, label: "保持桥头" },
+    ukairland: { from: { x: 20, y: 72 }, to: { x: 35, y: 61 }, label: "机降部队集结" },
+    ukrecon: { from: { x: 49, y: 55 }, to: { x: 62, y: 48 }, label: "侦察支路" },
+    ukart: { from: { x: 17, y: 39 }, to: { x: 32, y: 43 }, label: "炮兵跟进" },
+    deinf: { from: { x: 70, y: 50 }, to: { x: 61, y: 48 }, label: "桥区增援" },
+    de9ss: { from: { x: 79, y: 66 }, to: { x: 67, y: 56 }, label: "装甲机动" }
+  }
+};
+
+function movementFor(campaignId, unitId, clockMinute, enemy) {
+  const route = movementRoutes[campaignId]?.[unitId];
+  if (!route) return null;
+  return {
+    from: route.from,
+    to: route.to,
+    label: route.label,
+    kind: enemy ? "intel" : "order",
+    confidence: enemy ? "推定" : "已确认",
+    updatedAtMinute: clockMinute
+  };
+}
+
 export function normalizeWorldState(campaign, input = {}) {
   const lastTickMinute = Number(input.lastTickMinute ?? campaign.startMinute);
   return {
@@ -129,7 +163,8 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
     summary: decision.summary,
     morale: decision.morale,
     comms: decision.comms,
-    updatedAtMinute: clockMinute
+    updatedAtMinute: clockMinute,
+    movement: movementFor(campaign.id, unitId, clockMinute, enemy)
   };
 
   const message = {
