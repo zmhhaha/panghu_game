@@ -63,19 +63,23 @@ function DynamicArrows({ units, layers, isAsia, knownUnits }: { units: TacticalU
   const routes = units.filter((unit) => knownUnits.has(unit.id) && unit.movement && ((unit.side === "friendly" && layers.orders) || (unit.side === "enemy" && layers.intel)));
   if (!routes.length) return null;
   return (
-    <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="部队动态行动箭头">
+    <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full" viewBox="0 0 900 720" preserveAspectRatio="xMidYMid slice" aria-label="部队动态行动箭头">
       <defs>
-        <marker id="dynamic-blue-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#2e6ea4" /></marker>
-        <marker id="dynamic-red-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#a9493f" /></marker>
+        <marker id="dynamic-blue-arrow" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 Z" fill="#2e6ea4" /></marker>
+        <marker id="dynamic-red-arrow" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 Z" fill="#a9493f" /></marker>
       </defs>
       {routes.map((unit) => {
         const movement = unit.movement!;
         const friendly = unit.side === "friendly";
         const color = (isAsia ? friendly : !friendly) ? "#a9493f" : "#2e6ea4";
         const marker = color === "#a9493f" ? "url(#dynamic-red-arrow)" : "url(#dynamic-blue-arrow)";
-        const midX = (movement.from.x + movement.to.x) / 2;
-        const midY = (movement.from.y + movement.to.y) / 2 - 3;
-        return <g key={`dynamic-${unit.id}`} opacity=".92"><path d={`M ${movement.from.x} ${movement.from.y} Q ${midX} ${midY} ${movement.to.x} ${movement.to.y}`} fill="none" stroke={color} strokeWidth="1.1" strokeDasharray={friendly ? undefined : "2.2 1.3"} markerEnd={marker} /><circle cx={movement.from.x} cy={movement.from.y} r="1.1" fill={color} /><text x={movement.to.x + 1.5} y={movement.to.y - 1.5} fill={color} fontSize="2.4" fontWeight="700">{movement.label || unit.name}</text></g>;
+        const fromX = movement.from.x * 9;
+        const fromY = movement.from.y * 7.2;
+        const toX = movement.to.x * 9;
+        const toY = movement.to.y * 7.2;
+        const midX = (fromX + toX) / 2;
+        const midY = (fromY + toY) / 2 - 22;
+        return <g key={`dynamic-${unit.id}`} opacity=".92"><path d={`M ${fromX} ${fromY} Q ${midX} ${midY} ${toX} ${toY}`} fill="none" stroke={color} strokeWidth="3.2" strokeDasharray={friendly ? undefined : "10 7"} markerEnd={marker} /><circle cx={fromX} cy={fromY} r="4" fill={color} /><text x={toX + 10} y={toY - 8} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{movement.label || unit.name}</text></g>;
       })}
     </svg>
   );
@@ -92,8 +96,8 @@ function EuropeMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<
         <pattern id="eu-woods" width="28" height="25" patternUnits="userSpaceOnUse">
           <path d="M8 19 L14 7 L20 19 Z M14 7 L14 22" fill="none" stroke="#6f7b5d" strokeWidth="1.4" opacity=".75" />
         </pattern>
-        <marker id="eu-blue-arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 Z" fill="#2e6ea4" /></marker>
-        <marker id="eu-red-arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 Z" fill="#a9493f" /></marker>
+        <marker id="eu-blue-arrow" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 Z" fill="#2e6ea4" /></marker>
+        <marker id="eu-red-arrow" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 Z" fill="#a9493f" /></marker>
       </defs>
       <rect width="900" height="720" fill="#d8cfaa" />
       {layers.grid ? <rect width="900" height="720" fill="url(#eu-grid)" /> : null}
@@ -147,8 +151,8 @@ function ChinaMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<s
         <pattern id="cn-woods" width="28" height="25" patternUnits="userSpaceOnUse">
           <path d="M8 19 L14 7 L20 19 Z M14 7 L14 22" fill="none" stroke="#6f7b5d" strokeWidth="1.4" opacity=".75" />
         </pattern>
-        <marker id="cn-blue-arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 Z" fill="#2e6ea4" /></marker>
-        <marker id="cn-red-arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 Z" fill="#a9493f" /></marker>
+        <marker id="cn-blue-arrow" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 Z" fill="#2e6ea4" /></marker>
+        <marker id="cn-red-arrow" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 Z" fill="#a9493f" /></marker>
       </defs>
       <rect width="900" height="720" fill="#d8cfaa" />
       {layers.grid ? <rect width="900" height="720" fill="url(#cn-grid)" /> : null}
