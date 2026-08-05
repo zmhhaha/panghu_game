@@ -178,6 +178,7 @@ function serverMessage(raw: Partial<Message> & { deliveredAtMinute?: number | nu
 
 function orderMessage(order: { id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; deliveredAtMinute?: number | null; status: Message["orderStatus"] }, recipientName: string): Message {
   const channelName = order.channel === "radio" ? "无线电报" : order.channel === "phone" ? "野战电话" : order.channel === "courier" ? "通信员" : "地下交通线";
+  const deliveryDelay = order.channel === "radio" ? 8 : order.channel === "phone" ? 5 : 25;
   return {
     id: `order-${order.id}`,
     type: "sent",
@@ -188,7 +189,8 @@ function orderMessage(order: { id: string; recipientId: string; channel: string;
     location: order.recipientId,
     orderId: order.id,
     orderStatus: order.status,
-    deliveredAtMinute: order.deliveredAtMinute
+    deliveredAtMinute: order.deliveredAtMinute,
+    availableAtMinute: order.sentAtMinute + deliveryDelay
   };
 }
 
@@ -217,6 +219,14 @@ function displayUnitStatus(status: string) {
     lost_contact: "暂时失联"
   };
   return labels[status] || status.replace(/_/g, " ");
+}
+
+function orderQueueLabel(message: Message, clockMinute: number, gameStatus: GameSummary["status"]) {
+  if (message.orderStatus === "delivered") return typeof message.deliveredAtMinute === "number" ? `${formatClock(message.deliveredAtMinute)} 达 · ` : "已送达 · ";
+  if (message.orderStatus === "failed") return "传输失败";
+  if (message.subject.includes("通信员")) return "通信员在途";
+  if (typeof message.availableAtMinute === "number" && clockMinute >= message.availableAtMinute) return "预计已达 · 等待服务器回执";
+  return "等待送达";
 }
 
 function needsDecision(message: Message) {
@@ -325,7 +335,7 @@ export function WarRoom() {
   const [messageFilter, setMessageFilter] = useState<MessageFilter>("all");
   const [messages, setMessages] = useState<Message[]>([]);
   const [timeline, setTimeline] = useState<Array<{ id?: number; type: string; clockMinute?: number; payload?: { message?: Message; delta?: number } }>>([]);
-  const [mapLayers, setMapLayers] = useState<MapLayers>({ units: true, intel: true, orders: true, grid: true });
+  const [mapLayers, setMapLayers] = useState<MapLayers>({ units: true, intel: true, orders: true, grid: false });
   const [channel, setChannel] = useState("radio");
   const [recipient, setRecipient] = useState("cn31");
   const [priority, setPriority] = useState("normal");
@@ -408,7 +418,11 @@ export function WarRoom() {
       }
       if (data.type === "REPORT_RECEIVED" || data.type === "AGENT_REPORT" || data.type === "ENEMY_ACTION") {
         const message = data.payload?.message;
-        if (message) setMessages((items) => [serverMessage(message), ...items.filter((item) => item.id !== message.id)]);
+        if (message) {
+          const nextMessage = serverMessage(message);
+          setMessages((items) => [nextMessage, ...items.filter((item) => item.id !== message.id)]);
+          if (nextMessage.orderId) updateOrderMessage({ id: nextMessage.orderId, status: "delivered", deliveredAtMinute: nextMessage.availableAtMinute });
+        }
         if (data.payload?.unitState && message?.location) setServerUnitStates((items) => ({ ...items, [message.location]: data.payload.unitState }));
       }
       if (data.type === "ORDER_DELIVERED") updateOrderMessage(data.payload?.order);
@@ -437,6 +451,10 @@ export function WarRoom() {
     if (!state) return;
     const restoredReports = (state.messages || []).map(serverMessage);
     const restoredOrders = (state.orders || []).map((order) => orderMessage(order, unitsByCampaign[sourceCampaignId].find((unit) => unit.id === order.recipientId)?.name || order.recipientId));
+    const reportedOrderIds = new Set(restoredReports.map((message) => message.orderId).filter((orderId): orderId is string => Boolean(orderId)));
+    restoredOrders.forEach((order) => {
+      if (order.orderId && reportedOrderIds.has(order.orderId) && order.orderStatus !== "failed") order.orderStatus = "delivered";
+    });
     knownOrderIds.current = new Set(restoredOrders.map((order) => order.orderId).filter((orderId): orderId is string => Boolean(orderId)));
     pendingOrderUpdates.current.clear();
     setMessages([...restoredOrders, ...restoredReports.filter((message) => !restoredOrders.some((order) => order.id === message.id))]);
@@ -724,7 +742,7 @@ export function WarRoom() {
 
           <div className="h-[132px] shrink-0 overflow-hidden">
             <div className="flex h-9 items-center justify-between border-b border-line px-4"><span className="text-[10px] font-bold">传输队列</span><span className="text-[9px] text-muted">{sentMessages.length} 项</span></div>
-            {sentMessages.length ? <div className="command-scroll max-h-[93px] divide-y divide-line/60 overflow-y-auto">{sentMessages.slice(0, 4).map((message) => <div key={message.id} className="flex items-center gap-2 px-4 py-2"><TimerReset size={12} className="shrink-0 text-copper" /><div className="min-w-0 flex-1"><p className="truncate text-[10px] font-semibold">{message.subject}</p><p className="mt-0.5 text-[9px] text-muted">{message.received} 发 · {message.orderStatus === "delivered" ? `${typeof message.deliveredAtMinute === "number" ? `${formatClock(message.deliveredAtMinute)} 达 · ` : "已送达 · "}${["won", "lost", "finished"].includes(gameStatus) ? "战役结束，无后续回报" : "等待回报"}` : message.orderStatus === "failed" ? "传输失败" : message.subject.includes("通信员") ? "通信员在途" : "等待送达"}</p></div><span className="text-[9px] text-copper">{message.orderStatus === "delivered" ? "已达" : "发送"}</span></div>)}</div> : <div className="flex h-[92px] items-center justify-center text-[10px] text-muted">尚无正在传输的命令</div>}
+            {sentMessages.length ? <div className="command-scroll max-h-[93px] divide-y divide-line/60 overflow-y-auto">{sentMessages.slice(0, 4).map((message) => <div key={message.id} className="flex items-center gap-2 px-4 py-2"><TimerReset size={12} className="shrink-0 text-copper" /><div className="min-w-0 flex-1"><p className="truncate text-[10px] font-semibold">{message.subject}</p><p className="mt-0.5 text-[9px] text-muted">{message.received} 发 · {message.orderStatus === "delivered" ? `${orderQueueLabel(message, clockMinute, gameStatus)}${["won", "lost", "finished"].includes(gameStatus) ? "战役结束，无后续回报" : "等待回报"}` : orderQueueLabel(message, clockMinute, gameStatus)}</p></div><span className="text-[9px] text-copper">{message.orderStatus === "delivered" ? "已达" : typeof message.availableAtMinute === "number" && clockMinute >= message.availableAtMinute ? "待回执" : "发送"}</span></div>)}</div> : <div className="flex h-[92px] items-center justify-center text-[10px] text-muted">尚无正在传输的命令</div>}
           </div>
           <div className="signal-rule shrink-0 border-t border-line px-4 py-2 text-[9px] text-muted">{notice}</div>
         </aside>

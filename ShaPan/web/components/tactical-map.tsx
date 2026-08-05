@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Crosshair, Play } from "lucide-react";
+import { ChevronDown, ChevronUp, Crosshair, Play, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
@@ -37,6 +37,7 @@ export type TacticalUnit = {
     confidence?: string;
     phase?: "moving" | "halted" | "delayed" | "engaged" | "retreating";
     progress?: number;
+    segment?: number;
     updatedAtMinute?: number;
   } | null;
 };
@@ -72,11 +73,25 @@ function UnitGlyph({ unit }: { unit: TacticalUnit }) {
   return <span className="text-base leading-none">X</span>;
 }
 
-function DynamicArrows({ units, layers, isAsia, knownUnits }: { units: TacticalUnit[]; layers: MapLayers; isAsia: boolean; knownUnits: Set<string> }) {
+function unitCode(unit: TacticalUnit) {
+  const match = unit.name.match(/第?(\d+)(?:伞兵营|伞兵旅|机降旅|师|军|旅|师团|联队)/);
+  if (match) return `${match[1]} ${unit.symbol === "armor" ? "ARM" : unit.symbol === "artillery" ? "ART" : "INF"}`;
+  return unit.name.replace(/第|英国|中国|日军|德军|部队|旅|营|团|师/g, "").slice(0, 8).toUpperCase();
+}
+
+function isEngaged(unit: TacticalUnit) {
+  return unit.movement?.phase === "engaged" || /交战|受阻|射击|接触/.test(unit.status);
+}
+
+function isHolding(unit: TacticalUnit) {
+  return unit.movement?.phase === "halted" || /固守|防御|保持|坚守/.test(unit.status);
+}
+
+function DynamicArrows({ units, layers, isAsia, knownUnits, focusUnitId }: { units: TacticalUnit[]; layers: MapLayers; isAsia: boolean; knownUnits: Set<string>; focusUnitId: string | null }) {
   const routes = units.filter((unit) => knownUnits.has(unit.id) && unit.movement && ((unit.side === "friendly" && layers.orders) || (unit.side === "enemy" && layers.intel)));
   if (!routes.length) return null;
   return (
-    <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full" viewBox={`0 0 ${TACTICAL_MAP_DIMENSIONS.width} ${TACTICAL_MAP_DIMENSIONS.height}`} preserveAspectRatio="xMidYMid slice" aria-label="部队动态行动箭头">
+    <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full" viewBox={`0 0 ${TACTICAL_MAP_DIMENSIONS.width} ${TACTICAL_MAP_DIMENSIONS.height}`} preserveAspectRatio="xMidYMid slice" aria-label="部队当前行动标绘">
       <defs>
         <marker id="dynamic-blue-arrow" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 Z" fill="#2e6ea4" /></marker>
         <marker id="dynamic-red-arrow" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 Z" fill="#a9493f" /></marker>
@@ -86,17 +101,47 @@ function DynamicArrows({ units, layers, isAsia, knownUnits }: { units: TacticalU
         const friendly = unit.side === "friendly";
         const color = (isAsia ? friendly : !friendly) ? "#a9493f" : "#2e6ea4";
         const marker = color === "#a9493f" ? "url(#dynamic-red-arrow)" : "url(#dynamic-blue-arrow)";
-        const from = percentToMapPoint(movement.from);
-        const to = percentToMapPoint(movement.to);
-        const fromX = from.x;
-        const fromY = from.y;
-        const toX = to.x;
-        const toY = to.y;
-        const points = (movement.route?.length ? movement.route : [movement.from, movement.to]).map(percentToMapPoint);
+        const current = percentToMapPoint({ x: unit.x, y: unit.y });
+        const route = movement.route?.length ? movement.route : [movement.from, movement.to];
+        const nextPoints = route.slice(Math.min((movement.segment ?? 0) + 1, route.length - 1));
+        const points = [current, ...nextPoints.map(percentToMapPoint)];
         const pathData = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
         const target = points[points.length - 1];
-        const phaseDash = movement.phase === "halted" ? "3 7" : friendly ? undefined : "10 7";
-        return <g key={`dynamic-${unit.id}`} opacity=".92"><path d={pathData} fill="none" stroke={color} strokeWidth="3.2" strokeDasharray={phaseDash} markerEnd={marker} /><circle cx={fromX} cy={fromY} r="4" fill={color} /><text x={target.x + 10} y={target.y - 8} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{movement.label || unit.name}</text></g>;
+        const dimmed = Boolean(focusUnitId && focusUnitId !== unit.id);
+        const confidence = movement.confidence === "已确认" || movement.confidence === "confirmed" ? "confirmed" : "estimated";
+
+        if (!friendly) {
+          const radius = confidence === "confirmed" ? 22 : 42;
+          const direction = points.length > 1 ? points[1] : { x: current.x + 26, y: current.y };
+          return <g key={`intel-${unit.id}`} opacity={dimmed ? ".18" : confidence === "confirmed" ? ".7" : ".5"}>
+            <ellipse cx={current.x} cy={current.y} rx={radius} ry={radius * .62} fill={color} fillOpacity=".08" stroke={color} strokeDasharray={confidence === "confirmed" ? "5 5" : "2 7"} strokeWidth="2" />
+            <path d={`M ${current.x} ${current.y} L ${direction.x} ${direction.y}`} fill="none" stroke={color} strokeDasharray="5 7" strokeWidth="2" markerEnd={marker} />
+            <text x={current.x + radius + 6} y={current.y - radius * .62} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{unitCode(unit)} · {confidence === "confirmed" ? "确认" : "推定"}</text>
+          </g>;
+        }
+
+        if (isEngaged(unit)) {
+          return <g key={`engaged-${unit.id}`} opacity={dimmed ? ".2" : ".95"}>
+            <path d={`M ${current.x - 24} ${current.y + 15} Q ${current.x} ${current.y - 18} ${current.x + 24} ${current.y + 15}`} fill="none" stroke={color} strokeWidth="3.5" />
+            <path d={`M ${current.x - 13} ${current.y - 8} L ${current.x + 13} ${current.y + 12} M ${current.x + 13} ${current.y - 8} L ${current.x - 13} ${current.y + 12}`} stroke="#8b443c" strokeWidth="3" />
+            <text x={current.x + 29} y={current.y + 17} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{unitCode(unit)} · 交战</text>
+          </g>;
+        }
+
+        if (isHolding(unit)) {
+          return <g key={`holding-${unit.id}`} opacity={dimmed ? ".2" : ".95"}>
+            <path d={`M ${current.x - 19} ${current.y + 15} Q ${current.x} ${current.y - 12} ${current.x + 19} ${current.y + 15}`} fill="none" stroke={color} strokeWidth="3.5" />
+            <path d={`M ${current.x - 19} ${current.y + 15} L ${current.x + 19} ${current.y + 15}`} stroke={color} strokeWidth="3.5" />
+            <text x={current.x + 25} y={current.y + 18} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{unitCode(unit)} · 固守</text>
+          </g>;
+        }
+
+        return <g key={`dynamic-${unit.id}`} opacity={dimmed ? ".2" : ".96"}>
+          <path d={pathData} fill="none" stroke={color} strokeWidth="4" strokeDasharray={movement.phase === "retreating" ? "8 6" : movement.phase === "delayed" ? "2 7" : undefined} markerEnd={marker} />
+          <circle cx={current.x} cy={current.y} r="4" fill={color} />
+          <text x={current.x + 8} y={current.y - 10} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{unitCode(unit)}</text>
+          {points.length > 1 ? <text x={target.x + 9} y={target.y - 8} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="9" fontWeight="700">{movement.label || "当前目标"}</text> : null}
+        </g>;
       })}
     </svg>
   );
@@ -148,10 +193,6 @@ function EuropeMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<
         <text x="702" y="562" fontSize="12" fontWeight="700">ROAD BRIDGE</text>
       </g>
       <g transform="translate(810 62)" fill="#4e5349"><path d="M0 42 L12 0 L24 42 L12 32 Z" /><text x="8" y="58" fontSize="10">N</text></g>
-      {layers.orders && knownUnits.has("uk1para") ? <path d="M180 410 C330 395 440 355 555 335 C626 323 663 316 693 305" fill="none" stroke="#2e6ea4" strokeWidth="10" markerEnd="url(#eu-blue-arrow)" opacity=".92" /> : null}
-      {layers.orders && knownUnits.has("uk2para") ? <path d="M365 482 C455 505 558 535 674 566" fill="none" stroke="#2e6ea4" strokeWidth="6" strokeDasharray="12 8" markerEnd="url(#eu-blue-arrow)" opacity=".9" /> : null}
-      {layers.intel && knownUnits.has("deinf") ? <path d="M858 314 C782 324 740 355 700 398" fill="none" stroke="#a9493f" strokeWidth="7" markerEnd="url(#eu-red-arrow)" opacity=".9" /> : null}
-      {layers.intel && knownUnits.has("de9ss") ? <path d="M816 642 C760 590 720 552 688 500" fill="none" stroke="#a9493f" strokeWidth="5" markerEnd="url(#eu-red-arrow)" opacity=".9" /> : null}
       <text x="25" y="695" fill="#496c95" fontSize="11" fontWeight="700">MODIFIED BRITISH SYSTEM · EACH SMALL SQUARE 1 KM</text>
     </svg>
   );
@@ -199,10 +240,6 @@ function ChinaMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<s
         <text x="483" y="611" fill="#547c91" fontSize="14" fontStyle="italic">大运河</text>
       </g>
       <g transform="translate(810 56)" fill="#4e5349"><path d="M0 42 L12 0 L24 42 L12 32 Z" /><text x="8" y="58" fontSize="10">N</text></g>
-      {layers.orders && knownUnits.has("cn30") ? <path d="M230 652 C290 584 343 524 391 470" fill="none" stroke="#a9493f" strokeWidth="9" markerEnd="url(#cn-red-arrow)" opacity=".92" /> : null}
-      {layers.orders && knownUnits.has("cn27") ? <path d="M88 348 C166 344 220 350 273 369" fill="none" stroke="#a9493f" strokeWidth="7" markerEnd="url(#cn-red-arrow)" opacity=".92" /> : null}
-      {layers.intel && knownUnits.has("jpseya") ? <path d="M834 257 C762 265 708 285 671 324" fill="none" stroke="#2e6ea4" strokeWidth="6" strokeDasharray="12 8" markerEnd="url(#cn-blue-arrow)" opacity=".9" /> : null}
-      {layers.intel && knownUnits.has("jparmor") ? <path d="M807 443 C750 430 704 403 675 370" fill="none" stroke="#2e6ea4" strokeWidth="5" strokeDasharray="10 7" markerEnd="url(#cn-blue-arrow)" opacity=".9" /> : null}
     </svg>
   );
 }
@@ -212,6 +249,7 @@ export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = f
   const hasReports = battleStarted && visibleReportCount > 0;
   const selectedKnown = revealedUnitIds.has(selectedUnit.id);
   const [unitPanelExpanded, setUnitPanelExpanded] = useState(false);
+  const [focusUnitId, setFocusUnitId] = useState<string | null>(null);
 
   useEffect(() => {
     setUnitPanelExpanded(false);
@@ -226,23 +264,24 @@ export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = f
   return (
     <div className="tactical-map relative min-h-[560px] flex-1 overflow-hidden bg-[#d8cfaa] lg:min-h-0">
       {isAsia ? <ChinaMap layers={layers} knownUnits={revealedUnitIds} /> : <EuropeMap layers={layers} knownUnits={revealedUnitIds} />}
-      <DynamicArrows units={units} layers={layers} isAsia={isAsia} knownUnits={revealedUnitIds} />
+      <DynamicArrows units={units} layers={layers} isAsia={isAsia} knownUnits={revealedUnitIds} focusUnitId={focusUnitId} />
 
       {layers.units ? units.filter((unit) => revealedUnitIds.has(unit.id)).map((unit) => (
         <button
           key={unit.id}
           type="button"
-          onClick={() => onSelectUnit(unit.id)}
-          className="group absolute z-20 -translate-x-1/2 -translate-y-1/2 text-left"
+          onClick={() => { setFocusUnitId(unit.id); onSelectUnit(unit.id); }}
+          className={cn("group absolute z-20 -translate-x-1/2 -translate-y-1/2 text-left transition-opacity", focusUnitId && focusUnitId !== unit.id && "opacity-35")}
           style={{ left: `${unit.x}%`, top: `${unit.y}%` }}
           aria-label={`${unit.name}，${unit.status}`}
         >
           <span className={cn(
-            "mil-marker flex h-11 w-16 items-center justify-center border-[3px] bg-[#ddd4ad] font-bold",
+            "mil-marker flex h-11 w-16 items-center justify-center bg-[#ddd4ad] font-bold",
+            unit.side === "enemy" ? "border-2 border-dashed" : "border-[3px]",
             markerClasses(unit),
             selectedUnit.id === unit.id && "ring-2 ring-[#eee1a8] ring-offset-2 ring-offset-[#626c59]"
-          )}><UnitGlyph unit={unit} /></span>
-          <span className={cn("mt-1 block whitespace-nowrap bg-[#ddd4ad]/75 px-1 py-0.5 text-[10px] font-bold", markerClasses(unit))}>{unit.name} · {unit.detail.split("·").at(-1)?.trim()}</span>
+          )}>{unit.side === "enemy" ? <span className="text-lg opacity-70">?</span> : <UnitGlyph unit={unit} />}</span>
+          <span className={cn("mt-1 block whitespace-nowrap bg-[#ddd4ad]/80 px-1 py-0.5 text-[10px] font-bold", markerClasses(unit))}>{unitCode(unit)} · {unit.side === "enemy" ? (unit.movement?.confidence === "已确认" ? "确认" : "推定") : unit.status}</span>
         </button>
       )) : null}
 
@@ -302,11 +341,13 @@ export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = f
 
       {battleStarted && paused && !battleEnded ? <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 border border-copper/70 bg-panel/95 px-4 py-2 text-xs font-bold text-paper shadow-lg">战役已暂停 · 可阅读情报并下达军令</div> : null}
 
-      <div className="absolute bottom-4 left-4 z-30 flex flex-wrap gap-3 border border-[#3b433c] bg-[#172019]/92 px-3 py-2 text-[10px] text-paper shadow-lg">
+      <div className="absolute bottom-4 left-4 z-30 flex max-w-[calc(100%-2rem)] flex-wrap gap-x-3 gap-y-1 border border-[#3b433c] bg-[#172019]/92 px-3 py-2 text-[10px] text-paper shadow-lg">
         <span className="flex items-center gap-1"><i className={cn("h-2.5 w-2.5 border-2", isAsia ? "border-alert" : "border-blueMark")} />己方已确认</span>
-        <span className="flex items-center gap-1"><i className={cn("h-2.5 w-2.5 border-2", isAsia ? "border-blueMark" : "border-alert")} />敌情标记</span>
-        <span className="flex items-center gap-1"><i className={cn("h-0.5 w-5", isAsia ? "bg-alert" : "bg-blueMark")} />行动标绘</span>
-        <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-copper" />报告可信度</span>
+        <span className="flex items-center gap-1"><i className={cn("h-2.5 w-4 rounded-full border border-dashed", isAsia ? "border-blueMark" : "border-alert")} />敌情范围</span>
+        <span className="flex items-center gap-1"><i className={cn("h-0.5 w-5", isAsia ? "bg-alert" : "bg-blueMark")} />行军</span>
+        <span className="flex items-center gap-1"><i className={cn("h-2 w-4 border-b-2 border-x-2", isAsia ? "border-alert" : "border-blueMark")} />固守</span>
+        <span className="flex items-center gap-1"><i className="text-alert">×</i>交战</span>
+        {focusUnitId ? <button type="button" onClick={() => setFocusUnitId(null)} className="ml-auto flex items-center gap-1 text-muted hover:text-paper" title="取消部队焦点"><X size={11} />取消焦点</button> : null}
       </div>
       <div className="absolute bottom-4 right-4 z-30 flex items-end gap-2 text-[10px] font-bold text-[#354039]"><span className="block h-2 w-20 border-x border-b-2 border-[#354039]" />2 KM</div>
     </div>
