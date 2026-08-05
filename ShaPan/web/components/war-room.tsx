@@ -124,7 +124,7 @@ const unitsByCampaign: Record<string, TacticalUnit[]> = {
   ],
   arnhem: [
     { id: "uk1para", name: "第1伞兵旅", side: "friendly", x: 29, y: 59, detail: "奥斯特贝克东侧 · 14:38", status: "联络断续", summary: "旅部沿主路向阿纳姆推进，无线电无法稳定回传。", symbol: "infantry", strength: "84%", morale: "良好", comms: "断续无线电" },
-    { id: "uk2para", name: "第2伞兵营", side: "friendly", x: 60, y: 48, detail: "公路桥西侧 · 14:47", status: "目标接触", summary: "先头连进入桥西建筑区，桥东出现零星射击。", symbol: "infantry", strength: "79%", morale: "高昂", comms: "联络正常" },
+    { id: "uk2para", name: "第2伞兵营", side: "friendly", x: 58, y: 67, detail: "公路桥西侧引道 · 14:47", status: "目标接触", summary: "先头连沿桥西引道接近公路桥，桥东出现零星射击。", symbol: "infantry", strength: "79%", morale: "高昂", comms: "联络正常" },
     { id: "ukairland", name: "第1机降旅", side: "friendly", x: 20, y: 72, detail: "DZ X · 14:31", status: "正在集结", summary: "第一波完成集结，部分反坦克武器仍未找到。", symbol: "infantry", strength: "76%", morale: "良好", comms: "联络正常" },
     { id: "ukrecon", name: "第1空降侦察中队", side: "friendly", x: 49, y: 55, detail: "乌得勒支公路 · 14:45", status: "联络正常", summary: "侦察车队在道路阻塞前改向，正寻找通往桥区的支路。", symbol: "recon", strength: "68%", morale: "良好", comms: "无线电" },
     { id: "ukart", name: "师属轻炮兵", side: "friendly", x: 17, y: 39, detail: "着陆地域 · 14:12", status: "待命", summary: "已收拢部分火炮，观察员尚未与前进部队建立稳定联络。", symbol: "artillery", strength: "55%", morale: "稳定", comms: "等待校射" },

@@ -5,6 +5,16 @@ import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 
+/** Shared 900x720 tactical canvas. API points are percentages of this canvas. */
+export const TACTICAL_MAP_DIMENSIONS = { width: 900, height: 720 } as const;
+
+function percentToMapPoint(point: { x: number; y: number }) {
+  return {
+    x: (point.x / 100) * TACTICAL_MAP_DIMENSIONS.width,
+    y: (point.y / 100) * TACTICAL_MAP_DIMENSIONS.height,
+  };
+}
+
 export type TacticalUnit = {
   id: string;
   name: string;
@@ -63,7 +73,7 @@ function DynamicArrows({ units, layers, isAsia, knownUnits }: { units: TacticalU
   const routes = units.filter((unit) => knownUnits.has(unit.id) && unit.movement && ((unit.side === "friendly" && layers.orders) || (unit.side === "enemy" && layers.intel)));
   if (!routes.length) return null;
   return (
-    <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full" viewBox="0 0 900 720" preserveAspectRatio="xMidYMid slice" aria-label="部队动态行动箭头">
+    <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full" viewBox={`0 0 ${TACTICAL_MAP_DIMENSIONS.width} ${TACTICAL_MAP_DIMENSIONS.height}`} preserveAspectRatio="xMidYMid slice" aria-label="部队动态行动箭头">
       <defs>
         <marker id="dynamic-blue-arrow" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 Z" fill="#2e6ea4" /></marker>
         <marker id="dynamic-red-arrow" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 Z" fill="#a9493f" /></marker>
@@ -73,10 +83,12 @@ function DynamicArrows({ units, layers, isAsia, knownUnits }: { units: TacticalU
         const friendly = unit.side === "friendly";
         const color = (isAsia ? friendly : !friendly) ? "#a9493f" : "#2e6ea4";
         const marker = color === "#a9493f" ? "url(#dynamic-red-arrow)" : "url(#dynamic-blue-arrow)";
-        const fromX = movement.from.x * 9;
-        const fromY = movement.from.y * 7.2;
-        const toX = movement.to.x * 9;
-        const toY = movement.to.y * 7.2;
+        const from = percentToMapPoint(movement.from);
+        const to = percentToMapPoint(movement.to);
+        const fromX = from.x;
+        const fromY = from.y;
+        const toX = to.x;
+        const toY = to.y;
         const midX = (fromX + toX) / 2;
         const midY = (fromY + toY) / 2 - 22;
         return <g key={`dynamic-${unit.id}`} opacity=".92"><path d={`M ${fromX} ${fromY} Q ${midX} ${midY} ${toX} ${toY}`} fill="none" stroke={color} strokeWidth="3.2" strokeDasharray={friendly ? undefined : "10 7"} markerEnd={marker} /><circle cx={fromX} cy={fromY} r="4" fill={color} /><text x={toX + 10} y={toY - 8} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{movement.label || unit.name}</text></g>;
@@ -87,7 +99,7 @@ function DynamicArrows({ units, layers, isAsia, knownUnits }: { units: TacticalU
 
 function EuropeMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<string> }) {
   return (
-    <svg className="absolute inset-0 h-full w-full" viewBox="0 0 900 720" preserveAspectRatio="xMidYMid slice" role="img" aria-label="阿纳姆地区认知作战图">
+    <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${TACTICAL_MAP_DIMENSIONS.width} ${TACTICAL_MAP_DIMENSIONS.height}`} preserveAspectRatio="xMidYMid slice" role="img" aria-label="阿纳姆地区认知作战图">
       <defs>
         <pattern id="eu-grid" width="90" height="90" patternUnits="userSpaceOnUse">
           <path d="M 90 0 L 0 0 0 90" fill="none" stroke="#6f765f" strokeWidth="1" opacity=".38" />
@@ -132,7 +144,7 @@ function EuropeMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<
       </g>
       <g transform="translate(810 62)" fill="#4e5349"><path d="M0 42 L12 0 L24 42 L12 32 Z" /><text x="8" y="58" fontSize="10">N</text></g>
       {layers.orders && knownUnits.has("uk1para") ? <path d="M180 410 C330 395 440 355 555 335 C626 323 663 316 693 305" fill="none" stroke="#2e6ea4" strokeWidth="10" markerEnd="url(#eu-blue-arrow)" opacity=".92" /> : null}
-      {layers.orders && knownUnits.has("uk2para") ? <path d="M284 265 C385 298 470 314 564 325" fill="none" stroke="#2e6ea4" strokeWidth="6" strokeDasharray="12 8" markerEnd="url(#eu-blue-arrow)" opacity=".9" /> : null}
+      {layers.orders && knownUnits.has("uk2para") ? <path d="M365 482 C455 505 558 535 674 566" fill="none" stroke="#2e6ea4" strokeWidth="6" strokeDasharray="12 8" markerEnd="url(#eu-blue-arrow)" opacity=".9" /> : null}
       {layers.intel && knownUnits.has("deinf") ? <path d="M858 314 C782 324 740 355 700 398" fill="none" stroke="#a9493f" strokeWidth="7" markerEnd="url(#eu-red-arrow)" opacity=".9" /> : null}
       {layers.intel && knownUnits.has("de9ss") ? <path d="M816 642 C760 590 720 552 688 500" fill="none" stroke="#a9493f" strokeWidth="5" markerEnd="url(#eu-red-arrow)" opacity=".9" /> : null}
       <text x="25" y="695" fill="#496c95" fontSize="11" fontWeight="700">MODIFIED BRITISH SYSTEM · EACH SMALL SQUARE 1 KM</text>
@@ -142,7 +154,7 @@ function EuropeMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<
 
 function ChinaMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<string> }) {
   return (
-    <svg className="absolute inset-0 h-full w-full" viewBox="0 0 900 720" preserveAspectRatio="xMidYMid slice" role="img" aria-label="台儿庄地区认知作战图">
+    <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${TACTICAL_MAP_DIMENSIONS.width} ${TACTICAL_MAP_DIMENSIONS.height}`} preserveAspectRatio="xMidYMid slice" role="img" aria-label="台儿庄地区认知作战图">
       <defs>
         <pattern id="cn-grid" width="90" height="90" patternUnits="userSpaceOnUse">
           <path d="M 90 0 L 0 0 0 90" fill="none" stroke="#76755f" strokeWidth="1" opacity=".38" />

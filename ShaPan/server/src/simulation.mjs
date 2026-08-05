@@ -21,12 +21,12 @@ const movementRoutes = {
   },
   arnhem: {
     uk1para: { from: { x: 29, y: 59 }, to: { x: 46, y: 52 }, label: "向桥区推进" },
-    uk2para: { from: { x: 60, y: 48 }, to: { x: 69, y: 42 }, label: "保持桥头" },
+    uk2para: { from: { x: 58, y: 67 }, to: { x: 75, y: 76 }, label: "保持桥头" },
     ukairland: { from: { x: 20, y: 72 }, to: { x: 35, y: 61 }, label: "机降部队集结" },
     ukrecon: { from: { x: 49, y: 55 }, to: { x: 62, y: 48 }, label: "侦察支路" },
     ukart: { from: { x: 17, y: 39 }, to: { x: 32, y: 43 }, label: "炮兵跟进" },
-    deinf: { from: { x: 70, y: 50 }, to: { x: 61, y: 48 }, label: "桥区增援" },
-    de9ss: { from: { x: 79, y: 66 }, to: { x: 67, y: 56 }, label: "装甲机动" }
+    deinf: { from: { x: 70, y: 50 }, to: { x: 75, y: 68 }, label: "桥区增援" },
+    de9ss: { from: { x: 79, y: 66 }, to: { x: 75, y: 76 }, label: "装甲机动" }
   }
 };
 
