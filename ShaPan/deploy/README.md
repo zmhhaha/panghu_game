@@ -94,6 +94,10 @@ npm run dev
 
 有 PostgreSQL 时设置 `DATABASE_URL`，先执行 `psql "$env:DATABASE_URL" -f server/migrations/001_initial.sql`，再启动 API 和 `npm run sim`。生产环境不允许内存模式。
 
-## 当前边界
+## 当前运行模型
 
-当前 Worker 已具备独立进程、数据库连接和战局推进骨架；Agent 任务解析和真实战斗结算仍在后续垂直切片中实现。Next 前端已经可以创建服务器战局、提交命令并订阅事件流，本阶段部署重点验证服务链路、登录、数据库隔离、命令 API、SSE 和战局时间推进。
+模拟 Worker 负责推进服务器战钟、释放按历史时间计划的战场报告、送达通信队列并创建 Agent 任务。Agent Worker 会优先调用 `deepseek` 或 `openai` 的 OpenAI-compatible Chat Completions 接口；没有对应密钥时自动使用确定性的 `fallback` 决策，不会阻塞战局。
+
+军令送达、部队 Agent 回报、敌军 Agent 活动、目标进度和到期胜负均写入 `world_snapshots` / `world_events`。前端从 `/api/v1/games` 读取已有实例，使用 `/state` 恢复通信、军令和单位状态，并通过 SSE 接收后续事件。
+
+模型 Agent 的输出只负责行动表达和局部状态建议，目标进度与胜负由服务端规则计算，避免模型直接决定战役结果。

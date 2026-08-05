@@ -14,7 +14,7 @@
     "web:build": "npm --prefix web run build",
     "web:typecheck": "npm --prefix web run typecheck",
     "test": "node --test server/tests/*.test.mjs",
-    "check": "node --check server/src/index.mjs && node --check server/src/store.mjs && node --check server/src/sim-worker.mjs && node --check server/src/agent-worker.mjs && node --test server/tests/*.test.mjs && npm --prefix web run typecheck"
+    "check": "node --check server/src/index.mjs && node --check server/src/store.mjs && node --check server/src/sim-worker.mjs && node --check server/src/agent-worker.mjs && node --check server/src/simulation.mjs && node --check server/src/agent-provider.mjs && node --test server/tests/*.test.mjs && npm --prefix web run typecheck"
   },
   "dependencies": {
     "pg": "^8.13.1"
