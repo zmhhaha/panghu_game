@@ -480,7 +480,11 @@ export function WarRoom() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action, ...(nextSpeed ? { speed: nextSpeed } : {}) })
       });
-      if (!response.ok) throw new Error(action === "set_speed" ? "倍速设置未能送达服务器" : "战役时钟控制失败");
+      if (!response.ok) {
+        const details = await response.json().catch(() => null) as { requestId?: string } | null;
+        const fallback = action === "set_speed" ? "倍速设置未能送达服务器" : "战役时钟控制失败";
+        throw new Error(details?.requestId ? `${fallback} · 请求 ${details.requestId}` : fallback);
+      }
       const data = await response.json();
       setGameStatus(data.game.status);
       setPaused(data.game.status !== "running");

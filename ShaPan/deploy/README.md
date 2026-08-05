@@ -92,7 +92,7 @@ npm run dev
 
 浏览器打开 `http://127.0.0.1:4190`，API 健康检查位于 `http://127.0.0.1:3188/api/health`。开发模式的用户为 `dev-user`，不能作为生产认证方案。
 
-有 PostgreSQL 时设置 `DATABASE_URL`，先执行 `psql "$env:DATABASE_URL" -f server/migrations/001_initial.sql`，再启动 API 和 `npm run sim`。生产环境不允许内存模式。
+有 PostgreSQL 时设置 `DATABASE_URL`，按文件名顺序执行 `server/migrations/*.sql`，再启动 API 和 `npm run sim`。生产环境不允许内存模式。`004_message_conflict_index.sql` 会把旧版的部分唯一索引升级为可供消息幂等写入直接使用的唯一索引，不需要清理已有战局。
 
 ## 当前运行模型
 

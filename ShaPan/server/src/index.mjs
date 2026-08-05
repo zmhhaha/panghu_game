@@ -15,8 +15,11 @@ function sendJson(response, status, payload) {
   response.end(body);
 }
 
-function errorResponse(response, error) {
+function errorResponse(request, response, error) {
   const status = Number(error.statusCode || 500);
+  if (status >= 500) {
+    console.error(`[shapan-api] request failed request_id=${response.requestId} method=${request.method} path=${request.url} error=${error.message}`);
+  }
   sendJson(response, status, { error: status >= 500 ? "internal_error" : error.message, requestId: response.requestId });
 }
 
@@ -45,14 +48,14 @@ async function handle(request, response) {
   const url = new URL(request.url || "/", "http://shapan.local");
   if (request.method === "GET" && url.pathname === "/api/health") {
     try { sendJson(response, 200, { service: "shapan-api", version: "0.1.0", ...(await store.health()) }); }
-    catch (error) { errorResponse(response, error); }
+    catch (error) { errorResponse(request, response, error); }
     return;
   }
   if (!url.pathname.startsWith("/api/")) { sendJson(response, 404, { error: "not_found" }); return; }
 
   let principal;
   try { principal = getPrincipal(request); await store.ensureUser(principal); }
-  catch (error) { errorResponse(response, error); return; }
+  catch (error) { errorResponse(request, response, error); return; }
 
   try {
     if (request.method === "GET" && url.pathname === "/api/v1/auth/me") { sendJson(response, 200, { user: principal }); return; }
@@ -132,7 +135,7 @@ async function handle(request, response) {
       return;
     }
     sendJson(response, 404, { error: "not_found" });
-  } catch (error) { errorResponse(response, error); }
+  } catch (error) { errorResponse(request, response, error); }
 }
 
 const server = createServer((request, response) => { handle(request, response); });
