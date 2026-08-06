@@ -9,6 +9,66 @@ function clone(value) {
   return structuredClone(value);
 }
 
+function initialBattlefield(campaignId) {
+  return campaignId === "arnhem"
+    ? { objectiveControl: 28, combatPower: 72, morale: 66, supply: 58, communications: 55, enemyPressure: 38, overall: 30 }
+    : { objectiveControl: 52, combatPower: 68, morale: 62, supply: 60, communications: 58, enemyPressure: 42, overall: 30 };
+}
+
+function normalizeBattlefield(campaign, input = {}) {
+  const fallback = initialBattlefield(campaign.id);
+  const battlefield = {
+    objectiveControl: clamp(input.objectiveControl ?? fallback.objectiveControl, 0, 100),
+    combatPower: clamp(input.combatPower ?? fallback.combatPower, 0, 100),
+    morale: clamp(input.morale ?? fallback.morale, 0, 100),
+    supply: clamp(input.supply ?? fallback.supply, 0, 100),
+    communications: clamp(input.communications ?? fallback.communications, 0, 100),
+    enemyPressure: clamp(input.enemyPressure ?? fallback.enemyPressure, 0, 100),
+    overall: 0
+  };
+  battlefield.overall = clamp(Math.round(
+    battlefield.objectiveControl * 0.46 +
+    battlefield.combatPower * 0.18 +
+    battlefield.morale * 0.12 +
+    battlefield.supply * 0.12 +
+    battlefield.communications * 0.07 -
+    battlefield.enemyPressure * 0.15
+  ), 0, 100);
+  return battlefield;
+}
+
+function refreshBattlefield(campaign, state) {
+  state.battlefield = normalizeBattlefield(campaign, state.battlefield);
+  state.enemyPressure = state.battlefield.enemyPressure;
+  state.objectiveProgress = state.battlefield.overall;
+  return state.battlefield;
+}
+
+function changeBattlefield(campaign, state, changes) {
+  const battlefield = normalizeBattlefield(campaign, state.battlefield);
+  for (const [key, delta] of Object.entries(changes)) {
+    if (key in battlefield && key !== "overall") battlefield[key] = clamp(battlefield[key] + delta, 0, 100);
+  }
+  state.battlefield = battlefield;
+  return refreshBattlefield(campaign, state);
+}
+
+function orderImpact(campaignId, text) {
+  const order = String(text || "");
+  const logistics = /补给|弹药|伤员|后方|集结|运输/.test(order);
+  const reconnaissance = /侦察|观察|情报|搜索/.test(order);
+  const fireSupport = /炮|火力|压制|轰击/.test(order);
+  const objective = campaignId === "arnhem" ? /桥|桥头|阿纳姆/.test(order) : /台儿庄|城|阵地|东门/.test(order);
+  return {
+    objectiveControl: objective ? 5 : 1,
+    combatPower: fireSupport ? 2 : 1,
+    morale: 3,
+    supply: logistics ? 5 : 0,
+    communications: reconnaissance ? 4 : 2,
+    enemyPressure: fireSupport ? -3 : objective ? -1 : 0
+  };
+}
+
 const movementRoutes = {
   taierzhuang: {
     cn31: { from: { x: 46, y: 55 }, to: { x: 52, y: 49 }, label: "东门防御" },
@@ -108,19 +168,23 @@ function movementFor(campaignId, unitId, clockMinute, enemy) {
 
 export function normalizeWorldState(campaign, input = {}) {
   const lastTickMinute = Number(input.lastTickMinute ?? campaign.startMinute);
-  return {
+  const state = {
     units: Array.isArray(input.units) ? input.units : campaign.units,
     unitStates: input.unitStates && typeof input.unitStates === "object" ? input.unitStates : {},
     contacts: Array.isArray(input.contacts) ? input.contacts : [],
     messages: Array.isArray(input.messages) ? input.messages : [],
     orders: Array.isArray(input.orders) ? input.orders : [],
     lastTickMinute,
+    // objectiveProgress is a derived, player-facing overall posture.
     objectiveProgress: clamp(input.objectiveProgress ?? 30, 0, 100),
     nextAgentMinute: Number(input.nextAgentMinute ?? Math.max(campaign.startMinute + 10, lastTickMinute + 1)),
     agentCursor: Number(input.agentCursor ?? 0),
     enemyPressure: clamp(input.enemyPressure ?? 0, 0, 100),
+    battlefield: normalizeBattlefield(campaign, input.battlefield),
     localBattles: input.localBattles && typeof input.localBattles === "object" ? input.localBattles : {}
   };
+  refreshBattlefield(campaign, state);
+  return state;
 }
 
 export function createInitialWorldState(campaign) {
@@ -135,7 +199,8 @@ export function recordOrder(worldState, order) {
 
 function objectiveStatus(campaign, state, clockMinute) {
   if (clockMinute < campaign.deadlineMinute) return null;
-  return state.objectiveProgress >= 50 ? "won" : "lost";
+  const battlefield = refreshBattlefield(campaign, state);
+  return battlefield.objectiveControl >= 55 && battlefield.combatPower >= 40 && battlefield.supply >= 30 ? "won" : "lost";
 }
 
 export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = [] }) {
@@ -161,7 +226,9 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
       if (typeof hostileState?.x !== "number" || typeof hostileState?.y !== "number") continue;
       const distance = Math.hypot(ownState.x - hostileState.x, ownState.y - hostileState.y);
       const battleId = [own.id, hostile.id].sort().join(":");
-      if (distance > 9 || state.localBattles[battleId]?.lastReportedAt === clockMinute) continue;
+      const lastReportedAt = Number(state.localBattles[battleId]?.lastReportedAt ?? -Infinity);
+      // A local commander reports material changes, not every simulation tick.
+      if (distance > 9 || clockMinute - lastReportedAt < 20) continue;
       state.localBattles[battleId] = { id: battleId, unitIds: [own.id, hostile.id], x: (ownState.x + hostileState.x) / 2, y: (ownState.y + hostileState.y) / 2, lastReportedAt: clockMinute };
       jobs.push({ id: randomUUID(), jobType: "local_battle", input: { campaignId: campaign.id, clockMinute, objective: campaign.objective, battleId, participants: [{ ...getUnitProfile(campaign.id, own.id), knownState: { status: ownState.status, x: ownState.x, y: ownState.y, morale: ownState.morale } }, { ...hostile, knownState: { status: hostileState.status, x: hostileState.x, y: hostileState.y, morale: hostileState.morale } }] } });
     }
@@ -180,7 +247,9 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
     knownMessageIds.add(message.id);
     messages.push(message);
     events.push({ type: "REPORT_RECEIVED", payload: { message } });
-    state.objectiveProgress = clamp(state.objectiveProgress + (report.type === "intel" ? 1 : 2), 0, 100);
+    changeBattlefield(campaign, state, report.type === "intel"
+      ? { communications: 2 }
+      : { morale: 1, communications: 1 });
   }
 
   for (const order of dueOrders) {
@@ -233,7 +302,7 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
   state.messages = state.messages.slice(0, 200);
   state.lastTickMinute = clockMinute;
   const status = objectiveStatus(campaign, state, clockMinute);
-  events.push({ type: "OBJECTIVE_UPDATED", payload: { progress: state.objectiveProgress, delta: state.objectiveProgress - startingProgress, status } });
+  events.push({ type: "OBJECTIVE_UPDATED", payload: { progress: state.objectiveProgress, delta: state.objectiveProgress - startingProgress, battlefield: state.battlefield, status } });
   return { state, messages, events, jobs, deliveredOrderIds, status };
 }
 
@@ -243,8 +312,9 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
   if (job.jobType === "local_battle") {
     const friendly = job.input.participants?.find((participant) => participant.side === "friendly");
     const battle = state.localBattles[job.input.battleId] || {};
-    state.objectiveProgress = clamp(state.objectiveProgress - 1, 0, 100);
-    state.enemyPressure = clamp(state.enemyPressure + 2, 0, 100);
+    // Contact is costly, but it is not a predetermined loss. The local commander
+    // affects readiness and pressure at a controlled cadence; the player sees its report.
+    changeBattlefield(campaign, state, { combatPower: -1, morale: -1, enemyPressure: 2 });
     const message = {
       id: `battle-${job.id}`,
       type: "urgent",
@@ -262,7 +332,7 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
     state.messages.unshift(message);
     state.messages = state.messages.slice(0, 200);
     const status = objectiveStatus(campaign, state, clockMinute);
-    return { state, message, status, objectiveProgress: state.objectiveProgress, objectiveDelta: state.objectiveProgress - startingProgress };
+    return { state, message, status, objectiveProgress: state.objectiveProgress, objectiveDelta: state.objectiveProgress - startingProgress, battlefield: state.battlefield };
   }
   const unit = job.input.unit ?? getUnitProfile(campaign.id, decision.unitId);
   const enemy = job.jobType === "enemy_action";
@@ -270,12 +340,16 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
   const unitId = unit.id;
   const baseUnit = campaign.units.find((candidate) => candidate.id === unitId) || unit;
   const defaultPosition = movementRoutes[campaign.id]?.[unitId]?.from || { x: Number(baseUnit.x) || 50, y: Number(baseUnit.y) || 50 };
-  const objectiveDelta = enemy ? -3 : orderResponse ? 5 : 2;
   const orderText = String(job.input.order?.text || "");
   const retreating = orderResponse && /撤|退|回撤/.test(orderText);
   const engaged = /交战|接敌|受阻|遭到射击/.test(String(decision.status || "")) || /交战|接敌|受阻|遭到射击/.test(String(decision.body || ""));
-  state.objectiveProgress = clamp(state.objectiveProgress + objectiveDelta, 0, 100);
-  state.enemyPressure = clamp(state.enemyPressure + (enemy ? 5 : -1), 0, 100);
+  if (enemy) {
+    changeBattlefield(campaign, state, { objectiveControl: -2, combatPower: -2, morale: -1, enemyPressure: 4 });
+  } else if (orderResponse) {
+    changeBattlefield(campaign, state, orderImpact(campaign.id, orderText));
+  } else {
+    changeBattlefield(campaign, state, { objectiveControl: 1, morale: 1, communications: 1, enemyPressure: -1 });
+  }
   state.unitStates[unitId] = {
     ...(state.unitStates[unitId] ?? {}),
     status: decision.status,
@@ -311,5 +385,5 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
   state.messages.unshift(message);
   state.messages = state.messages.slice(0, 200);
   const status = objectiveStatus(campaign, state, clockMinute);
-  return { state, message, status, objectiveProgress: state.objectiveProgress, objectiveDelta: state.objectiveProgress - startingProgress };
+  return { state, message, status, objectiveProgress: state.objectiveProgress, objectiveDelta: state.objectiveProgress - startingProgress, battlefield: state.battlefield };
 }

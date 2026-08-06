@@ -237,7 +237,7 @@ export class MemoryStore {
     game.state = applied.state;
     const eventType = job.jobType === "enemy_action" ? "ENEMY_ACTION" : "AGENT_REPORT";
     this.appendEvent(game, eventType, { message: applied.message, unitState: applied.state.unitStates[applied.message.location], jobType: job.jobType, provider: result.run?.provider });
-    this.appendEvent(game, "OBJECTIVE_UPDATED", { progress: applied.objectiveProgress });
+    this.appendEvent(game, "OBJECTIVE_UPDATED", { progress: applied.objectiveProgress, delta: applied.objectiveDelta, battlefield: applied.battlefield, source: job.jobType });
     if (applied.status) this.appendEvent(game, applied.status === "won" ? "GAME_WON" : "GAME_LOST", { progress: applied.objectiveProgress });
     if (applied.status) game.status = applied.status;
     job.status = "succeeded";
@@ -455,7 +455,7 @@ export class PostgresStore {
       await client.query(`insert into shapan.messages (game_id, owner_user_id, external_id, source, message_type, subject, body, delivered_at_minute, payload) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) on conflict (game_id, external_id) where external_id is not null do nothing`, [game.id, game.owner_user_id, applied.message.id, applied.message.source, applied.message.type, applied.message.subject, applied.message.body, applied.message.deliveredAtMinute, applied.message]);
       await client.query(`insert into shapan.world_events (game_id, sequence, type, clock_minute, payload) values ($1, $2, $3, $4, $5)`, [game.id, sequence, eventType, game.clock_minute, { message: applied.message, unitState: applied.state.unitStates[applied.message.location], jobType: job.job_type, provider: result.run?.provider }]);
       sequence += 1;
-      await client.query(`insert into shapan.world_events (game_id, sequence, type, clock_minute, payload) values ($1, $2, 'OBJECTIVE_UPDATED', $3, $4)`, [game.id, sequence, game.clock_minute, { progress: applied.objectiveProgress, delta: applied.objectiveDelta, source: job.job_type }]);
+      await client.query(`insert into shapan.world_events (game_id, sequence, type, clock_minute, payload) values ($1, $2, 'OBJECTIVE_UPDATED', $3, $4)`, [game.id, sequence, game.clock_minute, { progress: applied.objectiveProgress, delta: applied.objectiveDelta, battlefield: applied.battlefield, source: job.job_type }]);
       if (applied.status) {
         sequence += 1;
         await client.query(`insert into shapan.world_events (game_id, sequence, type, clock_minute, payload) values ($1, $2, $3, $4, $5)`, [game.id, sequence, applied.status === "won" ? "GAME_WON" : "GAME_LOST", game.clock_minute, { progress: applied.objectiveProgress }]);

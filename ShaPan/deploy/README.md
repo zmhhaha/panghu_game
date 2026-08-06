@@ -54,6 +54,8 @@ kubectl exec -n vault vault-0 -- vault kv put secret/shapan/agent \
 
 ## 发布顺序
 
+本次多维战役模型包含 `006_multidimensional_battlefield_reset.sql`。首次执行该迁移会删除 `shapan.campaign_instances`，并通过外键级联清除 ShaPan 的旧战局、通信、军令、快照、Agent 任务与复盘；不会删除公共 OAuth 用户。迁移写入一次性标记，后续发布不会再次清理新战局。
+
 ```bash
 cd panghu_game/ShaPan
 REGISTRY=arm-cluster-master:5000 BASE_REGISTRY=arm-cluster-master:5000 IMAGE_TAG=$(git rev-parse --short HEAD) ./deploy/build-images.sh
