@@ -490,7 +490,7 @@ export function WarRoom() {
     pendingOrderUpdates.current.clear();
     setMessages([...restoredOrders, ...restoredReports.filter((message) => !restoredOrders.some((order) => order.id === message.id))]);
     setServerUnitStates(state.unitStates || {});
-    setTimeline(state.timeline || []);
+    setTimeline((state.timeline || []).map((event) => ({ ...event, clockMinute: event.clockMinute ?? (event as { clock_minute?: number }).clock_minute ?? (event.payload as { clockMinute?: number } | undefined)?.clockMinute })));
     if (typeof state.objectiveProgress === "number") setObjectiveProgress(state.objectiveProgress);
   }
 
@@ -517,6 +517,7 @@ export function WarRoom() {
     setRecipient(defaultUnit);
     setSelectedMessage(null);
     setResolvedIntelIds(new Set());
+    setDraft("");
     setMessageFilter("all");
     setBattleStarted(false);
     setPaused(true);

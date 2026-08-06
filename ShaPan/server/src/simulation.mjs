@@ -118,7 +118,8 @@ export function normalizeWorldState(campaign, input = {}) {
     objectiveProgress: clamp(input.objectiveProgress ?? 30, 0, 100),
     nextAgentMinute: Number(input.nextAgentMinute ?? Math.max(campaign.startMinute + 10, lastTickMinute + 1)),
     agentCursor: Number(input.agentCursor ?? 0),
-    enemyPressure: clamp(input.enemyPressure ?? 0, 0, 100)
+    enemyPressure: clamp(input.enemyPressure ?? 0, 0, 100),
+    localBattles: input.localBattles && typeof input.localBattles === "object" ? input.localBattles : {}
   };
 }
 
@@ -146,6 +147,25 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
   const jobs = [];
   const deliveredOrderIds = [];
   const knownMessageIds = new Set(state.messages.map((message) => message.id));
+
+  // A local battle coordinator is created when known friendly and enemy
+  // positions enter the same tactical area. It receives only the two units'
+  // known state and reports an aggregated situation back through normal jobs.
+  const friendly = campaign.units.map((id) => getUnitProfile(campaign.id, id));
+  const enemyUnits = campaign.enemyUnits.map((id) => getUnitProfile(campaign.id, id));
+  for (const own of friendly) {
+    const ownState = state.unitStates[own.id];
+    if (typeof ownState?.x !== "number" || typeof ownState?.y !== "number") continue;
+    for (const hostile of enemyUnits) {
+      const hostileState = state.unitStates[hostile.id];
+      if (typeof hostileState?.x !== "number" || typeof hostileState?.y !== "number") continue;
+      const distance = Math.hypot(ownState.x - hostileState.x, ownState.y - hostileState.y);
+      const battleId = [own.id, hostile.id].sort().join(":");
+      if (distance > 9 || state.localBattles[battleId]?.lastReportedAt === clockMinute) continue;
+      state.localBattles[battleId] = { id: battleId, unitIds: [own.id, hostile.id], x: (ownState.x + hostileState.x) / 2, y: (ownState.y + hostileState.y) / 2, lastReportedAt: clockMinute };
+      jobs.push({ id: randomUUID(), jobType: "local_battle", input: { campaignId: campaign.id, clockMinute, objective: campaign.objective, battleId, participants: [{ ...getUnitProfile(campaign.id, own.id), knownState: { status: ownState.status, x: ownState.x, y: ownState.y, morale: ownState.morale } }, { ...hostile, knownState: { status: hostileState.status, x: hostileState.x, y: hostileState.y, morale: hostileState.morale } }] } });
+    }
+  }
 
   for (const report of campaign.reports ?? []) {
     if (report.availableAtMinute > clockMinute || knownMessageIds.has(report.id)) continue;
@@ -220,6 +240,30 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
 export function applyAgentDecision(campaign, worldState, job, decision, clockMinute) {
   const state = normalizeWorldState(campaign, worldState);
   const startingProgress = state.objectiveProgress;
+  if (job.jobType === "local_battle") {
+    const friendly = job.input.participants?.find((participant) => participant.side === "friendly");
+    const battle = state.localBattles[job.input.battleId] || {};
+    state.objectiveProgress = clamp(state.objectiveProgress - 1, 0, 100);
+    state.enemyPressure = clamp(state.enemyPressure + 2, 0, 100);
+    const message = {
+      id: `battle-${job.id}`,
+      type: "urgent",
+      source: `${friendly?.name || "前沿部队"}电台`,
+      subject: decision.subject,
+      body: decision.body,
+      deliveredAtMinute: clockMinute,
+      availableAtMinute: clockMinute + 3,
+      location: friendly?.id,
+      generatedBy: decision.provider ?? "fallback",
+      confidence: "confirmed",
+      expiresAtMinute: clockMinute + 90,
+      outcome: "局部战局 Agent 回传"
+    };
+    state.messages.unshift(message);
+    state.messages = state.messages.slice(0, 200);
+    const status = objectiveStatus(campaign, state, clockMinute);
+    return { state, message, status, objectiveProgress: state.objectiveProgress, objectiveDelta: state.objectiveProgress - startingProgress };
+  }
   const unit = job.input.unit ?? getUnitProfile(campaign.id, decision.unitId);
   const enemy = job.jobType === "enemy_action";
   const orderResponse = job.jobType === "order_response";

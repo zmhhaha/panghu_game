@@ -4,6 +4,17 @@ function text(value, fallback, max = 280) {
 }
 
 function fallbackDecision(job) {
+  if (job.jobType === "local_battle") {
+    const [friendly, hostile] = job.input.participants || [];
+    return {
+      subject: `${friendly?.name || "前沿部队"}与${hostile?.name || "敌军"}发生局部交战`,
+      body: `局部战局指挥组依据双方已知位置、通信与接敌情况判定：${friendly?.name || "己方部队"}正在与${hostile?.name || "敌军"}争夺同一战术区域。该判断不包含战区全局情报，后续战报将由己方通信链路回传。`,
+      status: "局部交战",
+      summary: "局部战局 Agent 正在维护参战部队之间的有限已知上下文。",
+      morale: "承压",
+      comms: "前沿电台回传"
+    };
+  }
   const unit = job.input.unit;
   if (job.jobType === "enemy_action") {
     return {
