@@ -17,7 +17,7 @@ function fallbackDecision(job) {
       subject: `${friendly?.name || "前沿部队"}与${hostile?.name || "敌军"}发生局部交战`,
       body: `局部战局指挥组依据双方已知位置、通信与接敌情况判定：${friendly?.name || "己方部队"}正在与${hostile?.name || "敌军"}争夺同一战术区域。该判断不包含战区全局情报，后续战报将由己方通信链路回传。`,
       status: "局部交战",
-      summary: "局部战局 Agent 正在维护参战部队之间的有限已知上下文。",
+      summary: "局部战局指挥组正在维护参战部队之间的有限已知态势。",
       morale: "承压",
       comms: "前沿电台回传"
     };
@@ -36,7 +36,7 @@ function fallbackDecision(job) {
   if (job.jobType === "order_response") {
     return {
       subject: `${unit.name}确认收到军令`,
-      body: `${unit.name}已收到“${job.input.order.text.slice(0, 90)}”。部队将结合当前接敌和通信状况执行，并在出现重大变化时回报。`,
+      body: `${unit.name}已收到“${job.input.order.text.slice(0, 90)}”。部队将结合当前态势和通信状况执行，并在出现重大变化时回报。`,
       status: "执行军令",
       summary: `${unit.name}已按最新军令调整行动。`,
       morale: "稳定",
@@ -100,7 +100,7 @@ export async function runAgentJob(job) {
         temperature: 0.35,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: "你是二战战役沙盘中的部队指挥Agent。只能依据给定军令、任务和不完整态势行动。输出JSON，字段必须为subject、body、status、summary、morale、comms；所有字段必须使用简体中文，不得输出英文标题、英文战报或中英混合句。不得宣称知道未提供的敌情，不得替上级决定战役胜负。" },
+          { role: "system", content: "你是二战战役沙盘中的部队指挥智能体。只能依据给定军令、任务和不完整态势行动。输出JSON，字段必须为subject、body、status、summary、morale、comms；所有字段必须使用简体中文，不得输出英文标题、英文战报、中英混合句或技术术语。不得引用战役全局百分比，不得宣称知道未提供的敌情，不得替上级决定战役胜负。" },
           { role: "user", content: JSON.stringify(job.input) }
         ]
       }),

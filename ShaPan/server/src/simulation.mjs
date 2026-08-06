@@ -53,11 +53,25 @@ function changeBattlefield(campaign, state, changes) {
   return refreshBattlefield(campaign, state);
 }
 
-function orderImpact(campaignId, text) {
+function isArtilleryUnit(unitId) {
+  return /art$/i.test(String(unitId || ""));
+}
+
+function isPrimaryFireMission(text, unitId) {
+  const order = String(text || "");
+  const mentionsFire = /炮火|炮击|火力|压制|轰击|校射|射击/.test(order);
+  if (!mentionsFire) return false;
+  if (isArtilleryUnit(unitId)) return true;
+  const maneuverTask = /推进|前往|开进|进攻|夺取|控制|占领|固守|坚守|防御|撤退|回撤|绕行|机动|增援/.test(order);
+  const explicitFireTask = /(?:实施|执行|组织|提供|呼叫|请求|开始|持续).{0,10}(?:炮击|炮火|火力压制|火力支援|轰击|校射|射击)|(?:炮击|轰击|火力压制).{0,8}(?:目标|阵地|部队)/.test(order);
+  return explicitFireTask && !maneuverTask;
+}
+
+function orderImpact(campaignId, text, unitId) {
   const order = String(text || "");
   const logistics = /补给|弹药|伤员|后方|集结|运输/.test(order);
   const reconnaissance = /侦察|观察|情报|搜索/.test(order);
-  const fireSupport = /炮|火力|压制|轰击/.test(order);
+  const fireSupport = isPrimaryFireMission(order, unitId);
   const objective = campaignId === "arnhem" ? /桥|桥头|阿纳姆/.test(order) : /台儿庄|城|阵地|东门/.test(order);
   return {
     objectiveControl: objective ? 5 : 1,
@@ -69,8 +83,8 @@ function orderImpact(campaignId, text) {
   };
 }
 
-function orderDoctrine(campaignId, text) {
-  const impact = orderImpact(campaignId, text);
+function orderDoctrine(campaignId, text, unitId) {
+  const impact = orderImpact(campaignId, text, unitId);
   if (impact.supply > 0) return "logistics";
   if (impact.enemyPressure < 0 && impact.combatPower > 1) return "fire_support";
   if (impact.communications > 2) return "reconnaissance";
@@ -130,13 +144,13 @@ function requiresDecision(message) {
 }
 
 function scaledOrderImpact(campaign, state, unitId, text, clockMinute) {
-  const doctrine = orderDoctrine(campaign.id, text);
+  const doctrine = orderDoctrine(campaign.id, text, unitId);
   const key = `${unitId}:${doctrine}`;
   const previous = Number(state.orderDoctrineAt?.[key] ?? -Infinity);
   const elapsed = clockMinute - previous;
   const factor = elapsed < 30 ? 0 : elapsed < 75 ? 0.35 : 1;
   state.orderDoctrineAt = { ...(state.orderDoctrineAt || {}), [key]: clockMinute };
-  const impact = orderImpact(campaign.id, text);
+  const impact = orderImpact(campaign.id, text, unitId);
   return Object.fromEntries(Object.entries(impact).map(([name, value]) => [name, Math.round(value * factor)]));
 }
 
@@ -222,7 +236,7 @@ function routeForOrder(campaignId, unit, text) {
 }
 
 function movementForOrder(campaignId, unitId, currentState, text, clockMinute, priority) {
-  const doctrine = orderDoctrine(campaignId, text);
+  const doctrine = orderDoctrine(campaignId, text, unitId);
   const fallback = movementRoutes[campaignId]?.[unitId]?.from || { x: 50, y: 50 };
   const current = positionOf(currentState, fallback);
   const route = routeForOrder(campaignId, { id: unitId, ...currentState, ...current }, text);
@@ -407,7 +421,7 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
         clockMinute,
         objective: campaign.objective,
         unit: getUnitProfile(campaign.id, friendlyId),
-        world: { objectiveProgress: state.objectiveProgress, enemyPressure: state.enemyPressure }
+        knownContext: { ownState: state.unitStates[friendlyId] || null }
       }
     });
     jobs.push({
@@ -418,7 +432,7 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
         clockMinute,
         objective: campaign.objective,
         unit: getUnitProfile(campaign.id, enemyId),
-        world: { objectiveProgress: state.objectiveProgress, enemyPressure: state.enemyPressure }
+        knownContext: { ownState: state.unitStates[enemyId] || null }
       }
     });
     state.nextAgentMinute = clockMinute + Number(campaign.agentIntervalMinutes || 15);
@@ -443,6 +457,18 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
     // Contact is costly, but it is not a predetermined loss. The local commander
     // affects readiness and pressure at a controlled cadence; the player sees its report.
     changeBattlefield(campaign, state, { combatPower: -1, morale: -1, enemyPressure: 1 });
+    if (friendly?.id) {
+      const friendlyState = state.unitStates[friendly.id] || {};
+      state.unitStates[friendly.id] = {
+        ...friendlyState,
+        status: "局部交战",
+        summary: decision.summary || friendlyState.summary,
+        morale: decision.morale || friendlyState.morale,
+        comms: decision.comms || friendlyState.comms,
+        movement: friendlyState.movement ? { ...friendlyState.movement, phase: "engaged", updatedAtMinute: clockMinute } : friendlyState.movement,
+        lastReportAtMinute: clockMinute
+      };
+    }
     const message = {
       id: `battle-${job.id}`,
       type: "urgent",
@@ -455,7 +481,7 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
       generatedBy: decision.provider ?? "fallback",
       confidence: "confirmed",
       expiresAtMinute: clockMinute + 90,
-      outcome: "局部战局 Agent 回传",
+      outcome: "局部战局指挥组回传",
       requiresDecision: requiresDecision(decision)
     };
     state.messages.unshift(message);
@@ -470,7 +496,11 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
   const currentState = state.unitStates[unitId] ?? {};
   const defaultPosition = movementRoutes[campaign.id]?.[unitId]?.from || positionOf(unit);
   const orderText = String(job.input.order?.text || "");
-  const engaged = /交战|接敌|受阻|遭到射击/.test(String(decision.status || "")) || /交战|接敌|受阻|遭到射击/.test(String(decision.body || ""));
+  const reportedContact = /交战|接敌|受阻|遭到射击/.test(String(decision.status || "")) || /交战|接敌|受阻|遭到射击/.test(String(decision.body || ""));
+  const activeLocalBattle = Object.values(state.localBattles || {}).some((battle) =>
+    Array.isArray(battle?.unitIds) && battle.unitIds.includes(unitId) && clockMinute - Number(battle.lastReportedAt ?? -Infinity) <= 45
+  );
+  const engaged = reportedContact && activeLocalBattle;
   const jobMinute = Number(job.input.clockMinute ?? clockMinute);
   const latestOrderMinute = Math.max(-Infinity, ...state.orders
     .filter((order) => order.recipientId === unitId)
@@ -497,20 +527,33 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
   else if (!orderResponse && !movement && !staleAutonomy) movement = movementFor(campaign.id, unitId, clockMinute, enemy, currentState);
   if (engaged && movement && movement.kind !== "fire_support") movement = { ...movement, phase: "engaged" };
 
+  const intelligenceReport = enemy ? {
+    subject: `${unit.name}活动情报更新`,
+    body: `战区情报官综合前沿观察与截获片段研判：${unit.name}在${movement?.label || "当前地域"}附近出现活动迹象，可能正在${unit.role || "调整部署"}。其番号、兵力、状态与真实意图尚未证实；地图位置仅为当前推定，需以后续侦察继续复核。`,
+    status: "活动迹象",
+    summary: `${unit.name}的行动方向尚在研判，现有位置属于情报推定。`,
+    morale: "不明",
+    comms: "情报推定"
+  } : null;
+  const reportedStatus = reportedContact && !activeLocalBattle
+    ? orderResponse ? movement?.kind === "fire_support" ? "执行火力任务" : movement?.kind === "hold" ? "固守中" : "执行中" : "自主行动"
+    : decision.status;
+
   state.unitStates[unitId] = {
     ...currentState,
     x: currentPosition.x,
     y: currentPosition.y,
-    status: staleAutonomy || supersededOrder || preserveCommandStatus ? currentState.status : decision.status,
-    summary: staleAutonomy || supersededOrder ? currentState.summary : decision.summary,
-    morale: staleAutonomy || supersededOrder ? currentState.morale : decision.morale,
-    comms: staleAutonomy || supersededOrder ? currentState.comms : decision.comms,
+    status: staleAutonomy || supersededOrder || preserveCommandStatus ? currentState.status : intelligenceReport?.status || reportedStatus,
+    summary: staleAutonomy || supersededOrder ? currentState.summary : intelligenceReport?.summary || decision.summary,
+    morale: staleAutonomy || supersededOrder ? currentState.morale : intelligenceReport?.morale || decision.morale,
+    comms: staleAutonomy || supersededOrder ? currentState.comms : intelligenceReport?.comms || decision.comms,
     updatedAtMinute: staleAutonomy || supersededOrder ? currentState.updatedAtMinute : clockMinute,
+    lastReportAtMinute: staleAutonomy || supersededOrder ? currentState.lastReportAtMinute : clockMinute,
     lastOrderSentAtMinute: orderResponse && !supersededOrder ? orderMinute : currentState.lastOrderSentAtMinute,
     movement
   };
 
-  const doctrine = orderResponse ? orderDoctrine(campaign.id, orderText) : null;
+  const doctrine = orderResponse ? orderDoctrine(campaign.id, orderText, unitId) : null;
   const outcome = supersededOrder
     ? "该军令回报已被更新军令替代，未改写当前行动路线"
     : staleAutonomy
@@ -523,8 +566,8 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
     id: `agent-${job.id}`,
     type: enemy ? "intel" : orderResponse && job.input.order?.priority === "urgent" ? "urgent" : "normal",
     source: enemy ? "战区情报汇总" : unit.name,
-    subject: decision.subject,
-    body: decision.body,
+    subject: intelligenceReport?.subject || decision.subject,
+    body: intelligenceReport?.body || decision.body,
     received: null,
     deliveredAtMinute: clockMinute,
     availableAtMinute: clockMinute,
