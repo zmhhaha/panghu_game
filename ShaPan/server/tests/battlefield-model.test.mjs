@@ -113,3 +113,15 @@ test("a decisive posture wins after being sustained for 45 minutes", () => {
   const won = advanceWorld(campaign, established.state, { clockMinute: 1245 });
   assert.equal(won.status, "won");
 });
+
+test("a hold-until-deadline campaign cannot win early", () => {
+  const campaign = getCampaign("taierzhuang");
+  const before = createInitialWorldState(campaign);
+  before.battlefield = { objectiveControl: 90, combatPower: 90, morale: 90, supply: 90, communications: 90, enemyPressure: 10, overall: 0 };
+  const established = advanceWorld(campaign, before, { clockMinute: 1200 });
+  const stillHolding = advanceWorld(campaign, established.state, { clockMinute: 1300 });
+  assert.equal(stillHolding.status, null);
+
+  const resolved = advanceWorld(campaign, stillHolding.state, { clockMinute: campaign.deadlineMinute });
+  assert.equal(resolved.status, "won");
+});

@@ -3,8 +3,32 @@ function text(value, fallback, max = 280) {
   return (normalized || fallback).slice(0, max);
 }
 
+function clockLabel(value) {
+  const minute = Number(value);
+  const normalized = ((minute % 1440) + 1440) % 1440;
+  return `${String(Math.floor(normalized / 60)).padStart(2, "0")}:${String(normalized % 60).padStart(2, "0")}`;
+}
+
+export function normalizeReportText(value) {
+  return String(value || "").replace(/(于|在|截至|至|到|为)\s*(\d{3,4})\s*分钟(?!\s*(?:内|后|以内|之内))/g, (match, prefix, rawMinute) => {
+    const minute = Number(rawMinute);
+    return minute >= 180 && minute <= 2879 ? `${prefix}${clockLabel(minute)}` : match;
+  });
+}
+
+export function buildAgentPromptInput(value) {
+  if (Array.isArray(value)) return value.map(buildAgentPromptInput);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => {
+    if (typeof item === "number" && (key === "clockMinute" || key === "startMinute" || key === "deadlineMinute" || key.endsWith("AtMinute"))) {
+      return [key.replace(/Minute$/, "Time"), clockLabel(item)];
+    }
+    return [key, buildAgentPromptInput(item)];
+  }));
+}
+
 function chineseReport(value, fallback, max) {
-  const candidate = text(value, fallback, max);
+  const candidate = normalizeReportText(text(value, fallback, max));
   // Unit names and map labels may contain abbreviations, but a report field
   // dominated by Latin words breaks the Chinese command-room experience.
   return /[A-Za-z]{3,}/.test(candidate) ? fallback : candidate;
@@ -100,8 +124,8 @@ export async function runAgentJob(job) {
         temperature: 0.35,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: "你是二战战役沙盘中的部队指挥智能体。只能依据给定军令、任务和不完整态势行动。输出JSON，字段必须为subject、body、status、summary、morale、comms；所有字段必须使用简体中文，不得输出英文标题、英文战报、中英混合句或技术术语。不得引用战役全局百分比，不得宣称知道未提供的敌情，不得替上级决定战役胜负。" },
-          { role: "user", content: JSON.stringify(job.input) }
+          { role: "system", content: "你是二战战役沙盘中的部队指挥智能体。只能依据给定军令、任务和不完整态势行动。输出JSON，字段必须为subject、body、status、summary、morale、comms；所有字段必须使用简体中文，不得输出英文标题、英文战报、中英混合句或技术术语。输入中的时间已经换算为HH:MM格式，战报必须沿用该格式，不得输出累计分钟数。不得引用战役全局百分比，不得宣称知道未提供的敌情，不得替上级决定战役胜负。" },
+          { role: "user", content: JSON.stringify(buildAgentPromptInput(job.input)) }
         ]
       }),
       signal: controller.signal

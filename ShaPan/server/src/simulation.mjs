@@ -337,8 +337,8 @@ function objectiveStatus(campaign, state, clockMinute) {
   const collapse = battlefield.objectiveControl <= 18 || battlefield.combatPower <= 18 || battlefield.morale <= 18 || battlefield.supply <= 12;
   state.decisiveSinceMinute = decisive ? (state.decisiveSinceMinute ?? clockMinute) : null;
   state.collapseSinceMinute = collapse ? (state.collapseSinceMinute ?? clockMinute) : null;
-  if (decisive && clockMinute - state.decisiveSinceMinute >= 45) return "won";
   if (collapse && clockMinute - state.collapseSinceMinute >= 30) return "lost";
+  if (campaign.victoryMode !== "hold_until_deadline" && decisive && clockMinute - state.decisiveSinceMinute >= 45) return "won";
   if (clockMinute < campaign.deadlineMinute) return null;
   return battlefield.objectiveControl >= 55 && battlefield.combatPower >= 40 && battlefield.supply >= 30 ? "won" : "lost";
 }

@@ -18,7 +18,8 @@ test("delivery events that race the order response are retained", () => {
 });
 
 test("all order controls remain disabled before the battle starts", () => {
-  assert.match(warRoomSource, /id="priority" disabled=\{!battleStarted\}/);
+  assert.match(warRoomSource, /const orderControlsDisabled = !battleStarted \|\| battleEnded/);
+  assert.match(warRoomSource, /id="priority" disabled=\{orderControlsDisabled\}/);
 });
 
 test("the tactical map exposes the authoritative coordinate system", () => {
@@ -49,4 +50,13 @@ test("message details can expand and never clamp the original text", () => {
   assert.match(warRoomSource, /展开通信原文/);
   assert.match(warRoomSource, /whitespace-pre-wrap text-xs leading-5/);
   assert.doesNotMatch(warRoomSource, /line-clamp-4 text-xs leading-5 text-muted/);
+});
+
+test("battle conclusion clears drafts, locks order controls, and uses a solid review panel", () => {
+  assert.match(warRoomSource, /if \(battleEnded\) setDraft\(""\)/);
+  assert.match(warRoomSource, /if \(battleEnded\) return/);
+  assert.match(warRoomSource, /const orderControlsDisabled = !battleStarted \|\| battleEnded/);
+  assert.match(warRoomSource, /战役已结束，未发送草稿已清除/);
+  assert.match(warRoomSource, /bg-\[#111713\]/);
+  assert.doesNotMatch(warRoomSource, /bg-panel\/97/);
 });

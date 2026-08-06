@@ -50,6 +50,7 @@ export const campaigns = {
     startAt: "1938-03-31T18:00:00+08:00",
     startMinute: 1080,
     deadlineMinute: 1800,
+    victoryMode: "hold_until_deadline",
     objective: "坚守台儿庄核心阵地",
     units: ["cn31", "cn30", "cn27", "cnart", "cnreserve"],
     enemyUnits: ["jpseya", "jparmor"],

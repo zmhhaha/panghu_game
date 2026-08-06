@@ -519,6 +519,7 @@ export function WarRoom() {
   const deliveredOrders = sentMessages.filter((message) => message.orderStatus === "delivered").length;
   const respondedOrderIds = new Set(visibleMessages.filter((message) => message.type !== "sent" && message.orderId).map((message) => message.orderId as string));
   const battleEnded = ["won", "lost", "finished"].includes(gameStatus);
+  const orderControlsDisabled = !battleStarted || battleEnded;
   const meaningfulTimeline = timeline.filter(isMeaningfulTimelineEvent);
   const afterAction = afterActionAssessment(gameStatus, battlefield);
   const criticalIntel = visibleMessages.filter((message) => message.type === "intel").slice(0, 3);
@@ -614,6 +615,10 @@ export function WarRoom() {
     }
   }, [gameId]);
 
+  useEffect(() => {
+    if (battleEnded) setDraft("");
+  }, [battleEnded]);
+
   function resolveDecision(messageId: string) {
     setResolvedIntelIds((ids) => {
       const next = new Set(ids).add(messageId);
@@ -627,6 +632,7 @@ export function WarRoom() {
   }
 
   function prepareReply(message: Message) {
+    if (battleEnded) return;
     if (message.location) selectUnit(message.location);
     setDraft(`关于“${message.subject}”：`);
     resolveDecision(message.id);
@@ -897,7 +903,7 @@ export function WarRoom() {
             {filteredMessages.length > displayedMessages.length ? <p className="border-t border-line px-3 py-2 text-center text-[9px] text-muted">已显示最新 {displayedMessages.length} 条，旧情报保留在战役复盘时间线。</p> : null}
           </div>
           <div className={cn("command-scroll shrink-0 overflow-y-auto border-t border-line bg-panel p-4", messageDetailExpanded ? "absolute inset-x-0 bottom-0 z-30 max-h-[72%] min-h-[360px] shadow-2xl" : "max-h-[300px] min-h-[220px]")}>
-            {selectedMessageBody ? <><div className="flex items-center justify-between gap-3"><span className="text-[10px] text-copper">通信原文</span><div className="flex items-center gap-2"><time className="font-mono text-[10px] text-muted">{selectedMessageBody.received}</time><button type="button" onClick={() => setMessageDetailExpanded((expanded) => !expanded)} className="flex h-7 w-7 items-center justify-center border border-line text-muted hover:border-copper hover:text-paper" title={messageDetailExpanded ? "收起通信原文" : "展开通信原文"}>{messageDetailExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}</button></div></div><p className="mt-2 text-xs font-bold">{selectedMessageBody.subject}</p><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-muted">{selectedMessageBody.body}</p>{selectedMessageBody.outcome ? <p className="mt-2 border-l-2 border-copper/70 pl-2 text-[10px] text-copper">行动结果 · {selectedMessageBody.outcome}</p> : null}{selectedMessageBody.type === "sent" ? <p className="mt-2 text-[10px] text-muted">军令状态 · {orderQueueLabel(selectedMessageBody, clockMinute, gameStatus, Boolean(selectedMessageBody.orderId && respondedOrderIds.has(selectedMessageBody.orderId)))}</p> : null}{selectedMessageBody.type !== "sent" && actionableDecisionIds.has(selectedMessageBody.id) ? <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" className="border border-blueMark/60 px-2 py-1 text-[9px] text-blueMark" onClick={() => selectedMessageBody.type === "intel" ? resolveDecision(selectedMessageBody.id) : prepareReply(selectedMessageBody)}>{selectedMessageBody.type === "intel" ? "确认情报" : "准备回复"}</button><button type="button" className="border border-line px-2 py-1 text-[9px] text-muted" onClick={() => resolveDecision(selectedMessageBody.id)}>{selectedMessageBody.type === "intel" ? "标记低可信" : "仅标记已阅"}</button></div> : null}</> : <div className="flex h-full flex-col items-center justify-center text-muted"><Inbox size={17} /><p className="mt-3 text-xs">请选择一份通信记录</p></div>}
+            {selectedMessageBody ? <><div className="flex items-center justify-between gap-3"><span className="text-[10px] text-copper">通信原文</span><div className="flex items-center gap-2"><time className="font-mono text-[10px] text-muted">{selectedMessageBody.received}</time><button type="button" onClick={() => setMessageDetailExpanded((expanded) => !expanded)} className="flex h-7 w-7 items-center justify-center border border-line text-muted hover:border-copper hover:text-paper" title={messageDetailExpanded ? "收起通信原文" : "展开通信原文"}>{messageDetailExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}</button></div></div><p className="mt-2 text-xs font-bold">{selectedMessageBody.subject}</p><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-muted">{selectedMessageBody.body}</p>{selectedMessageBody.outcome ? <p className="mt-2 border-l-2 border-copper/70 pl-2 text-[10px] text-copper">行动结果 · {selectedMessageBody.outcome}</p> : null}{selectedMessageBody.type === "sent" ? <p className="mt-2 text-[10px] text-muted">军令状态 · {orderQueueLabel(selectedMessageBody, clockMinute, gameStatus, Boolean(selectedMessageBody.orderId && respondedOrderIds.has(selectedMessageBody.orderId)))}</p> : null}{!battleEnded && selectedMessageBody.type !== "sent" && actionableDecisionIds.has(selectedMessageBody.id) ? <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" className="border border-blueMark/60 px-2 py-1 text-[9px] text-blueMark" onClick={() => selectedMessageBody.type === "intel" ? resolveDecision(selectedMessageBody.id) : prepareReply(selectedMessageBody)}>{selectedMessageBody.type === "intel" ? "确认情报" : "准备回复"}</button><button type="button" className="border border-line px-2 py-1 text-[9px] text-muted" onClick={() => resolveDecision(selectedMessageBody.id)}>{selectedMessageBody.type === "intel" ? "标记低可信" : "仅标记已阅"}</button></div> : null}</> : <div className="flex h-full flex-col items-center justify-center text-muted"><Inbox size={17} /><p className="mt-3 text-xs">请选择一份通信记录</p></div>}
           </div>
         </aside>
 
@@ -927,15 +933,15 @@ export function WarRoom() {
             onStartBattle={startBattle}
           />
           {["won", "lost"].includes(gameStatus) ? (
-            <div className="absolute inset-x-3 bottom-[52px] z-40 border border-copper/70 bg-panel/97 text-paper shadow-2xl">
-              <div className="flex min-h-12 items-center gap-3 px-4 py-2">
+            <div className={cn("absolute inset-x-3 bottom-[52px] z-40 border border-copper/70 bg-[#111713] text-paper shadow-2xl", afterActionOpen && "top-3 flex flex-col overflow-hidden")}>
+              <div className="flex min-h-12 shrink-0 items-center gap-3 px-4 py-2">
                 {gameStatus === "won" ? <TrendingUp size={16} className="shrink-0 text-blueMark" /> : <TrendingDown size={16} className="shrink-0 text-alert" />}
                 <div className="min-w-0 flex-1"><p className="text-[9px] text-copper">战役结算</p><p className="truncate font-serif text-base font-bold">{gameStatus === "won" ? "战役目标已达成" : "战役目标未能达成"}</p></div>
                 <div className="hidden gap-4 text-[9px] text-muted sm:flex"><span>目标 <b className="text-paper">{battlefield.objectiveControl}%</b></span><span>战力 <b className="text-paper">{battlefield.combatPower}%</b></span><span>补给 <b className="text-paper">{battlefield.supply}%</b></span><span>综合 <b className="text-paper">{objectiveProgress}%</b></span></div>
                 <button type="button" onClick={() => setAfterActionOpen((open) => !open)} className="flex h-8 shrink-0 items-center gap-1 border border-line px-2 text-[10px] text-copper hover:bg-copper/10"><ClipboardList size={12} />{afterActionOpen ? "收起复盘" : "展开复盘"}</button>
               </div>
               {afterActionOpen ? (
-                <div className="command-scroll grid max-h-[38vh] overflow-y-auto border-t border-line sm:grid-cols-2">
+                <div className="command-scroll grid min-h-0 flex-1 overflow-y-auto border-t border-line sm:grid-cols-2">
                   <section className="border-b border-line p-4 sm:border-b-0 sm:border-r">
                     <p className="text-[10px] font-bold text-copper">胜负原因</p>
                     <p className="mt-2 text-xs leading-5 text-paper/85">{afterAction.cause}</p>
@@ -982,20 +988,20 @@ export function WarRoom() {
           <div className="flex min-h-[405px] shrink-0 flex-col border-b border-line px-4 py-3">
             <div className="mb-2 flex items-center justify-between"><div><p className="text-[9px] text-muted">OUTGOING / 发报</p><h3 className="mt-0.5 font-serif text-base font-bold">新军令</h3></div><Radio size={16} className="text-copper" /></div>
             <label className="mb-1 text-[10px] text-muted" htmlFor="recipient">收报单位</label>
-            <select id="recipient" disabled={!battleStarted} value={recipient} onChange={(event) => selectUnit(event.target.value)} className="mb-2 h-9 border border-line bg-ink px-2 text-xs text-paper outline-none focus:border-copper disabled:opacity-45">{friendlyUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select>
+            <select id="recipient" disabled={orderControlsDisabled} value={recipient} onChange={(event) => selectUnit(event.target.value)} className="mb-2 h-9 border border-line bg-ink px-2 text-xs text-paper outline-none focus:border-copper disabled:opacity-45">{friendlyUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select>
             <p className="mb-1 text-[10px] text-muted">通信方式</p>
             <div className="mb-2 grid grid-cols-3 border border-line">
               {[
                 { id: "radio", label: "无线电报", delay: "约 8 分钟" },
                 { id: "phone", label: "野战电话", delay: "约 5 分钟" },
                 { id: "courier", label: "通信员", delay: "约 25 分钟" }
-              ].map((item) => <button key={item.id} type="button" disabled={!battleStarted} onClick={() => setChannel(item.id)} className={cn("h-11 border-r border-line text-[10px] last:border-r-0 disabled:opacity-40", channel === item.id ? "bg-field/30 text-paper" : "text-muted hover:text-paper")}><b className="block text-[11px]">{item.label}</b><span>{item.delay}</span></button>)}
+              ].map((item) => <button key={item.id} type="button" disabled={orderControlsDisabled} onClick={() => setChannel(item.id)} className={cn("h-11 border-r border-line text-[10px] last:border-r-0 disabled:opacity-40", channel === item.id ? "bg-field/30 text-paper" : "text-muted hover:text-paper")}><b className="block text-[11px]">{item.label}</b><span>{item.delay}</span></button>)}
             </div>
             <label className="mb-1 text-[10px] text-muted" htmlFor="order-text">命令正文</label>
-            <textarea id="order-text" maxLength={420} disabled={!battleStarted} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={battleStarted ? `致${currentRecipient?.name ?? "下级部队"}：写明任务、意图、时限与限制……` : "开始战役后才能发布军令"} className="min-h-[116px] flex-1 resize-none border border-line bg-ink p-3 text-xs leading-5 text-paper outline-none placeholder:text-muted/55 focus:border-copper disabled:opacity-50" />
-            <div className="mt-1 flex items-center justify-between text-[9px] text-muted"><span>{draft.length} / 420</span><span>预计 {formatClock(clockMinute + (channel === "radio" ? 8 : channel === "phone" ? 5 : 25))} 送达</span></div>
-            <div className="mt-2 flex items-center gap-2"><label className="text-[10px] text-muted" htmlFor="priority">优先级</label><select id="priority" disabled={!battleStarted} value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 border border-line bg-ink px-2 text-[10px] text-paper disabled:opacity-45"><option value="normal">常规</option><option value="urgent">紧急</option></select><span className="ml-auto flex items-center gap-1 text-[9px] text-copper"><i className="h-1.5 w-1.5 rounded-full bg-copper" />截获风险：{channel === "radio" ? "中高" : channel === "phone" ? "低" : "中等"}</span></div>
-            <Button className="relative z-40 mt-2 w-full rounded-none" variant="copper" disabled={!battleStarted || sendingOrder || ["won", "lost", "finished"].includes(gameStatus) || draft.trim().length < 2} onClick={sendOrder}><Send size={14} />{sendingOrder ? "正在编码…" : "编码并发送"}</Button>
+            <textarea id="order-text" maxLength={420} disabled={orderControlsDisabled} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={battleEnded ? "战役已结束，未发送草稿已清除" : battleStarted ? `致${currentRecipient?.name ?? "下级部队"}：写明任务、意图、时限与限制……` : "开始战役后才能发布军令"} className="min-h-[116px] flex-1 resize-none border border-line bg-ink p-3 text-xs leading-5 text-paper outline-none placeholder:text-muted/55 focus:border-copper disabled:opacity-50" />
+            <div className="mt-1 flex items-center justify-between text-[9px] text-muted"><span>{draft.length} / 420</span><span>{battleEnded ? "战役已结束" : `预计 ${formatClock(clockMinute + (channel === "radio" ? 8 : channel === "phone" ? 5 : 25))} 送达`}</span></div>
+            <div className="mt-2 flex items-center gap-2"><label className="text-[10px] text-muted" htmlFor="priority">优先级</label><select id="priority" disabled={orderControlsDisabled} value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 border border-line bg-ink px-2 text-[10px] text-paper disabled:opacity-45"><option value="normal">常规</option><option value="urgent">紧急</option></select><span className="ml-auto flex items-center gap-1 text-[9px] text-copper"><i className="h-1.5 w-1.5 rounded-full bg-copper" />截获风险：{channel === "radio" ? "中高" : channel === "phone" ? "低" : "中等"}</span></div>
+            <Button className="relative z-40 mt-2 w-full rounded-none" variant="copper" disabled={orderControlsDisabled || sendingOrder || draft.trim().length < 2} onClick={sendOrder}><Send size={14} />{battleEnded ? "战役已结束" : sendingOrder ? "正在编码…" : "编码并发送"}</Button>
           </div>
 
           <div className="h-[132px] shrink-0 overflow-hidden">
