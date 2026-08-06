@@ -176,12 +176,15 @@ function updateUnitMovements(campaign, state, clockMinute) {
   }
 }
 
-function movementFor(campaignId, unitId, clockMinute, enemy) {
+function movementFor(campaignId, unitId, clockMinute, enemy, currentState = {}) {
   const route = movementRoutes[campaignId]?.[unitId];
   if (!route) return null;
-  const routePoints = routeSegments[campaignId]?.[unitId] || [route.from, route.to];
+  const current = typeof currentState.x === "number" && typeof currentState.y === "number"
+    ? { x: currentState.x, y: currentState.y }
+    : route.from;
+  const routePoints = [current, route.to];
   return {
-    from: route.from,
+    from: current,
     to: route.to,
     route: routePoints,
     label: route.label,
@@ -390,7 +393,7 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
     updatedAtMinute: clockMinute,
     movement: orderResponse
       ? { from: { x: Number(state.unitStates[unitId]?.x ?? defaultPosition.x), y: Number(state.unitStates[unitId]?.y ?? defaultPosition.y) }, to: routeForOrder(campaign.id, { ...baseUnit, ...defaultPosition, ...state.unitStates[unitId] }, job.input.order?.text).at(-1), route: routeForOrder(campaign.id, { ...baseUnit, ...defaultPosition, ...state.unitStates[unitId] }, job.input.order?.text), label: "军令路线", kind: "order", confidence: "已确认", startedAtMinute: clockMinute, durationMinutes: job.input.order?.priority === "urgent" ? 18 : 30, progress: 0, phase: retreating ? "retreating" : engaged ? "engaged" : "moving", updatedAtMinute: clockMinute }
-      : movementFor(campaign.id, unitId, clockMinute, enemy)
+      : movementFor(campaign.id, unitId, clockMinute, enemy, state.unitStates[unitId])
   };
   if (state.unitStates[unitId].movement?.route?.[0]) {
     state.unitStates[unitId].x = state.unitStates[unitId].movement.route[0].x;

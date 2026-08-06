@@ -33,3 +33,14 @@ test("repeated doctrine has a cooldown while a supplied force recovers", () => {
   assert.ok(recovered.battlefield.combatPower > first.battlefield.combatPower);
   assert.ok(recovered.battlefield.enemyPressure < first.battlefield.enemyPressure);
 });
+
+test("autonomous movement continues from the last confirmed position", () => {
+  const campaign = getCampaign("arnhem");
+  const before = createInitialWorldState(campaign);
+  before.unitStates.uk1para = { x: 51, y: 54, status: "推进中" };
+  const job = { id: "continue-position", jobType: "unit_autonomy", input: { unit: { id: "uk1para", name: "第1伞兵旅" } } };
+  const decision = { subject: "部队报告", body: "继续推进", status: "推进中", summary: "沿既定路线前进", morale: "稳定", comms: "无线电" };
+  const result = applyAgentDecision(campaign, before, job, decision, 980);
+  assert.deepEqual(result.state.unitStates.uk1para.movement.from, { x: 51, y: 54 });
+  assert.deepEqual({ x: result.state.unitStates.uk1para.x, y: result.state.unitStates.uk1para.y }, { x: 51, y: 54 });
+});

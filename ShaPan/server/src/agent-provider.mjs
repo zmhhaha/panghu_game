@@ -3,6 +3,13 @@ function text(value, fallback, max = 280) {
   return (normalized || fallback).slice(0, max);
 }
 
+function chineseReport(value, fallback, max) {
+  const candidate = text(value, fallback, max);
+  // Unit names and map labels may contain abbreviations, but a report field
+  // dominated by Latin words breaks the Chinese command-room experience.
+  return /[A-Za-z]{3,}/.test(candidate) ? fallback : candidate;
+}
+
 function fallbackDecision(job) {
   if (job.jobType === "local_battle") {
     const [friendly, hostile] = job.input.participants || [];
@@ -65,12 +72,12 @@ function providerConfig() {
 
 function validateDecision(value, fallback) {
   return {
-    subject: text(value?.subject, fallback.subject, 100),
-    body: text(value?.body, fallback.body, 600),
-    status: text(value?.status, fallback.status, 40),
-    summary: text(value?.summary, fallback.summary, 180),
-    morale: text(value?.morale, fallback.morale, 30),
-    comms: text(value?.comms, fallback.comms, 40)
+    subject: chineseReport(value?.subject, fallback.subject, 100),
+    body: chineseReport(value?.body, fallback.body, 600),
+    status: chineseReport(value?.status, fallback.status, 40),
+    summary: chineseReport(value?.summary, fallback.summary, 180),
+    morale: chineseReport(value?.morale, fallback.morale, 30),
+    comms: chineseReport(value?.comms, fallback.comms, 40)
   };
 }
 
@@ -93,7 +100,7 @@ export async function runAgentJob(job) {
         temperature: 0.35,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: "你是二战战役沙盘中的部队指挥Agent。只能依据给定军令、任务和不完整态势行动。输出JSON，字段必须为subject、body、status、summary、morale、comms；不得宣称知道未提供的敌情，不得替上级决定战役胜负。" },
+          { role: "system", content: "你是二战战役沙盘中的部队指挥Agent。只能依据给定军令、任务和不完整态势行动。输出JSON，字段必须为subject、body、status、summary、morale、comms；所有字段必须使用简体中文，不得输出英文标题、英文战报或中英混合句。不得宣称知道未提供的敌情，不得替上级决定战役胜负。" },
           { role: "user", content: JSON.stringify(job.input) }
         ]
       }),
