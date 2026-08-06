@@ -172,6 +172,14 @@ function formatRemaining(minutes: number) {
   return `${Math.floor(safe / 60)}小时${String(safe % 60).padStart(2, "0")}分`;
 }
 
+function battlefieldRisk(field: BattlefieldState) {
+  if (field.objectiveControl < 55) return "目标地域尚未稳固";
+  if (field.combatPower < 40) return "战斗力不足，难以维持目标";
+  if (field.supply < 30) return "补给线濒临断裂";
+  if (field.enemyPressure >= 70) return "敌军压力过高，应优先压制或牵制";
+  return "当前态势具备守住目标的条件";
+}
+
 function serverMessage(raw: Partial<Message> & { deliveredAtMinute?: number | null; message_type?: string }): Message {
   return {
     id: String(raw.id),
@@ -694,7 +702,7 @@ export function WarRoom() {
 
         <div className="flex min-w-0 items-center gap-5 border-b border-line px-5 py-2 lg:border-b-0 lg:border-r">
           <div className="min-w-0 flex-1"><p className="text-[9px] text-muted">主要目标 · {gameStatus === "won" ? "已达成" : gameStatus === "lost" ? "已失守" : `综合战役态势 ${objectiveProgress}%`}</p><p className="truncate text-sm font-bold text-paper">{campaign.objective}</p></div>
-          <div className="hidden w-[340px] shrink-0 xl:block"><p className="mb-1 text-right text-[10px] text-copper">剩余 {formatRemaining(campaign.deadlineMinute - clockMinute)}</p><div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[9px] text-muted"><span>目标控制 <b className="text-paper">{battlefield.objectiveControl}%</b></span><span>战斗力 <b className="text-paper">{battlefield.combatPower}%</b></span><span>补给 <b className="text-paper">{battlefield.supply}%</b></span><span>士气 <b className="text-paper">{battlefield.morale}%</b></span><span>通信 <b className="text-paper">{battlefield.communications}%</b></span><span>敌压 <b className="text-alert">{battlefield.enemyPressure}%</b></span></div><div className="mt-1 h-[3px] bg-line"><div className={cn("h-full", objectiveProgress >= 50 ? "bg-blueMark" : "bg-alert")} style={{ width: `${Math.max(3, objectiveProgress)}%` }} /></div><p className="mt-1 truncate text-right text-[9px] text-muted">{objectiveSignal}</p></div>
+          <div className="hidden w-[340px] shrink-0 xl:block"><p className="mb-1 text-right text-[10px] text-copper">剩余 {formatRemaining(campaign.deadlineMinute - clockMinute)}</p><div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[9px] text-muted"><span>目标控制 <b className="text-paper">{battlefield.objectiveControl}%</b></span><span>战斗力 <b className="text-paper">{battlefield.combatPower}%</b></span><span>补给 <b className="text-paper">{battlefield.supply}%</b></span><span>士气 <b className="text-paper">{battlefield.morale}%</b></span><span>通信 <b className="text-paper">{battlefield.communications}%</b></span><span>敌压 <b className="text-alert">{battlefield.enemyPressure}%</b></span></div><div className="mt-1 h-[3px] bg-line"><div className={cn("h-full", objectiveProgress >= 50 ? "bg-blueMark" : "bg-alert")} style={{ width: `${Math.max(3, objectiveProgress)}%` }} /></div><p className="mt-1 truncate text-right text-[9px] text-copper">态势判断：{battlefieldRisk(battlefield)}</p></div>
         </div>
 
         <div className="flex items-center justify-between gap-3 px-4 py-2">

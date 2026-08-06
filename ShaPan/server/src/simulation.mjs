@@ -69,6 +69,35 @@ function orderImpact(campaignId, text) {
   };
 }
 
+function orderDoctrine(campaignId, text) {
+  const impact = orderImpact(campaignId, text);
+  if (impact.supply > 0) return "logistics";
+  if (impact.enemyPressure < 0 && impact.combatPower > 1) return "fire_support";
+  if (impact.communications > 2) return "reconnaissance";
+  if (impact.objectiveControl > 1) return "objective";
+  return "general";
+}
+
+function scaledOrderImpact(campaign, state, unitId, text, clockMinute) {
+  const doctrine = orderDoctrine(campaign.id, text);
+  const key = `${unitId}:${doctrine}`;
+  const previous = Number(state.orderDoctrineAt?.[key] ?? -Infinity);
+  const elapsed = clockMinute - previous;
+  const factor = elapsed < 30 ? 0 : elapsed < 75 ? 0.35 : 1;
+  state.orderDoctrineAt = { ...(state.orderDoctrineAt || {}), [key]: clockMinute };
+  const impact = orderImpact(campaign.id, text);
+  return Object.fromEntries(Object.entries(impact).map(([name, value]) => [name, Math.round(value * factor)]));
+}
+
+function applyOperationalRecovery(campaign, state) {
+  const field = normalizeBattlefield(campaign, state.battlefield);
+  return changeBattlefield(campaign, state, {
+    combatPower: field.supply >= 50 ? 2 : field.supply >= 30 ? 1 : 0,
+    morale: field.communications >= 50 ? 1 : 0,
+    enemyPressure: field.communications >= 55 ? -2 : -1
+  });
+}
+
 const movementRoutes = {
   taierzhuang: {
     cn31: { from: { x: 46, y: 55 }, to: { x: 52, y: 49 }, label: "东门防御" },
@@ -181,6 +210,7 @@ export function normalizeWorldState(campaign, input = {}) {
     agentCursor: Number(input.agentCursor ?? 0),
     enemyPressure: clamp(input.enemyPressure ?? 0, 0, 100),
     battlefield: normalizeBattlefield(campaign, input.battlefield),
+    orderDoctrineAt: input.orderDoctrineAt && typeof input.orderDoctrineAt === "object" ? input.orderDoctrineAt : {},
     localBattles: input.localBattles && typeof input.localBattles === "object" ? input.localBattles : {}
   };
   refreshBattlefield(campaign, state);
@@ -228,7 +258,7 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
       const battleId = [own.id, hostile.id].sort().join(":");
       const lastReportedAt = Number(state.localBattles[battleId]?.lastReportedAt ?? -Infinity);
       // A local commander reports material changes, not every simulation tick.
-      if (distance > 9 || clockMinute - lastReportedAt < 20) continue;
+      if (distance > 9 || clockMinute - lastReportedAt < 30) continue;
       state.localBattles[battleId] = { id: battleId, unitIds: [own.id, hostile.id], x: (ownState.x + hostileState.x) / 2, y: (ownState.y + hostileState.y) / 2, lastReportedAt: clockMinute };
       jobs.push({ id: randomUUID(), jobType: "local_battle", input: { campaignId: campaign.id, clockMinute, objective: campaign.objective, battleId, participants: [{ ...getUnitProfile(campaign.id, own.id), knownState: { status: ownState.status, x: ownState.x, y: ownState.y, morale: ownState.morale } }, { ...hostile, knownState: { status: hostileState.status, x: hostileState.x, y: hostileState.y, morale: hostileState.morale } }] } });
     }
@@ -296,6 +326,7 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
     });
     state.nextAgentMinute = clockMinute + Number(campaign.agentIntervalMinutes || 15);
     state.agentCursor += 1;
+    applyOperationalRecovery(campaign, state);
     events.push({ type: "AGENT_CYCLE_SCHEDULED", payload: { friendlyId, enemyId } });
   }
 
@@ -314,7 +345,7 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
     const battle = state.localBattles[job.input.battleId] || {};
     // Contact is costly, but it is not a predetermined loss. The local commander
     // affects readiness and pressure at a controlled cadence; the player sees its report.
-    changeBattlefield(campaign, state, { combatPower: -1, morale: -1, enemyPressure: 2 });
+    changeBattlefield(campaign, state, { combatPower: -1, morale: -1, enemyPressure: 1 });
     const message = {
       id: `battle-${job.id}`,
       type: "urgent",
@@ -344,9 +375,9 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
   const retreating = orderResponse && /撤|退|回撤/.test(orderText);
   const engaged = /交战|接敌|受阻|遭到射击/.test(String(decision.status || "")) || /交战|接敌|受阻|遭到射击/.test(String(decision.body || ""));
   if (enemy) {
-    changeBattlefield(campaign, state, { objectiveControl: -2, combatPower: -2, morale: -1, enemyPressure: 4 });
+    changeBattlefield(campaign, state, { objectiveControl: -1, combatPower: -1, morale: -1, enemyPressure: 2 });
   } else if (orderResponse) {
-    changeBattlefield(campaign, state, orderImpact(campaign.id, orderText));
+    changeBattlefield(campaign, state, scaledOrderImpact(campaign, state, unitId, orderText, clockMinute));
   } else {
     changeBattlefield(campaign, state, { objectiveControl: 1, morale: 1, communications: 1, enemyPressure: -1 });
   }
