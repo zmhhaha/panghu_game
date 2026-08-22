@@ -1,7 +1,7 @@
 import type { CaseDefinition } from "@tashuo/core";
 import { STANDARD_STAGES } from "../shared.js";
 
-const paragraphs = (lead: string, detail: string, caution: string) => `${lead}\n\n${detail}\n\n${caution}`;
+const paragraphs = (lead: string, detail: string, caution: string) => `${lead}\n\n${detail}\n\n记者随后核对了目前能够公开查阅的时间、地点和发布记录。已经被不同来源重复确认的部分可以作为事实线索；尚未公开完整记录的环节，仍需要保留判断边界。\n\n围绕同一段画面或同一句回应，网络上出现了截然不同的解释。报道将这些解释与可见材料分开列出，不把传播声量当作证据强度。\n\n${caution}\n\n截至本版截稿，相关方面没有提供足以覆盖全部过程的原始记录。本报将以之后公开的更正、补充说明和可复核资料为准。`;
 export const LOST_CONTROL_DEMO: CaseDefinition = {
   id: "lost-control-demo", version: "1.0.0", title: "失控的演示", synopsis: "一场救援机器人演示事故，在剪辑视频、企业声明、员工爆料与商业舆论中不断改变面貌。", durationMinutes: 10_080, realSecondsPerGameMinute: 6, stages: STANDARD_STAGES,
   facts: [

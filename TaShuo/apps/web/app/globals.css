@@ -285,19 +285,44 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .broadcast-caption > div { display: flex; flex-direction: column; gap: 4px; }
 .broadcast-caption span { color: #9fa8aa; font-size: 11px; }
 .broadcast-caption .icon-button { border-color: #566064; color: white; }
+.tv-transcript { background: #f3f4ef; border-top: 5px solid #c53f35; color: #1c2425; margin: 22px auto 0; max-width: 880px; padding: 24px 30px 34px; }
+.tv-transcript header { border-bottom: 1px solid #b8c1be; color: #596563; display: flex; font-size: 10px; justify-content: space-between; padding-bottom: 8px; }
+.tv-transcript h2 { font-family: "SimSun", serif; font-size: 25px; line-height: 1.45; margin: 18px 0 16px; }
+.tv-transcript p { font-family: "SimSun", serif; font-size: 16px; line-height: 2; margin: 0 0 14px; text-indent: 2em; }
 
-.newspaper-reader { background: #c8cac5; min-height: 100%; padding: 20px 28px 50px; }
-.paper-toolbar { align-items: center; display: flex; justify-content: space-between; margin: 0 auto 10px; max-width: 760px; }
+.newspaper-reader { background: #9da09a; min-height: 100%; padding: 24px 28px 56px; }
+.paper-toolbar { align-items: center; display: flex; justify-content: space-between; margin: 0 auto 12px; max-width: 1020px; }
 .paper-toolbar > span { color: #4f5653; font-size: 11px; }
-.newspaper-page { background: #f7f4e9; box-shadow: 0 8px 26px rgba(32, 36, 33, 0.2); margin: 0 auto; max-width: 760px; min-height: 760px; padding: 30px 42px 54px; }
-.paper-date { border-bottom: 1px solid #272b29; font-family: "SimSun", serif; font-size: 10px; padding-bottom: 5px; text-align: right; }
-.paper-masthead { font-family: "SimSun", serif; font-size: 44px; font-weight: 900; line-height: 1.25; text-align: center; }
+.newspaper-page { background: #f3eedf; box-shadow: 0 14px 34px rgba(20, 25, 21, 0.32); color: #171a18; margin: 0 auto; max-width: 1020px; min-height: 920px; padding: 20px 28px 26px; position: relative; }
+.newspaper-page::before { background-image: radial-gradient(rgba(50, 45, 32, 0.12) 0.65px, transparent 0.7px); background-size: 5px 5px; content: ""; inset: 0; opacity: 0.18; pointer-events: none; position: absolute; }
+.paper-header, .paper-lead, .paper-layout, .paper-footer { position: relative; }
+.paper-topline { border-bottom: 1px solid #272b29; display: flex; font-family: "SimSun", serif; font-size: 10px; justify-content: space-between; padding: 0 0 6px; }
+.paper-masthead-row { align-items: end; display: grid; gap: 10px; grid-template-columns: minmax(120px, 1fr) minmax(280px, 2fr) minmax(120px, 1fr); padding: 11px 0 9px; text-align: center; }
+.paper-masthead-row > span { font-family: "SimSun", serif; font-size: 9px; line-height: 1.6; text-align: left; }
+.paper-masthead-row > span:last-child { text-align: right; }
+.paper-masthead { font-family: "SimSun", serif; font-size: 48px; font-weight: 900; line-height: 1.1; overflow-wrap: anywhere; }
 .paper-rule { border-bottom: 3px double #272b29; border-top: 1px solid #272b29; display: flex; font-family: "SimSun", serif; font-size: 10px; justify-content: space-between; padding: 5px 1px; }
-.paper-section { font-size: 11px; font-weight: 700; margin: 28px 0 8px; }
-.newspaper-page h1 { border-bottom: 1px solid #b4b0a3; font-family: "SimSun", serif; font-size: 34px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; padding-bottom: 16px; text-align: center; }
-.paper-byline { font-size: 10px; margin: 9px 0 24px; text-align: center; }
-.paper-copy { column-count: 2; column-gap: 34px; column-rule: 1px solid #cbc6b8; font-family: "SimSun", serif; font-size: 16px; line-height: 2; min-height: 320px; text-align: justify; }
-.paper-copy p { margin: 0; text-indent: 2em; }
+.paper-section { font-size: 11px; font-weight: 700; margin: 20px 0 8px; text-align: center; }
+.newspaper-page h1 { border-bottom: 1px solid #b4b0a3; font-family: "SimSun", serif; font-size: 40px; line-height: 1.28; margin: 0; overflow-wrap: anywhere; padding: 0 4% 16px; text-align: center; }
+.paper-byline { display: flex; font-family: "SimSun", serif; font-size: 10px; justify-content: space-between; margin: 9px 0 18px; }
+.paper-layout { border-bottom: 1px solid #706d60; display: grid; gap: 18px; grid-template-columns: 150px minmax(210px, 0.72fr) minmax(0, 1.5fr); padding: 12px 0 22px; }
+.paper-sidebar { border-right: 1px solid #777265; display: flex; flex-direction: column; font-family: "SimSun", serif; font-size: 12px; gap: 16px; line-height: 1.7; padding: 2px 14px 2px 0; }
+.paper-sidebar section { border-top: 2px solid #242622; padding-top: 5px; }
+.paper-sidebar h2 { font-size: 14px; margin: 0; }
+.paper-sidebar p { margin: 6px 0 0; }
+.paper-dateline { margin-top: auto; }
+.paper-dateline b, .paper-dateline span { display: block; }
+.paper-illustration { align-items: center; background: #a8aaa1; display: flex; min-height: 320px; overflow: hidden; position: relative; }
+.paper-illustration::before { background: linear-gradient(145deg, #313a35 0 34%, transparent 34% 48%, #68716b 48%); content: ""; inset: 0; position: absolute; }
+.paper-illustration::after { border: 16px solid rgba(237, 235, 218, 0.35); content: ""; height: 54%; left: 20%; position: absolute; top: 16%; transform: rotate(-8deg); width: 47%; }
+.paper-illustration.river { background: #809697; }
+.paper-illustration.river::before { background: linear-gradient(170deg, #566964 0 38%, #3e808b 38% 65%, #56726e 65%); }
+.paper-illustration i { background: #202925; border-radius: 50%; display: block; height: 42px; left: 56%; position: absolute; top: 28%; width: 42px; z-index: 2; }
+.paper-illustration i + i { background: #d8d6c7; border-radius: 0; bottom: 18%; height: 28%; left: 40%; top: auto; transform: skewX(-12deg); width: 31%; }
+.paper-illustration span { background: rgba(16, 20, 18, 0.8); bottom: 0; color: #f6f1e4; font-family: "SimSun", serif; font-size: 10px; left: 0; padding: 7px 8px; position: absolute; right: 0; z-index: 3; }
+.paper-copy { column-count: 2; column-gap: 24px; column-rule: 1px solid #b5b0a0; font-family: "SimSun", serif; font-size: 15px; line-height: 2; min-height: 360px; text-align: justify; }
+.paper-copy p { break-inside: avoid; margin: 0 0 12px; text-indent: 2em; }
+.paper-footer { display: flex; font-family: "SimSun", serif; font-size: 9px; justify-content: space-between; padding-top: 8px; }
 
 .short-video-app { background: #121416; min-height: 100%; padding: 18px; }
 .phone-feed { background: #050606; border: 1px solid #32383a; box-shadow: 0 14px 35px rgba(0, 0, 0, 0.35); margin: 0 auto; max-width: 420px; }
@@ -456,13 +481,23 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   .article-head, .article-body, .comment-section { padding-left: 20px; padding-right: 20px; }
   .article-head h1 { font-size: 24px; }
   .tv-broadcast { padding: 14px; }
+  .tv-transcript { margin-top: 14px; padding: 18px 16px 24px; }
+  .tv-transcript h2 { font-size: 21px; }
   .tv-lower-third { grid-template-columns: 64px minmax(0, 1fr); }
   .tv-lower-third strong { font-size: 13px; }
   .newspaper-reader { padding: 12px 8px 34px; }
-  .newspaper-page { min-height: 680px; padding: 22px 20px 40px; }
+  .newspaper-page { min-height: 680px; padding: 16px 16px 24px; }
+  .paper-masthead-row { grid-template-columns: 1fr; text-align: center; }
+  .paper-masthead-row > span, .paper-masthead-row > span:last-child { display: none; }
   .paper-masthead { font-size: 34px; }
   .newspaper-page h1 { font-size: 27px; }
+  .paper-byline { gap: 8px; line-height: 1.5; }
+  .paper-layout { grid-template-columns: 1fr; }
+  .paper-sidebar { border-bottom: 1px solid #777265; border-right: 0; display: grid; gap: 10px; grid-template-columns: 1fr 1fr; padding: 0 0 12px; }
+  .paper-sidebar .paper-dateline { display: none; }
+  .paper-illustration { min-height: 220px; }
   .paper-copy { column-count: 1; }
+  .paper-footer { flex-wrap: wrap; gap: 5px; }
   .short-video-app { padding: 0; }
   .pinned-grid, .note-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

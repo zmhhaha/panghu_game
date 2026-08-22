@@ -1,6 +1,6 @@
 import type { CaseDefinition } from "@tashuo/core";
 import { STANDARD_STAGES } from "../shared.js";
-const report = (a: string, b: string, c: string) => `${a}\n\n${b}\n\n${c}`;
+const report = (a: string, b: string, c: string) => `${a}\n\n${b}\n\n记者对照了公开施工备案、现场拍摄时间和有关单位已披露的监测信息。能够被不同材料互相印证的内容，与仍待说明的环节在报道中分别处理。\n\n河道颜色、鱼群异常和企业排放在同一时间进入舆论，并不意味着它们必然来自同一条因果链。本报没有将评论区猜测作为监测结论。\n\n${c}\n\n截至发稿，相关单位仍在补充作业记录和处置进展；本版将持续记录新的公开材料及其与既有说法之间的差异。`;
 export const BLUE_RIVER: CaseDefinition = {
  id: "blue-river", version: "1.0.0", title: "河水变蓝以后", synopsis: "暴雨后的蓝色河水与死鱼视频，把印染厂、管网工程和旧照片卷进同一个简单故事。", durationMinutes: 10_080, realSecondsPerGameMinute: 6, stages: STANDARD_STAGES,
  facts: [

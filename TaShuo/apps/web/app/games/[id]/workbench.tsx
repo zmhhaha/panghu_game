@@ -28,6 +28,11 @@ function ContentPresentation({ content, sourceName, saved, engagement, onSave, o
       <div className="tv-ticker"><b>快讯</b><span>{content.body}</span></div>
     </div><div className="tv-controls"><Volume2 size={14} /><span className="tv-progress"><i /></span><Maximize2 size={14} /></div></div>
     <div className="broadcast-caption"><div><strong>{sourceName}</strong><span>{eventTime(content.publishedAtMinute)} 播出</span></div><SaveButton saved={saved} onSave={onSave} /></div>
+    <section className="tv-transcript">
+      <header><span>NEWS TRANSCRIPT</span><b>{eventTime(content.publishedAtMinute)}</b></header>
+      <h2>{content.title}</h2>
+      {content.body.split("\n\n").map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+    </section>
   </div>;
 
   if (content.kind === "newspaper") return <div className="newspaper-reader">
