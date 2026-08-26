@@ -79,7 +79,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 20
           resources:
-            requests: { cpu: 150m, memory: 192Mi }
+            requests: { cpu: 25m, memory: 64Mi }
             limits: { cpu: "1", memory: 768Mi }
 ---
 apiVersion: v1
@@ -90,4 +90,3 @@ metadata:
 spec:
   selector: { app: tashuo-server }
   ports: [{ name: http, port: 3001, targetPort: http }]
-

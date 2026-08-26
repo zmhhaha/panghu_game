@@ -63,7 +63,7 @@ spec:
               key: CUSTOM_MODEL
               optional: true
         resources:
-          requests: { cpu: "200m", memory: "256Mi" }
+          requests: { cpu: "50m", memory: "128Mi" }
           limits: { cpu: "2", memory: "2Gi" }
         livenessProbe:
           httpGet:
