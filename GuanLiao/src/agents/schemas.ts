@@ -47,6 +47,14 @@ export const propagationRequestSchema = z.object({
   }),
 });
 
+export const propagationBatchRequestSchema = z.object({
+  requests: z.array(propagationRequestSchema).min(1).max(24),
+});
+
+export const propagationBatchNarrativeSchema = z.object({
+  steps: z.array(stepNarrativeSchema).min(1).max(24),
+});
+
 export const completionNarrativeSchema = z.object({
   reportingCalculation: z.string().trim().min(8).max(360),
   reportText: z.string().trim().min(8).max(500),
@@ -79,6 +87,7 @@ export const completionRequestSchema = z.object({
 export type OfficialAgent = z.infer<typeof officialAgentSchema>;
 export type StepNarrative = z.infer<typeof stepNarrativeSchema>;
 export type PropagationRequest = z.infer<typeof propagationRequestSchema>;
+export type PropagationBatchRequest = z.infer<typeof propagationBatchRequestSchema>;
 export type CompletionNarrative = z.infer<typeof completionNarrativeSchema>;
 export type CompletionFallback = z.infer<typeof completionFallbackSchema>;
 export type CompletionRequest = z.infer<typeof completionRequestSchema>;

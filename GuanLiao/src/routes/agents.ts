@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { bureaucracyOrchestrator, type BureaucracyOrchestrator } from "../agents/orchestrator.js";
-import { completionRequestSchema, propagationRequestSchema } from "../agents/schemas.js";
+import {
+  completionRequestSchema,
+  propagationBatchRequestSchema,
+  propagationRequestSchema,
+} from "../agents/schemas.js";
 
 export function createAgentsRouter(orchestrator: BureaucracyOrchestrator = bureaucracyOrchestrator): Router {
   const router = Router();
@@ -15,6 +19,19 @@ export function createAgentsRouter(orchestrator: BureaucracyOrchestrator = burea
     }
     try {
       res.json(await orchestrator.preparePropagation(parsed.data));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/propagate-batch", async (req, res, next) => {
+    const parsed = propagationBatchRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "官员批量下行参数无效", detail: parsed.error.flatten() });
+      return;
+    }
+    try {
+      res.json(await orchestrator.preparePropagationBatch(parsed.data));
     } catch (error) {
       next(error);
     }

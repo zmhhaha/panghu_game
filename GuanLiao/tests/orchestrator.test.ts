@@ -107,6 +107,48 @@ describe("BureaucracyOrchestrator", () => {
     expect(result.step).not.toHaveProperty("effects");
   });
 
+  it("handles a day's propagation steps in one model request", async () => {
+    let calls = 0;
+    const provider: AgentProvider = {
+      name: "test",
+      async complete() {
+        calls += 1;
+        return {
+          steps: [
+            {
+              interpretation: "他将第一道政令理解为先核实情形再行处置。",
+              calculation: "他准备把关键责任写入清册，避免日后各方推诿。",
+              action: "先造册核验，再把限期与禁令一并转交承办。",
+              officialReport: "奉批。相关清册已经开列，承办各员正在查办。",
+              forwardedText: "先核实情形，限期具报，承办各员不得推诿。",
+            },
+            {
+              interpretation: "他将第二道政令理解为先稳住地方再补齐手续。",
+              calculation: "他担心骤然催逼激出民变，准备给地方留出喘息。",
+              action: "先安抚贫弱人户，再将办理章程转交下属。",
+              officialReport: "奉批。地方已经先行安抚，办理章程随后具报。",
+              forwardedText: "先安抚贫弱，依章办理，随后具报。",
+            },
+          ],
+        };
+      },
+    };
+    const first = propagationRequest();
+    const second = {
+      ...first,
+      day: 2,
+      agent: executorAgent,
+      receivedText: "先查旧账，再行修堤。",
+    };
+
+    const result = await new BureaucracyOrchestrator(provider).preparePropagationBatch({ requests: [first, second] });
+
+    expect(calls).toBe(1);
+    expect(result.provider).toBe("model");
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[1].forwardedText).toContain("先安抚贫弱");
+  });
+
   it("rejects model or controller meta-language and keeps the fallback", async () => {
     const provider: AgentProvider = {
       name: "test",

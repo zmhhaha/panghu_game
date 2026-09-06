@@ -54,6 +54,8 @@ kubectl exec -n vault vault-0 -- vault kv put secret/guanliao/agent \
 
 也可把 `deploy/k8s/agent-configmap.yaml` 的 `PROVIDER` 改为 `fallback`、`openai`、`anthropic` 或 `custom`，并在同一 Vault 路径写入对应的 `*_API_KEY`、`*_BASE_URL`、`*_MODEL` 字段。应用进程遇到无效 Provider 配置时会自动使用规则回退；标准 `deploy.sh` 则会先等待并校验 `guanliao-agent` Secret，避免声明启用模型却以 fallback 状态上线。
 
+客户端会在玩家完成当天全部批示并退堂时，统一调用 `/api/agents/propagate-batch`。该接口把当天待处理的官员步骤放在一次编排请求中，服务端 Agent 对整批内容生成叙事；单条 `/api/agents/propagate` 仍保留用于兼容和调试。批量输出格式异常或模型超时时，整批自动回退为浏览器内置的确定性文本，不会阻塞推进日期。
+
 ## 构建与发布
 
 在 `GuanLiao` 目录执行：

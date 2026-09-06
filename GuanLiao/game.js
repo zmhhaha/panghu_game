@@ -827,6 +827,7 @@
     }
     (state.pending || []).forEach((directive) => {
       (directive.chain || []).forEach((step) => {
+        step.provider ||= "fallback";
         step.officialReport ||= `奉批。${step.action || "已按转行口径办理，续候结报。"}`;
       });
     });
@@ -1472,7 +1473,8 @@
       fidelity,
       holdDays,
       effects,
-      day: state.day
+      day: state.day,
+      provider: "pending"
     };
 
     item.chain.push(step);
@@ -1489,7 +1491,10 @@
 
   async function enrichAgentStep(item, agent, step) {
     const client = window.GuanLiaoAgents;
-    if (!client?.propagate) return "fallback";
+    if (!client?.propagate) {
+      step.provider = "fallback";
+      return "fallback";
+    }
     const response = await client.propagate({
       era: state.era,
       day: step.day,
@@ -1516,7 +1521,10 @@
     });
     const narrative = response?.step;
     if (!narrative || !["interpretation", "calculation", "action", "officialReport", "forwardedText"]
-      .every((key) => typeof narrative[key] === "string" && narrative[key].trim())) return "fallback";
+      .every((key) => typeof narrative[key] === "string" && narrative[key].trim())) {
+      step.provider = "fallback";
+      return "fallback";
+    }
     step.interpretation = narrative.interpretation;
     step.calculation = narrative.calculation;
     step.action = narrative.action;
@@ -1527,6 +1535,75 @@
     agent.lastMove = step.action;
     agent.lastOfficialReport = step.officialReport;
     return step.provider;
+  }
+
+  function isAgentNarrative(value) {
+    return value && ["interpretation", "calculation", "action", "officialReport", "forwardedText"]
+      .every((key) => typeof value[key] === "string" && value[key].trim());
+  }
+
+  function applyAgentNarrative(item, agent, step, narrative, provider) {
+    if (!isAgentNarrative(narrative)) {
+      step.provider = "fallback";
+      return false;
+    }
+    step.interpretation = narrative.interpretation;
+    step.calculation = narrative.calculation;
+    step.action = narrative.action;
+    step.officialReport = narrative.officialReport;
+    step.forwardedText = narrative.forwardedText;
+    step.provider = provider || "model";
+    item.forwardedText = step.forwardedText;
+    agent.lastMove = step.action;
+    agent.lastOfficialReport = step.officialReport;
+    return true;
+  }
+
+  async function enrichAgentStepsBatch(candidates) {
+    if (!candidates.length) return "fallback";
+    const client = window.GuanLiaoAgents;
+    if (!client?.propagateBatch) {
+      candidates.forEach(({ step }) => { step.provider = "fallback"; });
+      return "fallback";
+    }
+
+    const response = await client.propagateBatch({
+      requests: candidates.map(({ item, agent, step }) => ({
+        era: state.era,
+        day: step.day,
+        orderText: item.orderText,
+        receivedText: step.receivedText,
+        analysis: {
+          clarity: item.analysis.clarity,
+          clarityLabel: item.analysis.clarityLabel,
+          dominant: item.analysis.dominant
+        },
+        agent: agentDescriptor(agent),
+        controllerProjection: {
+          narrative: {
+            interpretation: step.interpretation,
+            calculation: step.calculation,
+            action: step.action,
+            officialReport: step.officialReport,
+            forwardedText: step.forwardedText
+          },
+          fidelity: step.fidelity,
+          holdDays: step.holdDays || 0,
+          effects: step.effects
+        }
+      }))
+    });
+    const narratives = response?.steps;
+    if (!Array.isArray(narratives) || narratives.length !== candidates.length) {
+      candidates.forEach(({ step }) => { step.provider = "fallback"; });
+      return "fallback";
+    }
+
+    const provider = response.provider || "fallback";
+    candidates.forEach(({ item, agent, step }, index) => {
+      applyAgentNarrative(item, agent, step, narratives[index], provider);
+    });
+    return provider;
   }
 
   function advanceDirective(item, initial = false) {
@@ -1566,7 +1643,7 @@
     return directive;
   }
 
-  async function issueDecision(caseId, optionIndex, customText = "") {
+  function issueDecision(caseId, optionIndex, customText = "") {
     if (agentBusy || !state.docket.includes(caseId) || state.decisions[caseId] !== undefined) return;
     const documentItem = findDocument(caseId);
     const trimmedCustom = customText.trim();
@@ -1577,28 +1654,17 @@
     const resolvedOptionIndex = trimmedCustom ? matchCustomOrder(trimmedCustom, documentItem) : optionIndex;
     const option = documentItem.options[resolvedOptionIndex];
     if (!option) return;
-    const activeState = state;
-    setAgentBusy(true, "经手官正在拟具接令回文");
-    try {
-      const directive = createDirective(documentItem, resolvedOptionIndex, trimmedCustom);
-      state.decisions[caseId] = {
-        optionIndex: resolvedOptionIndex,
-        custom: directive.custom,
-        orderText: directive.orderText,
-        analysis: directive.analysis
-      };
-      state.pending.push(directive);
-      saveState();
-      renderAll();
-      const first = directive.chain[0];
-      await enrichAgentStep(directive, agentById(first.agentId), first);
-      if (state !== activeState) return;
-      saveState();
-      renderAll();
-      showToast(`${first.role}${first.agentName}回文已递，原批继续转行`);
-    } finally {
-      setAgentBusy(false);
-    }
+    const directive = createDirective(documentItem, resolvedOptionIndex, trimmedCustom);
+    state.decisions[caseId] = {
+      optionIndex: resolvedOptionIndex,
+      custom: directive.custom,
+      orderText: directive.orderText,
+      analysis: directive.analysis
+    };
+    state.pending.push(directive);
+    saveState();
+    renderAll();
+    showToast("朱批已记，待本日案牍齐备后统一转行");
   }
 
   function buildCausalText(item) {
@@ -1766,20 +1832,20 @@
   async function endDay() {
     if (agentBusy || Object.keys(state.decisions).length !== state.docket.length) return;
     const activeState = state;
-    setAgentBusy(true, "各级经手官正在转行并拟具回文");
+    setAgentBusy(true, "本日政令已齐，正在集中拟具各级回文");
     try {
       state.day += 1;
       const ready = [];
-      const enrichments = [];
+      const candidates = [];
       state.pending.forEach((item) => {
-        const chainLength = item.chain.length;
         if (advanceDirective(item)) ready.push(item);
-        if (item.chain.length > chainLength) {
-          const step = item.chain.at(-1);
-          enrichments.push(enrichAgentStep(item, agentById(step.agentId), step));
-        }
+        item.chain.forEach((step) => {
+          if (step.provider === "pending") {
+            candidates.push({ item, agent: agentById(step.agentId), step });
+          }
+        });
       });
-      await Promise.all(enrichments);
+      await enrichAgentStepsBatch(candidates);
       if (state !== activeState) return;
       const freshReports = await Promise.all(ready.map(resolvePending));
       if (state !== activeState) return;

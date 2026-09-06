@@ -91,6 +91,9 @@
     async propagate(payload) {
       return agentRequest("/api/agents/propagate", payload);
     },
+    async propagateBatch(payload) {
+      return agentRequest("/api/agents/propagate-batch", payload);
+    },
     async complete(payload) {
       return agentRequest("/api/agents/complete", payload);
     },
