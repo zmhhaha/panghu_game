@@ -12,19 +12,19 @@
   const STAT_LIMIT_EVENTS = {
     livelihood: {
       full: { type: "reward", title: "民生大治", text: "仓廪渐实、讼狱稍平，百姓开始把这位官员视作可托之人。", merit: 12, effects: { reputation: 5 } },
-      zero: { type: "penalty", title: "民生崩坏", text: "逃户、饥民与积讼一并涌来，地方已经没有余力替衙门遮掩失政。", merit: -18, effects: { reputation: -8, favor: -5 } }
+      zero: { type: "penalty", title: "民生崩坏", text: "逃户、饥民与积讼一并涌来，地方已经没有余力替衙门遮掩失政。", merit: -18, effects: { reputation: -8, favor: -5 }, ending: { title: "民变焚署", text: "饥民与逃户冲入县城，衙署被焚。你在乱军中失去官印，任期就此终结。" } }
     },
     treasury: {
       full: { type: "reward", title: "库帑充盈", text: "钱粮账面终于有了余裕，既能应急，也给上司留下了能办实事的印象。", merit: 10, effects: { reputation: 2, favor: 4 } },
-      zero: { type: "penalty", title: "库帑告罄", text: "库底无银，下一场急务只能靠摊派、借贷或失信硬撑，考成先记一笔亏空。", merit: -14, effects: { reputation: -5, favor: -5 } }
+      zero: { type: "penalty", title: "库帑告罄", text: "库底无银，下一场急务只能靠摊派、借贷或失信硬撑，考成先记一笔亏空。", merit: -14, effects: { reputation: -5, favor: -5 }, ending: { title: "亏空问斩", text: "库银亏空的账册送入督抚衙门，追查无从抵赖。朝廷以侵亏公帑论处，你被押赴问斩，任期终结。" } }
     },
     reputation: {
       full: { type: "reward", title: "清名远播", text: "清议与民间口碑同时上扬，弹劾者再想落笔也必须先面对这层声望。", merit: 12, effects: { favor: 3 } },
-      zero: { type: "penalty", title: "官声扫地", text: "百姓不再相信公文上的自称清慎，任何新政令都会先被当作又一层盘剥。", merit: -18, effects: { favor: -8 } }
+      zero: { type: "penalty", title: "官声扫地", text: "百姓不再相信公文上的自称清慎，任何新政令都会先被当作又一层盘剥。", merit: -18, effects: { favor: -8 }, ending: { title: "弹劾下狱", text: "清议与民间状词一并送达都察院，百姓不再替你作证。御史以失职交部议处，你被锁拿下狱，任期终结。" } }
     },
     favor: {
       full: { type: "reward", title: "圣眷正隆", text: "密折与考成接连得到上意肯定，升迁和调任的门缝已经打开。", merit: 15, effects: {} },
-      zero: { type: "penalty", title: "上意断绝", text: "上峰不再替你解释迟误与失误，旧日功劳也开始被重新翻检。", merit: -20, effects: { reputation: -4 } }
+      zero: { type: "penalty", title: "上意断绝", text: "上峰不再替你解释迟误与失误，旧日功劳也开始被重新翻检。", merit: -20, effects: { reputation: -4 }, ending: { title: "奉旨拿问", text: "密折中的失误无人替你遮掩，圣旨命有司即刻拿问。你的官印被收缴，任期终结。" } }
     }
   };
 
@@ -738,6 +738,11 @@
     }, {});
   }
 
+  function endingForThreshold(key, boundary) {
+    const ending = STAT_LIMIT_EVENTS[key]?.[boundary]?.ending;
+    return ending ? { ...ending, key, boundary } : null;
+  }
+
   function createState(era, route, name, difficulty = "guided") {
     const seed = Math.floor(Date.now() % 2147483647) || 1709;
     return {
@@ -750,6 +755,8 @@
       seed,
       stats: { ...ROUTES[route].baseStats },
       thresholds: normalizeThresholds(ROUTES[route].baseStats),
+      ended: false,
+      ending: null,
       merit: 0,
       rankIndex: 0,
       docket: [],
@@ -796,6 +803,19 @@
       ? state.agents
       : createAgentNetwork(state.route, state.seed || 1709);
     state.thresholds = normalizeThresholds(state.stats, state.thresholds);
+    state.ended = Boolean(state.ended);
+    state.ending = state.ending && typeof state.ending.title === "string" ? state.ending : null;
+    if (!state.ended) {
+      const terminalKey = STAT_KEYS.find((key) => Number(state.stats?.[key]) <= 0);
+      const existingEnding = terminalKey ? endingForThreshold(terminalKey, "zero") : null;
+      if (existingEnding) {
+        state.ended = true;
+        const terminalReport = (state.reports || []).find((report) =>
+          report.thresholdEvents?.some((event) => event.key === terminalKey && event.boundary === "zero")
+        );
+        state.ending = { ...existingEnding, day: terminalReport?.day || state.day };
+      }
+    }
 
     Object.entries(state.decisions || {}).forEach(([caseId, decision]) => {
       if (!Number.isInteger(decision)) return;
@@ -957,6 +977,7 @@
     const thresholdEvents = [];
     const thresholdEffects = {};
     const pendingThresholds = [];
+    const endingEvents = [];
 
     const applyStatChange = (key, change, isThresholdConsequence = false) => {
       if (!(key in state.stats)) return;
@@ -995,9 +1016,11 @@
         merit: consequence.merit,
         effects: { ...consequence.effects }
       });
+      const ending = endingForThreshold(trigger.key, trigger.boundary);
+      if (ending) endingEvents.push(ending);
       Object.entries(consequence.effects).forEach(([key, change]) => applyStatChange(key, change, true));
     }
-    return { thresholdEvents, thresholdEffects };
+    return { thresholdEvents, thresholdEffects, ending: endingEvents[0] || null };
   }
 
   function renderStats() {
@@ -1071,15 +1094,21 @@
   function renderDesk() {
     const handled = Object.keys(state.decisions).length;
     const total = state.docket.length;
+    const ended = state.ended;
     $("#docketProgress").textContent = `已批 ${handled} / ${total}`;
     $("#docketProgressBar").style.width = `${total ? (handled / total) * 100 : 0}%`;
     $("#deskBadge").textContent = String(total - handled);
     $("#deskBadge").dataset.count = String(total - handled);
     $("#documentStack").innerHTML = state.docket.map((id) => documentHtml(findDocument(id))).join("");
-    $("#documentStack").hidden = handled === total;
-    $("#emptyDesk").hidden = handled !== total;
-    $("#endDayButton").disabled = agentBusy || handled !== total;
-    if (agentBusy) {
+    $("#documentStack").hidden = ended || handled === total;
+    $("#emptyDesk").hidden = !ended && handled !== total;
+    if (ended) {
+      $("#emptyDesk").innerHTML = `<div class="empty-seal" aria-hidden="true">终</div><h2>任期已终结</h2><p>${escapeHtml(state.ending?.title || "官印已失")}</p>`;
+    } else {
+      $("#emptyDesk").innerHTML = `<div class="empty-seal" aria-hidden="true">毕</div><h2>今日案牍已清</h2><p>可退堂更衣。待明日，政令自有回响。</p>`;
+    }
+    $("#endDayButton").disabled = ended || agentBusy || handled !== total;
+    if (agentBusy || ended) {
       $$("#documentStack .decision-button, #documentStack .custom-dispatch").forEach((button) => { button.disabled = true; });
     }
   }
@@ -1342,6 +1371,17 @@
     renderReports();
     renderCareer();
     renderAgents();
+    renderEnding();
+  }
+
+  function renderEnding() {
+    const modal = $("#endingModal");
+    if (!modal) return;
+    modal.hidden = !state.ended;
+    if (!state.ended) return;
+    $("#endingTitle").textContent = state.ending?.title || "任期终结";
+    $("#endingText").textContent = state.ending?.text || "官印已失，任期终结。";
+    $("#endingDay").textContent = `第 ${state.ending?.day || state.day} 日 · ${currentRank().grade} ${currentRank().title}`;
   }
 
   function showToast(message) {
@@ -1596,7 +1636,7 @@
   }
 
   function issueDecision(caseId, optionIndex, customText = "") {
-    if (agentBusy || !state.docket.includes(caseId) || state.decisions[caseId] !== undefined) return;
+    if (state.ended || agentBusy || !state.docket.includes(caseId) || state.decisions[caseId] !== undefined) return;
     const documentItem = findDocument(caseId);
     const trimmedCustom = customText.trim();
     if (trimmedCustom && trimmedCustom.length < 4) {
@@ -1751,6 +1791,10 @@
     const directOfficialReport = completionChain.at(-1)?.reportText || `奉结。${outcome.title}。`;
     const finalOfficialReport = directOfficialReport;
     const thresholdResult = applyEffects(finalEffects, true);
+    if (!state.ended && thresholdResult.ending) {
+      state.ended = true;
+      state.ending = { ...thresholdResult.ending, day: state.day };
+    }
     const reportEffects = mergeEffects(finalEffects, thresholdResult.thresholdEffects);
     state.merit = Math.max(0, state.merit + (success ? Math.max(5, Math.round(averageFidelity / 10)) : -6));
     const report = {
@@ -1766,6 +1810,7 @@
       cause: buildCausalText(item),
       effects: reportEffects,
       thresholdEvents: thresholdResult.thresholdEvents,
+      ending: thresholdResult.ending,
       chain: item.chain,
       completionChain,
       agentProvider: enrichedCompletion.provider,
@@ -1782,7 +1827,7 @@
   }
 
   async function endDay() {
-    if (agentBusy || Object.keys(state.decisions).length !== state.docket.length) return;
+    if (state.ended || agentBusy || Object.keys(state.decisions).length !== state.docket.length) return;
     const activeState = state;
     setAgentBusy(true, "本日政令已齐，正在集中拟具各级回文");
     try {
@@ -1819,7 +1864,8 @@
       saveState();
       renderAll();
       window.scrollTo({ top: 0, behavior: "smooth" });
-      if (freshReports.length) showResultModal(freshReports);
+      if (state.ended) renderEnding();
+      else if (freshReports.length) showResultModal(freshReports);
       else showToast("新的一日，政令又向下转行了一层");
     } finally {
       setAgentBusy(false);
@@ -1904,6 +1950,14 @@
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
     $("#markReportsRead").addEventListener("click", markReportsRead);
     $("#closeResultButton").addEventListener("click", () => { $("#resultModal").hidden = true; });
+    $("#endingReportsButton").addEventListener("click", () => {
+      $("#endingModal").hidden = true;
+      switchView("reports");
+    });
+    $("#endingRestartButton").addEventListener("click", () => {
+      $("#endingModal").hidden = true;
+      $("#confirmModal").hidden = false;
+    });
 
     $("#eraOptions").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-era]");
@@ -1939,6 +1993,7 @@
     $("#confirmReset").addEventListener("click", () => {
       clearSavedState();
       $("#resultModal").hidden = true;
+      $("#endingModal").hidden = true;
       $("#resultList").replaceChildren();
       selectedEra = "ming";
       selectedRoute = "local";
