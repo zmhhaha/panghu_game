@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getUnitProfile } from "./content.mjs";
+import { campaignAnchors } from "./map-anchors.mjs";
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Number(value) || 0));
@@ -215,9 +216,7 @@ function interpolateRoute(points, progress) {
 function routeForOrder(campaignId, unit, text) {
   const normalized = String(text || "");
   const current = positionOf(unit);
-  const anchors = campaignId === "arnhem"
-    ? { bridge: { x: 75, y: 76 }, north: { x: 66, y: 38 }, west: { x: 42, y: 57 }, retreat: { x: 30, y: 68 } }
-    : { city: { x: 52, y: 49 }, east: { x: 67, y: 36 }, west: { x: 34, y: 43 }, retreat: { x: 28, y: 68 } };
+  const anchors = campaignAnchors(campaignId);
   const coordinate = coordinateFromOrder(normalized);
   const target = coordinate || (/撤|退|回撤/.test(normalized) ? anchors.retreat
     : campaignId === "arnhem" && /北|北侧|北岸/.test(normalized) ? anchors.north

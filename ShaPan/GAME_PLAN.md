@@ -668,4 +668,4 @@ interaction   选中、检查器和鼠标反馈
 
 ### 当前实现边界
 
-`web/lib/map-definition.ts` 是运行时坐标契约；`web/components/tactical-map.tsx` 按该契约绘制战役底图和动态态势。根目录早期原型 `maps.js` 不作为 Next.js 运行时数据源。下一步应把两张战役的道路、桥梁和城市锚点从组件 JSX 中继续抽离为版本化地图定义。
+`web/lib/map-definition.ts` 是运行时坐标契约；`web/lib/map-anchors.ts` 保存前端地图锚点；`server/src/map-anchors.mjs` 保存服务器路线规划使用的同名锚点。`web/components/tactical-map.tsx` 按该契约绘制战役底图和动态态势。根目录早期原型 `maps.js` 不作为 Next.js 运行时数据源。新增路线目标必须引用锚点 ID 或锚点坐标，不能在业务逻辑中重新写一套屏幕坐标。

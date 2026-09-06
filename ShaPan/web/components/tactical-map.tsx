@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 import { MAP_CANVAS, MAP_CONTRACT, toCanvasPoint } from "../lib/map-definition";
+import { anchorsForCampaign } from "../lib/map-anchors";
 
 /** Authoritative tactical canvas. API points are percentages of this canvas. */
 export const TACTICAL_MAP_DIMENSIONS = MAP_CANVAS;
@@ -327,6 +328,7 @@ function ChinaMap({ layers, knownUnits }: { layers: MapLayers; knownUnits: Set<s
 
 export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = false, canStart, layers, units, revealedUnitIds, selectedUnit, focusedUnitId = null, visibleReportCount, onSelectUnit, onClearFocus, onSetRecipient, onStartBattle }: TacticalMapProps) {
   const isAsia = campaignId === "taierzhuang";
+  const mapAnchors = anchorsForCampaign(campaignId);
   const hasReports = battleStarted && visibleReportCount > 0;
   const selectedKnown = revealedUnitIds.has(selectedUnit.id);
   const [unitPanelExpanded, setUnitPanelExpanded] = useState(false);
@@ -360,7 +362,7 @@ export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = f
   }
 
   return (
-    <div className="tactical-map relative min-h-[560px] flex-1 overflow-hidden bg-[#d8cfaa] min-[900px]:min-h-0" onPointerMove={updateCursorCoordinate} onPointerDown={updateCursorCoordinate}>
+    <div className="tactical-map relative min-h-[560px] flex-1 overflow-hidden bg-[#d8cfaa] min-[900px]:min-h-0" data-map-version={MAP_CONTRACT.version} data-anchor-count={mapAnchors.length} onPointerMove={updateCursorCoordinate} onPointerDown={updateCursorCoordinate}>
       {isAsia ? <ChinaMap layers={layers} knownUnits={revealedUnitIds} /> : <EuropeMap layers={layers} knownUnits={revealedUnitIds} />}
       <DynamicArrows units={units} layers={layers} knownUnits={revealedUnitIds} focusUnitId={focusUnitId} />
 
