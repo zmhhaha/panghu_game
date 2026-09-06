@@ -1489,54 +1489,6 @@
     return step;
   }
 
-  async function enrichAgentStep(item, agent, step) {
-    const client = window.GuanLiaoAgents;
-    if (!client?.propagate) {
-      step.provider = "fallback";
-      return "fallback";
-    }
-    const response = await client.propagate({
-      era: state.era,
-      day: step.day,
-      orderText: item.orderText,
-      receivedText: step.receivedText,
-      analysis: {
-        clarity: item.analysis.clarity,
-        clarityLabel: item.analysis.clarityLabel,
-        dominant: item.analysis.dominant
-      },
-      agent: agentDescriptor(agent),
-      controllerProjection: {
-        narrative: {
-          interpretation: step.interpretation,
-          calculation: step.calculation,
-          action: step.action,
-          officialReport: step.officialReport,
-          forwardedText: step.forwardedText
-        },
-        fidelity: step.fidelity,
-        holdDays: step.holdDays || 0,
-        effects: step.effects
-      }
-    });
-    const narrative = response?.step;
-    if (!narrative || !["interpretation", "calculation", "action", "officialReport", "forwardedText"]
-      .every((key) => typeof narrative[key] === "string" && narrative[key].trim())) {
-      step.provider = "fallback";
-      return "fallback";
-    }
-    step.interpretation = narrative.interpretation;
-    step.calculation = narrative.calculation;
-    step.action = narrative.action;
-    step.officialReport = narrative.officialReport;
-    step.forwardedText = narrative.forwardedText;
-    step.provider = response.provider || "fallback";
-    item.forwardedText = step.forwardedText;
-    agent.lastMove = step.action;
-    agent.lastOfficialReport = step.officialReport;
-    return step.provider;
-  }
-
   function isAgentNarrative(value) {
     return value && ["interpretation", "calculation", "action", "officialReport", "forwardedText"]
       .every((key) => typeof value[key] === "string" && value[key].trim());
