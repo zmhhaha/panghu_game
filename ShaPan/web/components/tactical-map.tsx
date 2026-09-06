@@ -4,16 +4,12 @@ import { ChevronDown, ChevronUp, Crosshair, Globe2, Play } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
+import { MAP_CANVAS, MAP_CONTRACT, toCanvasPoint } from "../lib/map-definition";
 
-/** Shared 900x720 tactical canvas. API points are percentages of this canvas. */
-export const TACTICAL_MAP_DIMENSIONS = { width: 900, height: 720 } as const;
+/** Authoritative tactical canvas. API points are percentages of this canvas. */
+export const TACTICAL_MAP_DIMENSIONS = MAP_CANVAS;
 
-function percentToMapPoint(point: { x: number; y: number }) {
-  return {
-    x: (point.x / 100) * TACTICAL_MAP_DIMENSIONS.width,
-    y: (point.y / 100) * TACTICAL_MAP_DIMENSIONS.height,
-  };
-}
+const percentToMapPoint = toCanvasPoint;
 
 export type TacticalUnit = {
   id: string;
@@ -96,22 +92,6 @@ function unitCode(unit: TacticalUnit) {
   return unit.name.replace(/第|英国|中国|日军|德军|部队|旅|营|团|师/g, "").slice(0, 8).toUpperCase();
 }
 
-function markerLabelOffset(unitId: string) {
-  const offsets: Record<string, { x: number; y: number }> = {
-    uk1para: { x: 26, y: -58 },
-    uk2para: { x: 24, y: 4 },
-    ukairland: { x: -20, y: 4 },
-    ukrecon: { x: 24, y: -56 },
-    ukart: { x: -28, y: -56 },
-    cn31: { x: 24, y: -56 },
-    cn30: { x: 24, y: 4 },
-    cn27: { x: -22, y: -56 },
-    cnart: { x: 24, y: -56 },
-    cnreserve: { x: -24, y: 4 }
-  };
-  return offsets[unitId] || { x: 18, y: -52 };
-}
-
 type MarkerLayout = { offsetX: number; offsetY: number };
 
 function markerLayouts(units: TacticalUnit[], knownUnits: Set<string>) {
@@ -182,7 +162,7 @@ function isHolding(unit: TacticalUnit) {
   return unit.movement?.kind === "hold" || /固守|防御|保持|坚守/.test(unit.status);
 }
 
-function DynamicArrows({ units, layers, isAsia, knownUnits, focusUnitId }: { units: TacticalUnit[]; layers: MapLayers; isAsia: boolean; knownUnits: Set<string>; focusUnitId: string | null }) {
+function DynamicArrows({ units, layers, knownUnits, focusUnitId }: { units: TacticalUnit[]; layers: MapLayers; knownUnits: Set<string>; focusUnitId: string | null }) {
   const routes = units.filter((unit) => knownUnits.has(unit.id) && unit.movement && (!focusUnitId || focusUnitId === unit.id) && ((unit.side === "friendly" && layers.orders) || (unit.side === "enemy" && layers.intel)));
   if (!routes.length) return null;
   return (
@@ -194,7 +174,7 @@ function DynamicArrows({ units, layers, isAsia, knownUnits, focusUnitId }: { uni
       {routes.map((unit) => {
         const movement = unit.movement!;
         const friendly = unit.side === "friendly";
-        const color = (isAsia ? friendly : !friendly) ? "#a9493f" : "#2e6ea4";
+        const color = friendly ? MAP_CONTRACT.colors.friendly : MAP_CONTRACT.colors.enemy;
         const marker = color === "#a9493f" ? "url(#dynamic-red-arrow)" : "url(#dynamic-blue-arrow)";
         const current = percentToMapPoint({ x: unit.x, y: unit.y });
         const route = movement.route?.length ? movement.route : [movement.from, movement.to];
@@ -210,10 +190,12 @@ function DynamicArrows({ units, layers, isAsia, knownUnits, focusUnitId }: { uni
         if (!friendly) {
           const radius = confidence === "confirmed" ? 22 : 42;
           const direction = points.length > 1 ? points[1] : { x: current.x + 26, y: current.y };
+          const stale = movement.phase === "delayed" || movement.confidence === "过期" || movement.confidence === "stale";
+          const intelColor = stale ? MAP_CONTRACT.colors.staleIntel : color;
           return <g key={`intel-${unit.id}`} opacity={dimmed ? ".18" : confidence === "confirmed" ? ".7" : ".5"}>
-            <ellipse cx={current.x} cy={current.y} rx={radius} ry={radius * .62} fill={color} fillOpacity=".08" stroke={color} strokeDasharray={confidence === "confirmed" ? "5 5" : "2 7"} strokeWidth="2" />
-            {Math.hypot(direction.x - current.x, direction.y - current.y) > 3 ? <path d={`M ${current.x} ${current.y} L ${direction.x} ${direction.y}`} fill="none" stroke={color} strokeDasharray="5 7" strokeWidth="2" markerEnd={marker} /> : null}
-            {focusUnitId ? <text x={current.x + radius + 6} y={current.y - radius * .62 + labelShift} fill={color} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{unitCode(unit)} · {confidence === "confirmed" ? "确认" : "推定"}</text> : null}
+            <ellipse cx={current.x} cy={current.y} rx={radius} ry={radius * .62} fill={intelColor} fillOpacity=".08" stroke={intelColor} strokeDasharray={stale ? "2 7" : confidence === "confirmed" ? "5 5" : "2 7"} strokeWidth="2" />
+            {Math.hypot(direction.x - current.x, direction.y - current.y) > 3 ? <path d={`M ${current.x} ${current.y} L ${direction.x} ${direction.y}`} fill="none" stroke={intelColor} strokeDasharray="5 7" strokeWidth="2" markerEnd={marker} /> : null}
+            {focusUnitId ? <text x={current.x + radius + 6} y={current.y - radius * .62 + labelShift} fill={intelColor} stroke="#d8cfaa" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="700">{unitCode(unit)} · {stale ? "过期" : confidence === "confirmed" ? "确认" : "推定"}</text> : null}
           </g>;
         }
 
@@ -366,7 +348,6 @@ export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = f
 
   function markerClasses(unit: TacticalUnit) {
     const friendly = unit.side === "friendly";
-    if (isAsia) return friendly ? "border-[#a9493f] text-[#8f382f]" : "border-[#2e6ea4] text-[#245b89]";
     return friendly ? "border-[#2e6ea4] text-[#245b89]" : "border-[#a9493f] text-[#8f382f]";
   }
 
@@ -381,10 +362,9 @@ export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = f
   return (
     <div className="tactical-map relative min-h-[560px] flex-1 overflow-hidden bg-[#d8cfaa] min-[900px]:min-h-0" onPointerMove={updateCursorCoordinate} onPointerDown={updateCursorCoordinate}>
       {isAsia ? <ChinaMap layers={layers} knownUnits={revealedUnitIds} /> : <EuropeMap layers={layers} knownUnits={revealedUnitIds} />}
-      <DynamicArrows units={units} layers={layers} isAsia={isAsia} knownUnits={revealedUnitIds} focusUnitId={focusUnitId} />
+      <DynamicArrows units={units} layers={layers} knownUnits={revealedUnitIds} focusUnitId={focusUnitId} />
 
       {layers.units ? units.filter((unit) => revealedUnitIds.has(unit.id)).map((unit) => {
-        const labelOffset = markerLabelOffset(unit.id);
         const layout = layouts.get(unit.id) || { offsetX: 0, offsetY: 0 };
         const leaderLength = Math.hypot(layout.offsetX, layout.offsetY);
         const leaderAngle = Math.atan2(-layout.offsetY, -layout.offsetX) * 180 / Math.PI;
@@ -404,7 +384,7 @@ export function TacticalMap({ campaignId, battleStarted, paused, battleEnded = f
             markerClasses(unit),
             unitPanelVisible && selectedUnit.id === unit.id && "ring-2 ring-[#eee1a8] ring-offset-2 ring-offset-[#626c59]"
           )}>{unit.side === "enemy" ? <span className="text-lg opacity-70">?</span> : <UnitGlyph unit={unit} />}</span>
-          <span className={cn("absolute block whitespace-nowrap border bg-[#ddd4ad]/90 px-1 py-0.5 text-[9px] font-bold shadow-sm", markerClasses(unit))} style={{ left: labelOffset.x, top: labelOffset.y }}>{unitCode(unit)}{focusUnitId === unit.id ? ` · ${unit.side === "enemy" ? (unit.movement?.confidence === "已确认" ? "确认" : "推定") : unit.status}` : ""}</span>
+          {focusUnitId === unit.id ? <span className={cn("absolute left-1/2 top-full mt-1 block -translate-x-1/2 whitespace-nowrap border bg-[#ddd4ad]/95 px-1 py-0.5 text-[9px] font-bold shadow-sm", markerClasses(unit))}>{unitCode(unit)} · {unit.side === "enemy" ? (unit.movement?.confidence === "过期" ? "过期" : unit.movement?.confidence === "已确认" ? "确认" : "推定") : unit.status}</span> : null}
         </button>
         );
       }) : null}
