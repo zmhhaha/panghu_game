@@ -16,5 +16,7 @@ kubectl apply -f "$root_dir/deploy/k8s/server.yaml"
 sed "s/__TARGET_NAME__/xuye/g" "$root_dir/../../oauth/k8s/game-proxy-configmap.yaml" | kubectl apply -f -
 sed "s/__TARGET_NAME__/xuye/g" "$root_dir/../../oauth/k8s/game-proxy-deployment.yaml" | kubectl apply -f -
 kubectl apply -f "$root_dir/../../cloudflare-tunnel/operator/tunnel-routes.yaml"
+# xuye-server always deploys the reusable :latest tag.
+kubectl rollout restart deployment/xuye-server -n xuye
 kubectl rollout status deployment/xuye-server -n xuye --timeout=180s
 kubectl rollout status deployment/oauth2-proxy-xuye -n oauth --timeout=180s
