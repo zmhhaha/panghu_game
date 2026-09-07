@@ -45,6 +45,11 @@ kubectl wait --for=condition=complete job/guanliao-db-migration -n "$namespace" 
 
 sed "s#arm-cluster-master:5000/guanliao-server:latest#${image}#g" "${project_root}/deploy/k8s/server.yaml" > "${tmp_dir}/server.yaml"
 kubectl apply -f "${project_root}/deploy/k8s/agent-configmap.yaml" -f "${tmp_dir}/server.yaml"
+# The default image tag is `latest`. Re-applying an unchanged tag does not
+# change the Pod template, so Kubernetes will not create replacement Pods on
+# its own. Restart explicitly so imagePullPolicy: Always pulls the image that
+# build-images.sh has just published.
+kubectl rollout restart deployment/guanliao-server -n "$namespace"
 kubectl rollout status deployment/guanliao-server -n "$namespace" --timeout=180s
 kubectl rollout status deployment/oauth2-proxy-guanliao -n oauth --timeout=180s
 

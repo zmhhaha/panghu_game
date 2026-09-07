@@ -273,7 +273,8 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="agent-client.js"></script>
-  <script src="game.js"></script>
+  <!-- The server fills this release token from the built client files. -->
+  <script src="agent-client.js?v=__CLIENT_VERSION__"></script>
+  <script src="game.js?v=__CLIENT_VERSION__"></script>
 </body>
 </html>

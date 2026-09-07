@@ -39,7 +39,8 @@ describe("state API", () => {
     const server = createApp(repository, process.cwd()).listen(0, "127.0.0.1");
     await new Promise<void>((resolve) => server.once("listening", resolve));
     const { port } = server.address() as AddressInfo;
-    const base = `http://127.0.0.1:${port}/api/state`;
+      const base = `http://127.0.0.1:${port}/api/state`;
+      const origin = `http://127.0.0.1:${port}`;
     const headers = (subject: string) => ({
       "content-type": "application/json",
       "x-auth-request-sub": subject,
@@ -64,6 +65,17 @@ describe("state API", () => {
       const removed = await fetch(base, { method: "DELETE", headers: headers("official-a") });
       expect(removed.status).toBe(204);
       expect((await fetch(base, { headers: headers("official-a") })).status).toBe(404);
+
+      const clientScript = await fetch(`${origin}/game.js`);
+      expect(clientScript.status).toBe(200);
+      expect(clientScript.headers.get("cache-control")).toBe("no-store");
+      await clientScript.text();
+
+      const index = await fetch(origin);
+      const markup = await index.text();
+      expect(index.headers.get("cache-control")).toBe("no-store");
+      expect(markup).toMatch(/game\.js\?v=[a-z0-9]+/);
+      expect(markup).not.toContain("__CLIENT_VERSION__");
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
       await repository.close();
