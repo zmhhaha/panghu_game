@@ -5,7 +5,7 @@ from openai import OpenAI
 
 _clients: dict[str, OpenAI] = {}
 PROVIDER_CONFIGS: dict[str, dict[str, Any]] = {
-    "deepseek": {"env_key": "DEEPSEEK_API_KEY", "base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
+    "deepseek": {"env_key": "DEEPSEEK_API_KEY", "base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash"},
     "openai": {"env_key": "OPENAI_API_KEY", "base_url": "https://api.openai.com", "model": "gpt-4o-mini"},
     "custom": {"env_key": "CUSTOM_API_KEY", "base_url_key": "CUSTOM_API_BASE", "model_key": "CUSTOM_MODEL"},
 }

@@ -43,7 +43,7 @@ function cleanText(value, maxLength) {
 
 function providerConfig() {
   const provider = String(process.env.PROVIDER || "").toLowerCase();
-  if (provider === "deepseek") return { provider, baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com", apiKey: process.env.DEEPSEEK_API_KEY, model: process.env.DEEPSEEK_MODEL || "deepseek-chat" };
+  if (provider === "deepseek") return { provider, baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com", apiKey: process.env.DEEPSEEK_API_KEY, model: process.env.DEEPSEEK_MODEL || "deepseek-v4-flash" };
   if (provider === "openai" || provider === "openai-compatible") return { provider: "openai", baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1", apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || "gpt-4o-mini" };
   if (provider === "custom") return { provider, baseUrl: process.env.CUSTOM_BASE_URL, apiKey: process.env.CUSTOM_API_KEY, model: process.env.CUSTOM_MODEL || "tewu-npc" };
   return null;

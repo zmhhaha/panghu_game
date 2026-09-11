@@ -12,4 +12,4 @@ data:
   # PROVIDER: "openai"
   # PROVIDER: "custom"
   # CUSTOM_API_BASE: "http://0.0.0.0"
-  # CUSTOM_MODEL: "deepseek-chat"
+  # CUSTOM_MODEL: "deepseek-v4-flash"

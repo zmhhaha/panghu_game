@@ -141,7 +141,7 @@ export function createAgentProvider(): AgentProvider | null {
         "deepseek",
         process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
         process.env.DEEPSEEK_API_KEY,
-        process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
+        process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
       );
     case "anthropic":
       return createAnthropicProvider(

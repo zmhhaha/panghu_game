@@ -18,7 +18,7 @@ PROVIDER_CONFIGS: dict[str, dict[str, Any]] = {
     "deepseek": {
         "env_key": "DEEPSEEK_API_KEY",
         "base_url": "https://api.deepseek.com",
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-flash",
     },
     "openai": {
         "env_key": "OPENAI_API_KEY",

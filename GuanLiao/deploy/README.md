@@ -49,7 +49,7 @@ Agent 凭据使用独立路径。默认 ConfigMap 选择 DeepSeek：
 kubectl exec -n vault vault-0 -- vault kv put secret/guanliao/agent \
   DEEPSEEK_API_KEY='<api-key>' \
   DEEPSEEK_BASE_URL='https://api.deepseek.com' \
-  DEEPSEEK_MODEL='deepseek-chat'
+  DEEPSEEK_MODEL='deepseek-v4-flash'
 ```
 
 也可把 `deploy/k8s/agent-configmap.yaml` 的 `PROVIDER` 改为 `fallback`、`openai`、`anthropic` 或 `custom`，并在同一 Vault 路径写入对应的 `*_API_KEY`、`*_BASE_URL`、`*_MODEL` 字段。应用进程遇到无效 Provider 配置时会自动使用规则回退；标准 `deploy.sh` 则会先等待并校验 `guanliao-agent` Secret，避免声明启用模型却以 fallback 状态上线。

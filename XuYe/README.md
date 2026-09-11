@@ -25,7 +25,7 @@ DeepSeek：
 ```ini
 LLM_BASE_URL=https://api.deepseek.com
 LLM_API_KEY=your-key
-LLM_MODEL=deepseek-chat
+LLM_MODEL=deepseek-v4-flash
 ```
 
 OpenAI：

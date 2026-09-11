@@ -97,7 +97,7 @@ export function createRequiredAgentProvider(env: NodeJS.ProcessEnv = process.env
     case "openai-compatible":
       return new OpenAiCompatibleProvider("openai", env.OPENAI_BASE_URL ?? "https://api.openai.com/v1", required(env.OPENAI_API_KEY, "OPENAI_API_KEY"), env.OPENAI_MODEL ?? "gpt-4o-mini", timeoutMs);
     case "deepseek":
-      return new OpenAiCompatibleProvider("deepseek", env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com", required(env.DEEPSEEK_API_KEY, "DEEPSEEK_API_KEY"), env.DEEPSEEK_MODEL ?? "deepseek-chat", timeoutMs);
+      return new OpenAiCompatibleProvider("deepseek", env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com", required(env.DEEPSEEK_API_KEY, "DEEPSEEK_API_KEY"), env.DEEPSEEK_MODEL ?? "deepseek-v4-flash", timeoutMs);
     case "custom":
       return new OpenAiCompatibleProvider("custom", required(env.CUSTOM_BASE_URL, "CUSTOM_BASE_URL"), required(env.CUSTOM_API_KEY, "CUSTOM_API_KEY"), required(env.CUSTOM_MODEL, "CUSTOM_MODEL"), timeoutMs);
     case "anthropic":
