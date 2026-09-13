@@ -26,13 +26,12 @@ type Message = { role: "system" | "user" | "assistant"; content: string };
 class OpenAiCompatibleProvider implements AgentProvider {
   constructor(
     readonly name: string,
-    private readonly baseUrl: string | undefined,
-    private readonly apiKey: string | undefined,
-    private readonly model: string | undefined,
+    private readonly baseUrl: string,
+    private readonly apiKey: string,
+    private readonly model: string,
   ) {}
 
   async complete(system: string, user: string): Promise<unknown> {
-    this.assertConfigured();
     const messages: Message[] = [{ role: "system", content: system }, { role: "user", content: user }];
     const content = await this.request(messages, 0.72);
     try {
@@ -49,29 +48,18 @@ class OpenAiCompatibleProvider implements AgentProvider {
     }
   }
 
-  private assertConfigured(): void {
-    if (!this.baseUrl || !this.model) throw new Error("LLM provider is not configured");
-    const host = safeHostname(this.baseUrl);
-    if (!this.apiKey && !["localhost", "127.0.0.1", "::1"].includes(host)) {
-      throw new Error("LLM provider API key is not configured");
-    }
-  }
-
   private async request(messages: Message[], temperature: number): Promise<string> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS ?? 20000));
     try {
-      const headers: Record<string, string> = { "content-type": "application/json" };
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const response = await fetch(`${this.baseUrl!.replace(/\/$/, "")}/chat/completions`, {
+      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         signal: controller.signal,
-        headers,
+        headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
         body: JSON.stringify({
           model: this.model,
           temperature,
           max_tokens: Number(process.env.LLM_MAX_TOKENS ?? 1000),
-          response_format: { type: "json_object" },
           messages,
         }),
       });
@@ -86,115 +74,21 @@ class OpenAiCompatibleProvider implements AgentProvider {
   }
 }
 
-class AnthropicProvider implements AgentProvider {
-  readonly name = "anthropic";
-
-  constructor(
-    private readonly baseUrl: string,
-    private readonly apiKey: string,
-    private readonly model: string,
-  ) {}
-
-  async complete(system: string, user: string): Promise<unknown> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS ?? 20000));
-    try {
-      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/messages`, {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": this.apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: this.model,
-          max_tokens: Number(process.env.LLM_MAX_TOKENS ?? 1000),
-          system,
-          messages: [{ role: "user", content: user }],
-        }),
-      });
-      if (!response.ok) throw new Error(`Anthropic HTTP ${response.status}`);
-      const payload = await response.json() as { content?: Array<{ text?: string }> };
-      const content = payload.content?.find((item) => item.text)?.text;
-      if (!content) throw new Error("Anthropic returned no content");
-      return parseModelJson(content);
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-}
-
+/**
+ * 模型调用统一走集群内 llm-service：密钥、别名路由与提示词劫持防护都由它负责。
+ * LLM_MODEL 传的是 llm-service 注册的**别名**（deepseek-guarded），不是上游模型名 ——
+ * 改回 `deepseek-v4-flash` 之类会被 400 拒掉。
+ *
+ * 返回 null 表示未配置模型，此时编排器使用主控给出的确定性文本；这是产品行为，
+ * 不是直连 provider 的回退路径 —— 本服务已经没有任何直连 provider 的代码。
+ */
 export function createAgentProvider(): AgentProvider | null {
-  const selectedProvider = (process.env.PROVIDER ?? "fallback").trim().toLowerCase();
-  switch (selectedProvider) {
-    case "openai":
-    case "openai-compatible":
-      return createOpenAiCompatibleProvider(
-        "openai",
-        process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-        process.env.OPENAI_API_KEY,
-        process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-      );
-    case "deepseek":
-      return createOpenAiCompatibleProvider(
-        "deepseek",
-        process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
-        process.env.DEEPSEEK_API_KEY,
-        process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
-      );
-    case "anthropic":
-      return createAnthropicProvider(
-        process.env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com/v1",
-        process.env.ANTHROPIC_API_KEY,
-        process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-latest",
-      );
-    case "custom":
-      return createOpenAiCompatibleProvider(
-        "custom",
-        process.env.CUSTOM_BASE_URL,
-        process.env.CUSTOM_API_KEY,
-        process.env.CUSTOM_MODEL ?? "guanliao-official",
-      );
-    case "fallback":
-      return null;
-    default:
-      return unavailableProvider(selectedProvider, "unknown PROVIDER value");
-  }
-}
-
-function createOpenAiCompatibleProvider(
-  name: string,
-  baseUrl: string | undefined,
-  apiKey: string | undefined,
-  model: string | undefined,
-): AgentProvider | null {
-  const normalizedBaseUrl = baseUrl?.trim();
-  const normalizedApiKey = apiKey?.trim();
-  const normalizedModel = model?.trim();
-  if (!normalizedBaseUrl) return unavailableProvider(name, "missing base URL");
-  if (!isHttpUrl(normalizedBaseUrl)) return unavailableProvider(name, "invalid base URL");
-  if (!normalizedModel) return unavailableProvider(name, "missing model");
-  const host = safeHostname(normalizedBaseUrl);
-  if (!normalizedApiKey && !["localhost", "127.0.0.1", "::1"].includes(host)) {
-    return unavailableProvider(name, "missing API key");
-  }
-  return new OpenAiCompatibleProvider(name, normalizedBaseUrl, normalizedApiKey, normalizedModel);
-}
-
-function createAnthropicProvider(
-  baseUrl: string | undefined,
-  apiKey: string | undefined,
-  model: string | undefined,
-): AgentProvider | null {
-  const normalizedBaseUrl = baseUrl?.trim();
-  const normalizedApiKey = apiKey?.trim();
-  const normalizedModel = model?.trim();
-  if (!normalizedBaseUrl) return unavailableProvider("anthropic", "missing ANTHROPIC_BASE_URL");
-  if (!isHttpUrl(normalizedBaseUrl)) return unavailableProvider("anthropic", "invalid ANTHROPIC_BASE_URL");
-  if (!normalizedApiKey) return unavailableProvider("anthropic", "missing ANTHROPIC_API_KEY");
-  if (!normalizedModel) return unavailableProvider("anthropic", "missing ANTHROPIC_MODEL");
-  return new AnthropicProvider(normalizedBaseUrl, normalizedApiKey, normalizedModel);
+  const baseUrl = process.env.LLM_BASE_URL?.trim();
+  if (!baseUrl) return unavailableProvider("llm-service", "missing LLM_BASE_URL");
+  if (!isHttpUrl(baseUrl)) return unavailableProvider("llm-service", "invalid LLM_BASE_URL");
+  const apiKey = process.env.LLM_SERVICE_TOKEN?.trim();
+  if (!apiKey) return unavailableProvider("llm-service", "missing LLM_SERVICE_TOKEN");
+  return new OpenAiCompatibleProvider("llm-service", baseUrl, apiKey, process.env.LLM_MODEL?.trim() || "deepseek-guarded");
 }
 
 function unavailableProvider(name: string, reason: string): null {
@@ -208,13 +102,5 @@ function isHttpUrl(value: string): boolean {
     return url.protocol === "http:" || url.protocol === "https:";
   } catch {
     return false;
-  }
-}
-
-function safeHostname(value: string): string {
-  try {
-    return new URL(value).hostname;
-  } catch {
-    return "";
   }
 }

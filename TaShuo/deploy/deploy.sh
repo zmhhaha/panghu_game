@@ -6,7 +6,12 @@ namespace=tashuo
 kubectl apply -f deploy/k8s/namespace.yaml
 kubectl apply -f deploy/k8s/agent-configmap.yaml
 
-for secret in tashuo-database tashuo-agent; do
+# 模型调用统一走集群内 llm-service：这是本服务唯一的模型凭据入口。
+# 缺令牌不会让进程降级，而是让它拒绝启动 —— 所以先同步再滚动。
+kubectl apply -f ../../vault/inventory/tashuo-llm-token-externalsecret.yaml
+kubectl wait --for=condition=Ready externalsecret/llm-token -n "$namespace" --timeout=120s
+
+for secret in tashuo-database tashuo-agent llm-token; do
   if ! kubectl get secret "$secret" -n "$namespace" >/dev/null 2>&1; then
     echo "missing secret ${secret} in namespace ${namespace}" >&2
     exit 1

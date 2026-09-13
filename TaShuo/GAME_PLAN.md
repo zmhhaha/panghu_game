@@ -846,8 +846,9 @@ TaShuo/
 - `QianFu/apps/server/src/middleware/auth.ts`：代理身份提取与 `requireAuth`。
 - `QianFu/apps/server/src/postgres-repository.ts`：用户所有权查询、事务、行锁与幂等动作。
 - `QianFu/apps/web/lib/api.ts`：携带认证 Cookie、登录过期跳转。
-- `QianFu/apps/server/src/agents/provider.ts`：模型 Provider、结构化 JSON 与 Zod 校验。
-- `QianFu/deploy/k8s/server.yaml`：模型配置、Secret 和服务部署方式。
+- `QianFu/apps/server/src/agents/provider.ts`：llm-service 单入口调用、结构化 JSON 与 Zod 校验。
+- `QianFu/deploy/k8s/server.yaml`：llm-service 接入配置、Secret 和服务部署方式。
+- `llm-service/INTEGRATION.md`：共享模型服务的接入规范（令牌、别名、guarded 档的取舍）。
 
 ### 13.2 登录认证
 
@@ -926,15 +927,11 @@ final_reports
 
 ### 13.5 大模型服务接入
 
-大模型接入直接参考 `QianFu/apps/server/src/agents/provider.ts` 已验证的实现，支持：
+大模型调用**统一走集群内 `llm-service`**，TaShuo 不持有任何 provider 凭据。provider 密钥、模型别名路由、重试与提示词劫持防护都由 `llm-service` 负责，接入规范见 `llm-service/INTEGRATION.md`。
 
-- OpenAI-compatible `/chat/completions`。
-- DeepSeek。
-- OpenAI。
-- Anthropic。
-- 自定义兼容服务。
+TaShuo 侧只保留三件非敏感的事：`LLM_BASE_URL`（集群内入口）、`LLM_MODEL`（llm-service 注册的**别名**，不是上游模型名）与 `LLM_SERVICE_TOKEN`（本项目的调用方令牌）。玩家发言是自由文本，所以走 `deepseek-guarded` 档：该档禁 `tools` 与 `response_format`，但服务端会分隔不可信内容并检测 canary 泄漏 —— 这也是把调用收敛进来的主要理由。
 
-沿用 `PROVIDER`、各供应商的 `*_API_KEY`、`*_BASE_URL`、`*_MODEL` 和基础请求结构。每类 Agent 使用独立 Zod 输出 schema，模型返回内容经过 JSON 解析与 schema 校验后才能进入规则引擎。
+由于不能再用 `response_format` 强制结构化输出，每类 Agent 依靠 prompt 约束输出，并继续用独立 Zod schema 校验后才进入规则引擎；解析器容忍 Markdown 代码围栏，schema 不符时保留一次格式修复重试。
 
 《它说》不以模型成本和响应延迟作为设计约束：
 
@@ -945,7 +942,9 @@ final_reports
 - 不因为模型响应较慢而跳过评论、传播或评分 Agent。
 - 等待模型时只暂停当前用户的游戏实例，不影响其他登录用户。
 
-部署时使用独立的 `tashuo-agent-config` ConfigMap 与 `tashuo-agent` Secret，字段和注入方式参考 `QianFu/deploy/k8s/agent-configmap.yaml`、`server.yaml`。Secret 值不提交到仓库。
+部署时使用独立的 `tashuo-agent-config` ConfigMap（入口与别名）与 `llm-token` Secret（令牌），注入方式见 `deploy/k8s/agent-configmap.yaml` 和 `deploy/k8s/server.yaml`。`tashuo-agent` Secret 仍然保留，但它现在只放 TaShuo 自己的 `COMMENT_CONFIRMATION_SECRET`。Secret 值不提交到仓库。
+
+Pod 模板带 `llm-client: "true"` 标签 —— `llm-service` 的 NetworkPolicy 只放行带此标签的 Pod，缺了表现为超时而不是 401。
 
 ### 13.6 无 fallback 原则
 

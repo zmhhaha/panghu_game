@@ -18,42 +18,44 @@ describe("parseModelJson", () => {
 });
 
 describe("createAgentProvider", () => {
-  it.each([
-    ["openai", "OPENAI_API_KEY"],
-    ["deepseek", "DEEPSEEK_API_KEY"],
-    ["anthropic", "ANTHROPIC_API_KEY"],
-  ])("falls back when %s has no API key", (provider, key) => {
-    vi.stubEnv("PROVIDER", provider);
-    vi.stubEnv(key, "");
+  it("targets the in-cluster llm-service", () => {
+    vi.stubEnv("LLM_BASE_URL", "http://llm-service.llm.svc.cluster.local/v1");
+    vi.stubEnv("LLM_SERVICE_TOKEN", "test-token");
+    vi.stubEnv("LLM_MODEL", "deepseek-guarded");
+
+    expect(createAgentProvider()?.name).toBe("llm-service");
+  });
+
+  it("stays enabled when LLM_MODEL is unset, defaulting to the guarded alias", () => {
+    vi.stubEnv("LLM_BASE_URL", "http://llm-service.llm.svc.cluster.local/v1");
+    vi.stubEnv("LLM_SERVICE_TOKEN", "test-token");
+    vi.stubEnv("LLM_MODEL", "");
+
+    expect(createAgentProvider()?.name).toBe("llm-service");
+  });
+
+  it("falls back to controller text when the llm-service entry is missing", () => {
+    vi.stubEnv("LLM_BASE_URL", "");
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     expect(createAgentProvider()).toBeNull();
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining("using fallback"));
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining("missing LLM_BASE_URL"));
   });
 
-  it("falls back when a custom provider has no URL", () => {
-    vi.stubEnv("PROVIDER", "custom");
-    vi.stubEnv("CUSTOM_BASE_URL", "");
+  it("treats a whitespace-only token as missing", () => {
+    vi.stubEnv("LLM_BASE_URL", "http://llm-service.llm.svc.cluster.local/v1");
+    vi.stubEnv("LLM_SERVICE_TOKEN", "   ");
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     expect(createAgentProvider()).toBeNull();
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining("missing base URL"));
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining("missing LLM_SERVICE_TOKEN"));
   });
 
-  it("treats whitespace-only credentials as missing", () => {
-    vi.stubEnv("PROVIDER", "openai");
-    vi.stubEnv("OPENAI_API_KEY", "   ");
+  it("rejects a non-http LLM_BASE_URL", () => {
+    vi.stubEnv("LLM_BASE_URL", "llm-service.llm.svc.cluster.local");
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     expect(createAgentProvider()).toBeNull();
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining("missing API key"));
-  });
-
-  it("allows an unauthenticated custom provider on localhost", () => {
-    vi.stubEnv("PROVIDER", "custom");
-    vi.stubEnv("CUSTOM_BASE_URL", "http://127.0.0.1:11434/v1");
-    vi.stubEnv("CUSTOM_API_KEY", "");
-
-    expect(createAgentProvider()?.name).toBe("custom");
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining("invalid LLM_BASE_URL"));
   });
 });

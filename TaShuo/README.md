@@ -18,8 +18,8 @@ pnpm typecheck
 pnpm dev
 ```
 
-模型服务不提供 fallback。生产环境必须配置一个受支持的 Provider；模型失败时对应游戏实例保持原状态并等待重试。
+模型调用统一走集群内 `llm-service`，TaShuo 自己不持有 provider 凭据。模型服务不提供 fallback：生产环境必须配置 `LLM_BASE_URL`、`LLM_MODEL` 与 `LLM_SERVICE_TOKEN`；模型失败时对应游戏实例保持原状态并等待重试。
 
-开发模式未设置 `DATABASE_URL` 时使用进程内存存档，并以固定开发用户运行。生产模式必须配置 PostgreSQL、可信 oauth2-proxy 身份头、`COMMENT_CONFIRMATION_SECRET` 和一个模型 Provider；缺少任何必要配置时服务会拒绝启动。
+开发模式未设置 `DATABASE_URL` 时使用进程内存存档，并以固定开发用户运行。生产模式必须配置 PostgreSQL、可信 oauth2-proxy 身份头、`COMMENT_CONFIRMATION_SECRET` 和 llm-service 接入；缺少任何必要配置时服务会拒绝启动。
 
 环境变量模板见 `.env.example`，容器和 Kubernetes 部署步骤见 `deploy/README.md`。数据库迁移位于 `apps/server/migrations`，部署时必须先于 API 发布执行。

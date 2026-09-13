@@ -13,19 +13,20 @@ trap 'rm -rf "$tmp_dir"' EXIT
 
 kubectl apply -f "${project_root}/deploy/k8s/namespace.yaml"
 kubectl apply -f "${infrastructure_root}/vault/inventory/guanliao-externalsecret.yaml"
-kubectl apply -f "${infrastructure_root}/vault/inventory/guanliao-agent-externalsecret.yaml"
+kubectl apply -f "${infrastructure_root}/vault/inventory/guanliao-llm-token-externalsecret.yaml"
 kubectl apply -f "${infrastructure_root}/vault/inventory/oauth-externalsecret.yaml"
 
 kubectl wait --for=condition=Ready externalsecret/guanliao-database -n "$namespace" --timeout=120s
-kubectl wait --for=condition=Ready externalsecret/guanliao-agent -n "$namespace" --timeout=120s
+kubectl wait --for=condition=Ready externalsecret/llm-token -n "$namespace" --timeout=120s
 kubectl wait --for=condition=Ready externalsecret/oauth2-proxy-secret -n oauth --timeout=120s
 
 if ! kubectl get secret guanliao-database -n "$namespace" >/dev/null 2>&1; then
   echo "missing ExternalSecret output guanliao-database in namespace ${namespace}" >&2
   exit 1
 fi
-if ! kubectl get secret guanliao-agent -n "$namespace" >/dev/null 2>&1; then
-  echo "missing ExternalSecret output guanliao-agent in namespace ${namespace}" >&2
+if ! kubectl get secret llm-token -n "$namespace" >/dev/null 2>&1; then
+  echo "missing ExternalSecret output llm-token in namespace ${namespace}" >&2
+  echo "GuanLiao 只通过集群内 llm-service 调模型；这是它唯一的凭据入口。" >&2
   exit 1
 fi
 if ! kubectl get secret oauth2-proxy-secret -n oauth >/dev/null 2>&1; then

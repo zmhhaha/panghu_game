@@ -8,9 +8,20 @@ Create or synchronize these Secrets before deployment. Do not commit their value
 
 - `tashuo-database`, key `url`: PostgreSQL connection URL.
 - `tashuo-agent`, key `COMMENT_CONFIRMATION_SECRET`: random signing secret of at least 32 characters.
-- `tashuo-agent`: credentials for the Provider selected in `deploy/k8s/agent-configmap.yaml`.
+- `llm-token`, key `LLM_SERVICE_TOKEN`: the caller token for `tashuo` in `secret/llm-service/callers`.
+  `deploy.sh` applies `vault/inventory/tashuo-llm-token-externalsecret.yaml` for this one.
 
-Provider credential keys are listed in `.env.example`. A configured Provider is mandatory; TaShuo does not switch Provider or generate fallback content after a model error.
+Model calls go exclusively through the in-cluster `llm-service`, which owns the provider keys, the
+alias routing and the prompt-hijack guard; TaShuo holds no provider credential of its own. See
+`llm-service/INTEGRATION.md` for the integration contract. `deploy/k8s/agent-configmap.yaml` carries
+only the non-secret half — `LLM_BASE_URL` and `LLM_MODEL`, where `LLM_MODEL` is an alias registered
+by `llm-service` (`deepseek-guarded`), not an upstream model name.
+
+TaShuo does not switch provider or generate fallback content after a model error: a missing
+`LLM_BASE_URL` or `LLM_SERVICE_TOKEN` makes the process refuse to start rather than quietly degrade.
+
+The Pod template carries the `llm-client: "true"` label because the `llm-service` NetworkPolicy
+admits only labelled Pods — omitting it surfaces as a timeout, not as a 401.
 
 ## Build and deploy
 

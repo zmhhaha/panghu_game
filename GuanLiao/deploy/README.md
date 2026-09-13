@@ -12,7 +12,7 @@
 | OAuth 上游 | `ui.guanliao.svc.cluster.local:80` |
 | PostgreSQL schema | `guanliao` |
 | 数据库 Secret | `guanliao/guanliao-database` |
-| Agent Secret | `guanliao/guanliao-agent` |
+| 模型令牌 Secret | `guanliao/llm-token` |
 
 ## 前置条件
 
@@ -43,16 +43,22 @@ kubectl exec -n vault vault-0 -- vault kv put secret/postgres/app \
   POSTGRES_PASSWORD='<postgres-password>'
 ```
 
-Agent 凭据使用独立路径。默认 ConfigMap 选择 DeepSeek：
+模型调用统一走集群内 `llm-service`，**GuanLiao 不持有任何 provider 凭据**：密钥、别名路由、重试与提示词劫持防护都由它负责。接入规范见 `llm-service/INTEGRATION.md`，这里只记 GuanLiao 自己的接线。GuanLiao 需要的是 `secret/llm-service/callers` 里属于自己那一个键：
 
 ```bash
-kubectl exec -n vault vault-0 -- vault kv put secret/guanliao/agent \
-  DEEPSEEK_API_KEY='<api-key>' \
-  DEEPSEEK_BASE_URL='https://api.deepseek.com' \
-  DEEPSEEK_MODEL='deepseek-v4-flash'
+kubectl exec -n vault vault-0 -- vault kv patch secret/llm-service/callers \
+  LLM_TOKEN_GUANLIAO='<token>'
 ```
 
-也可把 `deploy/k8s/agent-configmap.yaml` 的 `PROVIDER` 改为 `fallback`、`openai`、`anthropic` 或 `custom`，并在同一 Vault 路径写入对应的 `*_API_KEY`、`*_BASE_URL`、`*_MODEL` 字段。应用进程遇到无效 Provider 配置时会自动使用规则回退；标准 `deploy.sh` 则会先等待并校验 `guanliao-agent` Secret，避免声明启用模型却以 fallback 状态上线。
+⚠️ 用 `kv patch` 而不是 `kv put` —— 这个路径下放着所有调用方的令牌，`put` 会把别人覆盖掉。
+
+`vault/inventory/guanliao-llm-token-externalsecret.yaml` 用 `data` + `property` 只取这一个键，渲染成 `guanliao/llm-token` Secret 的 `LLM_SERVICE_TOKEN` —— Pod 拿不到别的调用方的令牌。llm-service 由变量名反推身份（`LLM_TOKEN_GUANLIAO` → `guanliao`），所以请求里不需要 `X-Caller`。
+
+`deploy/k8s/agent-configmap.yaml` 只放两件非敏感的事：走哪个入口（`LLM_BASE_URL`）用哪个别名（`LLM_MODEL`）。别名是 llm-service 注册的**别名**而不是上游模型名，改回 `deepseek-v4-flash` 之类会被 400 拒掉。玩家原批是自由文本，所以走 `deepseek-guarded` 档：禁 `tools` / `response_format`，但服务端会分隔不可信内容并检测 canary 泄漏。
+
+Pod 模板带 `llm-client: "true"` 标签 —— llm-service 的 NetworkPolicy 只放行带此标签的 Pod，**缺了表现为超时而不是 401**，这是本迁移最容易踩的坑。
+
+`LLM_BASE_URL` / `LLM_SERVICE_TOKEN` 缺失时应用进程不报错，只退回主控给出的确定性文本；标准 `deploy.sh` 会先等待并校验 `llm-token` Secret，避免声明启用模型却以 fallback 状态上线。
 
 客户端会在玩家完成当天全部批示并退堂时，统一调用 `/api/agents/propagate-batch`。该接口把当天待处理的官员步骤放在一次编排请求中，服务端 Agent 对整批内容生成叙事；单条 `/api/agents/propagate` 仍保留用于兼容和调试。批量输出格式异常或模型超时时，整批自动回退为浏览器内置的确定性文本，不会阻塞推进日期。
 

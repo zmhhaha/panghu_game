@@ -3,14 +3,29 @@ import { createRequiredAgentProvider, parseModelJson } from "../src/agents/provi
 
 describe("required model provider", () => {
   it("has no unconfigured fallback", () => {
-    expect(() => createRequiredAgentProvider({})).toThrow("PROVIDER is required");
-    expect(() => createRequiredAgentProvider({ PROVIDER: "unknown" })).toThrow("no fallback provider");
+    expect(() => createRequiredAgentProvider({})).toThrow("LLM_BASE_URL is required");
+    expect(() => createRequiredAgentProvider({ LLM_BASE_URL: "http://llm-service.llm.svc.cluster.local/v1" }))
+      .toThrow("LLM_SERVICE_TOKEN is required");
+    expect(() => createRequiredAgentProvider({ LLM_BASE_URL: "  ", LLM_SERVICE_TOKEN: "  " }))
+      .toThrow("LLM_BASE_URL is required");
   });
 
-  it("creates an independent custom provider from TaShuo configuration", () => {
-    const provider = createRequiredAgentProvider({ PROVIDER: "custom", CUSTOM_BASE_URL: "https://llm.example/v1", CUSTOM_API_KEY: "test-key", CUSTOM_MODEL: "test-model" });
-    expect(provider.name).toBe("custom");
-    expect(provider.model).toBe("test-model");
+  it("targets the shared llm-service with the configured alias", () => {
+    const provider = createRequiredAgentProvider({
+      LLM_BASE_URL: "http://llm-service.llm.svc.cluster.local/v1",
+      LLM_SERVICE_TOKEN: "test-token",
+    });
+    expect(provider.name).toBe("llm-service");
+    expect(provider.model).toBe("deepseek-guarded");
+  });
+
+  it("honours an explicitly configured alias", () => {
+    const provider = createRequiredAgentProvider({
+      LLM_BASE_URL: "http://llm-service.llm.svc.cluster.local/v1",
+      LLM_SERVICE_TOKEN: "test-token",
+      LLM_MODEL: "deepseek-trusted",
+    });
+    expect(provider.model).toBe("deepseek-trusted");
   });
 
   it("parses fenced structured output", () => {

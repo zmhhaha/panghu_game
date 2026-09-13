@@ -13,7 +13,8 @@ spec:
     matchLabels: { app: guanliao-server }
   template:
     metadata:
-      labels: { app: guanliao-server }
+      # llm-service 的 NetworkPolicy 只放行带此标签的 Pod；缺了是超时，不是 401。
+      labels: { app: guanliao-server, llm-client: "true" }
     spec:
       securityContext:
         runAsNonRoot: true
@@ -34,21 +35,24 @@ spec:
               value: production
             - name: TRUST_PROXY_AUTH_HEADERS
               value: "true"
-            - name: PROVIDER
+            - name: LLM_BASE_URL
               valueFrom:
-                configMapKeyRef: { name: guanliao-agent-config, key: PROVIDER }
+                configMapKeyRef: { name: guanliao-agent-config, key: LLM_BASE_URL }
+            - name: LLM_MODEL
+              valueFrom:
+                configMapKeyRef: { name: guanliao-agent-config, key: LLM_MODEL }
             - name: LLM_TIMEOUT_MS
               valueFrom:
                 configMapKeyRef: { name: guanliao-agent-config, key: LLM_TIMEOUT_MS }
             - name: LLM_MAX_TOKENS
               valueFrom:
                 configMapKeyRef: { name: guanliao-agent-config, key: LLM_MAX_TOKENS }
+            - name: LLM_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef: { name: llm-token, key: LLM_SERVICE_TOKEN }
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef: { name: guanliao-database, key: url }
-          envFrom:
-            - secretRef:
-                name: guanliao-agent
           readinessProbe:
             httpGet: { path: /api/ready, port: http }
             initialDelaySeconds: 5

@@ -45,7 +45,7 @@ class OpenAiCompatibleProvider implements AgentProvider {
         method: "POST",
         signal: controller.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
-        body: JSON.stringify({ model: this.model, temperature, response_format: { type: "json_object" }, messages }),
+        body: JSON.stringify({ model: this.model, temperature, messages }),
       });
       if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
       const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
@@ -56,54 +56,24 @@ class OpenAiCompatibleProvider implements AgentProvider {
   }
 }
 
-class AnthropicProvider implements AgentProvider {
-  readonly name = "anthropic";
-  constructor(
-    private readonly baseUrl: string,
-    private readonly apiKey: string,
-    readonly model: string,
-    private readonly timeoutMs: number,
-  ) {}
-
-  async complete(system: string, user: string, temperature = 0.4): Promise<unknown> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/messages`, {
-        method: "POST",
-        signal: controller.signal,
-        headers: { "content-type": "application/json", "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: this.model, max_tokens: 1600, temperature, system, messages: [{ role: "user", content: user }] }),
-      });
-      if (!response.ok) throw new Error(`Anthropic HTTP ${response.status}`);
-      const payload = await response.json() as { content?: Array<{ text?: string }> };
-      const content = payload.content?.find((item) => item.text)?.text;
-      if (!content) throw new Error("Anthropic returned no content");
-      return parseModelJson(content);
-    } finally { clearTimeout(timer); }
-  }
-}
-
 const required = (value: string | undefined, name: string): string => {
-  if (!value) throw new Error(`${name} is required for the configured LLM provider`);
-  return value;
+  const trimmed = value?.trim();
+  if (!trimmed) throw new Error(`${name} is required for the shared LLM service`);
+  return trimmed;
 };
 
+/**
+ * 模型调用统一走集群内 llm-service：密钥、别名路由与提示词劫持防护都由它负责。
+ * LLM_MODEL 传的是 llm-service 注册的**别名**（deepseek-guarded），不是上游模型名 ——
+ * 改回 `deepseek-v4-flash` 之类会被 400 拒掉。
+ *
+ * TaShuo 不提供 fallback：缺配置就抛错让进程拒绝启动，模型失败时游戏实例保持原状态等待重试。
+ */
 export function createRequiredAgentProvider(env: NodeJS.ProcessEnv = process.env): AgentProvider {
-  const provider = required(env.PROVIDER, "PROVIDER").toLowerCase();
+  const baseUrl = required(env.LLM_BASE_URL, "LLM_BASE_URL");
+  const serviceToken = required(env.LLM_SERVICE_TOKEN, "LLM_SERVICE_TOKEN");
+  const model = env.LLM_MODEL?.trim() || "deepseek-guarded";
   const timeoutMs = Number(env.LLM_TIMEOUT_MS ?? 120_000);
-  switch (provider) {
-    case "openai":
-    case "openai-compatible":
-      return new OpenAiCompatibleProvider("openai", env.OPENAI_BASE_URL ?? "https://api.openai.com/v1", required(env.OPENAI_API_KEY, "OPENAI_API_KEY"), env.OPENAI_MODEL ?? "gpt-4o-mini", timeoutMs);
-    case "deepseek":
-      return new OpenAiCompatibleProvider("deepseek", env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com", required(env.DEEPSEEK_API_KEY, "DEEPSEEK_API_KEY"), env.DEEPSEEK_MODEL ?? "deepseek-v4-flash", timeoutMs);
-    case "custom":
-      return new OpenAiCompatibleProvider("custom", required(env.CUSTOM_BASE_URL, "CUSTOM_BASE_URL"), required(env.CUSTOM_API_KEY, "CUSTOM_API_KEY"), required(env.CUSTOM_MODEL, "CUSTOM_MODEL"), timeoutMs);
-    case "anthropic":
-      return new AnthropicProvider(env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com/v1", required(env.ANTHROPIC_API_KEY, "ANTHROPIC_API_KEY"), env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-latest", timeoutMs);
-    default:
-      throw new Error(`Unsupported PROVIDER: ${provider}. TaShuo has no fallback provider.`);
-  }
+  return new OpenAiCompatibleProvider("llm-service", baseUrl, serviceToken, model, timeoutMs);
 }
 
