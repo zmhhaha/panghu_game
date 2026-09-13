@@ -32,8 +32,18 @@ LLM_SERVICE_TOKEN=your-caller-token
 玩家写入的续写文字是自由文本，所以走 `guarded` 档：该档禁 `tools` 与 `response_format`，
 但服务端会分隔不可信内容并检测 canary 泄漏。
 
-⚠️ `LLM_MAX_TOKENS` 受 `guarded` 档上限约束，最高只能到 **2048**，改高会被 400 拒掉。续页是长文生成，
-如果发现频繁截断，只能升到 2048，不能再高；要更高就得换档位，而换档位意味着放弃提示词劫持防护。
+⚠️ **默认不设 `LLM_MAX_TOKENS`，这是有意的。** 上游是推理模型，输出分成 `reasoning_content`（思考）
+和 `content`（正文）两路，预算不够时思考会把它吃光、正文一个字都出不来（`finish_reason: length`，
+表现是「模型没有返回正文」）。实测同一条续写请求：
+
+| `max_tokens` | 正文 | 思考 | 结果 |
+|---|---|---|---|
+| 1400 | **0 字** | 4017 字 | 被思考烧完，正文为空 |
+| 不发送 | **1187 字** | 2893 字 | 正常收尾 |
+| 2048（guarded 档上限） | 549 字 | 2917 字 | 能出字，但偏短 |
+
+所以预算交给上游默认值。确实要设上限时取消 `.env` / ConfigMap 里的注释 —— 注意 `guarded` 档上限是 2048，
+再高会被 400 拒掉。
 
 本地想直连上游调试时，把 `LLM_BASE_URL` 指向任意 OpenAI-compatible 端点、`LLM_SERVICE_TOKEN`
 填该端点的 API Key 即可 —— 代码里没有第二套 provider 分支。`LLM_SERVICE_TOKEN` 必须非空
@@ -53,7 +63,7 @@ For production set `XUYE_AUTH_REQUIRED=true` and `XUYE_TRUST_PROXY_AUTH_HEADERS=
 
 ## Kubernetes LLM configuration
 
-Model calls go exclusively through the in-cluster `llm-service`; XuYe holds no provider credential of its own. `deploy/k8s/agent-configmap.yaml` defines `xuye-agent-config` with the non-secret half — `LLM_BASE_URL`, `LLM_MODEL` and `LLM_MAX_TOKENS`. `deploy/k8s/server.yaml` reads that ConfigMap and reads the caller token from the `llm-token` Secret in namespace `xuye`, which `vault/inventory/xuye-llm-token-externalsecret.yaml` renders from `secret/llm-service/callers`.
+Model calls go exclusively through the in-cluster `llm-service`; XuYe holds no provider credential of its own. `deploy/k8s/agent-configmap.yaml` defines `xuye-agent-config` with the non-secret half — `LLM_BASE_URL` and `LLM_MODEL`, plus an optional `LLM_MAX_TOKENS` (see below). `deploy/k8s/server.yaml` reads that ConfigMap and reads the caller token from the `llm-token` Secret in namespace `xuye`, which `vault/inventory/xuye-llm-token-externalsecret.yaml` renders from `secret/llm-service/callers`.
 
 The Pod template carries the `llm-client: "true"` label because the `llm-service` NetworkPolicy admits only labelled Pods — omitting it surfaces as a timeout, not as a 401.
 

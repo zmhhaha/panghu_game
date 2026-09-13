@@ -46,7 +46,8 @@ spec:
                 configMapKeyRef: { name: guanliao-agent-config, key: LLM_TIMEOUT_MS }
             - name: LLM_MAX_TOKENS
               valueFrom:
-                configMapKeyRef: { name: guanliao-agent-config, key: LLM_MAX_TOKENS }
+                # 可选：默认不设，由上游决定预算（推理模型必须留够思考空间）
+                configMapKeyRef: { name: guanliao-agent-config, key: LLM_MAX_TOKENS, optional: true }
             - name: LLM_SERVICE_TOKEN
               valueFrom:
                 secretKeyRef: { name: llm-token, key: LLM_SERVICE_TOKEN }

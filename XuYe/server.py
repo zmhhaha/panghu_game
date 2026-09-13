@@ -45,6 +45,16 @@ def env(name: str, fallback: str = "") -> str:
     return os.environ.get(name, fallback).strip()
 
 
+def optional_positive_int(raw: str) -> int | None:
+    """空值 → None，表示「不发送这个字段」。
+
+    不发送 `max_tokens` 时预算由上游决定；这对推理模型是必须的 ——
+    上游把输出分成 `reasoning_content`（思考）和 `content`（正文）两路，
+    预算不够时思考会把它吃光，正文一个字都出不来（`finish_reason: length`）。
+    """
+    return int(raw) if raw else None
+
+
 DB_PATH = Path(env("XUYE_DB_PATH", str(ROOT / "xuye.db")))
 DATABASE_URL = env("DATABASE_URL")
 WORKS_FILE = Path(env("XUYE_WORKS_FILE", str(ROOT / "content" / "works.json")))
@@ -129,7 +139,7 @@ def model_config() -> dict[str, Any]:
 
     `LLM_MODEL` 传的是 llm-service 注册的**别名**（如 deepseek-guarded），不是上游模型名 ——
     改回 `deepseek-v4-flash` 之类会被 400 拒掉。
-    `LLM_MAX_TOKENS` 受 guarded 档上限约束，最高只能设到 2048。
+    `LLM_MAX_TOKENS` 默认**不设**（见 optional_positive_int）；确实要设时最高 2048。
     """
     base_url = env("LLM_BASE_URL")
     api_key = env("LLM_SERVICE_TOKEN")
@@ -140,7 +150,9 @@ def model_config() -> dict[str, Any]:
         "api_key": api_key,
         "model": model,
         "temperature": float(env("LLM_TEMPERATURE", "0.9")),
-        "max_tokens": int(env("LLM_MAX_TOKENS", "1400")),
+        # 默认不发送 max_tokens：续页要写 5-8 段，上游又是推理模型，
+        # 卡住预算会让思考吃光配额、正文为空。见 optional_positive_int 的说明。
+        "max_tokens": optional_positive_int(env("LLM_MAX_TOKENS")),
         "timeout": float(env("LLM_TIMEOUT_SECONDS", "120")),
         "ready": bool(base_url and api_key and model),
         "host": urllib.parse.urlparse(base_url).hostname or "",
@@ -212,16 +224,15 @@ def build_upstream_request(
     work: dict[str, Any],
 ) -> urllib.request.Request:
     config = model_config()
-    body = json.dumps(
-        {
-            "model": config["model"],
-            "messages": build_messages(context, intervention, scope, work),
-            "temperature": config["temperature"],
-            "max_tokens": config["max_tokens"],
-            "stream": True,
-        },
-        ensure_ascii=False,
-    ).encode("utf-8")
+    payload: dict[str, Any] = {
+        "model": config["model"],
+        "messages": build_messages(context, intervention, scope, work),
+        "temperature": config["temperature"],
+        "stream": True,
+    }
+    if config["max_tokens"] is not None:
+        payload["max_tokens"] = config["max_tokens"]
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
     if config["api_key"]:
         headers["Authorization"] = f"Bearer {config['api_key']}"

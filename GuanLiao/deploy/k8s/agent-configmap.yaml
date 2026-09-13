@@ -10,4 +10,11 @@ data:
   LLM_BASE_URL: http://llm-service.llm.svc.cluster.local/v1
   LLM_MODEL: deepseek-guarded
   LLM_TIMEOUT_MS: "20000"
-  LLM_MAX_TOKENS: "1000"
+  # 这里**故意不设 LLM_MAX_TOKENS**。
+  #
+  # 上游是推理模型：输出分 reasoning_content（思考）和 content（正文）两路，
+  # 预算不够时思考会把它吃光，正文一个字都出不来（finish_reason: length）。
+  # 原来设成 1000，实测每次 completion_tokens 正好顶到 1000 —— 也就是每次都被截断，
+  # 叙事 JSON 解析失败后静默退回主控给的确定性文本，看起来「能用」其实不是模型写的。
+  # 所以默认让上游自己定预算。确实想设上限时再把这个键加回来（guarded 档上限 2048）。
+  # LLM_MAX_TOKENS: "2048"

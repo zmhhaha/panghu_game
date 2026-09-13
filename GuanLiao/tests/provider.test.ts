@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAgentProvider, parseModelJson } from "../src/agents/provider.js";
+import { createAgentProvider, optionalMaxTokens, parseModelJson } from "../src/agents/provider.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -14,6 +14,31 @@ describe("parseModelJson", () => {
 
   it("rejects content without a recoverable JSON object", () => {
     expect(() => parseModelJson("奉结。已经办毕。")).toThrow("LLM returned invalid JSON");
+  });
+});
+
+describe("optionalMaxTokens", () => {
+  it("omits max_tokens unless LLM_MAX_TOKENS is set", () => {
+    // 上游是推理模型：卡住 max_tokens 会让思考吃光预算、正文为空，所以默认不发送。
+    vi.stubEnv("LLM_MAX_TOKENS", "");
+    expect(optionalMaxTokens()).toBeNull();
+
+    vi.stubEnv("LLM_MAX_TOKENS", "   ");
+    expect(optionalMaxTokens()).toBeNull();
+
+    vi.stubEnv("LLM_MAX_TOKENS", "2048");
+    expect(optionalMaxTokens()).toBe(2048);
+  });
+
+  it("ignores a value that is not a positive number", () => {
+    vi.stubEnv("LLM_MAX_TOKENS", "not-a-number");
+    expect(optionalMaxTokens()).toBeNull();
+
+    vi.stubEnv("LLM_MAX_TOKENS", "0");
+    expect(optionalMaxTokens()).toBeNull();
+
+    vi.stubEnv("LLM_MAX_TOKENS", "-1");
+    expect(optionalMaxTokens()).toBeNull();
   });
 });
 

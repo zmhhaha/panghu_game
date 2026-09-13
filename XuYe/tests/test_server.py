@@ -62,6 +62,41 @@ class ServerTests(unittest.TestCase):
             else:
                 os.environ["LLM_SERVICE_TOKEN"] = previous
 
+    def test_max_tokens_defaults_to_unset(self):
+        previous = os.environ.get("LLM_MAX_TOKENS")
+        try:
+            os.environ.pop("LLM_MAX_TOKENS", None)
+            self.assertIsNone(server.model_config()["max_tokens"])
+            os.environ["LLM_MAX_TOKENS"] = "2048"
+            self.assertEqual(server.model_config()["max_tokens"], 2048)
+        finally:
+            if previous is None:
+                os.environ.pop("LLM_MAX_TOKENS", None)
+            else:
+                os.environ["LLM_MAX_TOKENS"] = previous
+
+    def test_upstream_request_omits_max_tokens_when_unset(self):
+        # 上游是推理模型：卡住 max_tokens 会让思考吃光预算、正文为空。
+        previous = {key: os.environ.get(key) for key in ("LLM_BASE_URL", "LLM_SERVICE_TOKEN", "LLM_MAX_TOKENS")}
+        try:
+            os.environ.update({"LLM_BASE_URL": "http://llm.test/v1", "LLM_SERVICE_TOKEN": "test-token"})
+            work = server.find_work("journey-west")
+
+            os.environ.pop("LLM_MAX_TOKENS", None)
+            body = json.loads(server.build_upstream_request("上一段。", "续写。", "local", work).data)
+            self.assertNotIn("max_tokens", body)
+            self.assertTrue(body["stream"])
+
+            os.environ["LLM_MAX_TOKENS"] = "2048"
+            body = json.loads(server.build_upstream_request("上一段。", "续写。", "local", work).data)
+            self.assertEqual(body["max_tokens"], 2048)
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
     def test_find_work_reads_the_server_side_catalog(self):
         self.assertIsNone(server.find_work(""))
         self.assertIsNone(server.find_work("not-a-real-work"))

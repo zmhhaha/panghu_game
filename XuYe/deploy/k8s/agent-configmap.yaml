@@ -10,6 +10,12 @@ data:
   # 但服务端会做不可信内容分隔与 canary 检测）。
   LLM_BASE_URL: http://llm-service.llm.svc.cluster.local/v1
   LLM_MODEL: deepseek-guarded
-  # ⚠️ guarded 档的 max_tokens 上限是 2048，改高会被 400 拒掉。
-  # 续页是长文生成（5-8 段），如果发现频繁截断，只能升到 2048，不能再高。
-  LLM_MAX_TOKENS: "1400"
+  # 这里**故意不设 LLM_MAX_TOKENS**。
+  #
+  # 上游是推理模型：输出分 reasoning_content（思考）和 content（正文）两路，
+  # 预算不够时思考会把它吃光，正文一个字都出不来（finish_reason: length）。
+  # 实测同一条续写请求：max_tokens=1400 → 正文 0 字（被思考烧完）；
+  #                     不发送 max_tokens → 正文 1187 字，正常收尾；
+  #                     max_tokens=2048（guarded 档上限）→ 正文 549 字，仍偏短。
+  # 所以默认让上游自己定预算。确实想设上限时再把这个键加回来（注意 guarded 档上限是 2048）。
+  # LLM_MAX_TOKENS: "2048"

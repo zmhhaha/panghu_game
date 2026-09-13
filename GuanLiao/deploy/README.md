@@ -54,7 +54,9 @@ kubectl exec -n vault vault-0 -- vault kv patch secret/llm-service/callers \
 
 `vault/inventory/guanliao-llm-token-externalsecret.yaml` 用 `data` + `property` 只取这一个键，渲染成 `guanliao/llm-token` Secret 的 `LLM_SERVICE_TOKEN` —— Pod 拿不到别的调用方的令牌。llm-service 由变量名反推身份（`LLM_TOKEN_GUANLIAO` → `guanliao`），所以请求里不需要 `X-Caller`。
 
-`deploy/k8s/agent-configmap.yaml` 只放两件非敏感的事：走哪个入口（`LLM_BASE_URL`）用哪个别名（`LLM_MODEL`）。别名是 llm-service 注册的**别名**而不是上游模型名，改回 `deepseek-v4-flash` 之类会被 400 拒掉。玩家原批是自由文本，所以走 `deepseek-guarded` 档：禁 `tools` / `response_format`，但服务端会分隔不可信内容并检测 canary 泄漏。
+`deploy/k8s/agent-configmap.yaml` 只放非敏感的接线：走哪个入口（`LLM_BASE_URL`）、用哪个别名（`LLM_MODEL`）、超时（`LLM_TIMEOUT_MS`）。别名是 llm-service 注册的**别名**而不是上游模型名，改回 `deepseek-v4-flash` 之类会被 400 拒掉。玩家原批是自由文本，所以走 `deepseek-guarded` 档：禁 `tools` / `response_format`，但服务端会分隔不可信内容并检测 canary 泄漏。
+
+⚠️ **ConfigMap 里故意不设 `LLM_MAX_TOKENS`。** 上游是推理模型，输出分 `reasoning_content`（思考）和 `content`（正文）两路，预算不够时思考会把它吃光、正文为空。这里原来是 1000，实测每次 `completion_tokens` 都正好顶到 1000 —— 也就是每次都被截断，叙事 JSON 解析失败后静默退回主控给的确定性文本，**看起来能用，其实不是模型写的**。现在默认把预算交给上游；确实要设上限时把那个键加回来，注意 `guarded` 档上限是 2048。
 
 Pod 模板带 `llm-client: "true"` 标签 —— llm-service 的 NetworkPolicy 只放行带此标签的 Pod，**缺了表现为超时而不是 401**，这是本迁移最容易踩的坑。
 

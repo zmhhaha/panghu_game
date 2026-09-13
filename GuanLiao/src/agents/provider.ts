@@ -52,26 +52,38 @@ class OpenAiCompatibleProvider implements AgentProvider {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS ?? 20000));
     try {
+      const payload: Record<string, unknown> = { model: this.model, temperature, messages };
+      const maxTokens = optionalMaxTokens();
+      if (maxTokens !== null) payload.max_tokens = maxTokens;
       const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         signal: controller.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
-        body: JSON.stringify({
-          model: this.model,
-          temperature,
-          max_tokens: Number(process.env.LLM_MAX_TOKENS ?? 1000),
-          messages,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
-      const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-      const content = payload.choices?.[0]?.message?.content;
+      const payloadResponse = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+      const content = payloadResponse.choices?.[0]?.message?.content;
       if (!content) throw new Error("LLM returned no content");
       return content;
     } finally {
       clearTimeout(timer);
     }
   }
+}
+
+/**
+ * 上游是推理模型：输出分 `reasoning_content`（思考）和 `content`（正文）两路，
+ * 预算不够时思考会把它吃光，正文一个字都出不来。
+ *
+ * 所以默认**不发送** `max_tokens`，把预算交给上游；只有显式设了 `LLM_MAX_TOKENS` 才带上。
+ * 注意 guarded 档的上限是 2048，设更高会被 llm-service 用 400 拒掉。
+ */
+export function optionalMaxTokens(): number | null {
+  const raw = process.env.LLM_MAX_TOKENS?.trim();
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 /**
