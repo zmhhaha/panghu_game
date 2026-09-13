@@ -777,9 +777,9 @@ async function requestContinuation(context, intervention) {
       context,
       intervention,
       scope: state.scope,
-      workTitle: work.title,
-      workAuthor: work.author,
-      language: work.language,
+      // 只传 id：作品名、作者和语言由服务端从自己的目录取，
+      // 这里传回去只是把 /api/works 下发的内容又绕一圈。
+      workId: work.id,
     }),
     signal: generationController.signal,
   });

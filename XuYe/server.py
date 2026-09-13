@@ -125,30 +125,37 @@ def load_works() -> list[dict[str, Any]]:
 
 
 def model_config() -> dict[str, Any]:
-    provider = env("PROVIDER", "legacy").lower()
-    provider_env = {
-        "openai": ("OPENAI", "https://api.openai.com/v1"),
-        "openai-compatible": ("OPENAI", "https://api.openai.com/v1"),
-        "deepseek": ("DEEPSEEK", "https://api.deepseek.com/v1"),
-        "custom": ("CUSTOM", ""),
-    }
-    prefix, fallback_url = provider_env.get(provider, ("LLM", "https://api.openai.com/v1"))
-    base_url = env(f"{prefix}_BASE_URL", fallback_url)
-    api_key = env(f"{prefix}_API_KEY")
-    model = env(f"{prefix}_MODEL")
-    parsed = urllib.parse.urlparse(base_url)
-    is_local = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+    """模型调用统一走集群内 llm-service；本服务不持有任何 provider 凭据。
+
+    `LLM_MODEL` 传的是 llm-service 注册的**别名**（如 deepseek-guarded），不是上游模型名 ——
+    改回 `deepseek-v4-flash` 之类会被 400 拒掉。
+    `LLM_MAX_TOKENS` 受 guarded 档上限约束，最高只能设到 2048。
+    """
+    base_url = env("LLM_BASE_URL")
+    api_key = env("LLM_SERVICE_TOKEN")
+    model = env("LLM_MODEL", "deepseek-guarded")
     return {
+        "provider": "llm-service",
         "base_url": base_url.rstrip("/"),
         "api_key": api_key,
         "model": model,
-        "provider": provider,
         "temperature": float(env("LLM_TEMPERATURE", "0.9")),
         "max_tokens": int(env("LLM_MAX_TOKENS", "1400")),
         "timeout": float(env("LLM_TIMEOUT_SECONDS", "120")),
-        "ready": bool(base_url and model and (api_key or is_local)),
-        "host": parsed.hostname or "",
+        "ready": bool(base_url and api_key and model),
+        "host": urllib.parse.urlparse(base_url).hostname or "",
     }
+
+
+def find_work(work_id: str) -> dict[str, Any] | None:
+    """按 id 在服务端目录里查作品。
+
+    作品名、作者和语言只从服务端目录取 —— 请求体里的这三个值是客户端把
+    `/api/works` 下发的内容原样传回来的，绕一圈毫无意义，还让玩家能改 system prompt。
+    """
+    if not work_id:
+        return None
+    return next((work for work in load_works() if work.get("id") == work_id), None)
 
 
 def chat_completions_url(base_url: str) -> str:
@@ -161,10 +168,8 @@ def chat_completions_url(base_url: str) -> str:
 def build_messages(
     context: str,
     intervention: str,
-    scope: str = "local",
-    work_title: str = "公共领域文学作品",
-    work_author: str = "",
-    language: str = "zh-CN",
+    scope: str,
+    work: dict[str, Any],
 ) -> list[dict[str, str]]:
     scope_rules = {
         "local": "小范围改写：保留原作主线与大部分人物关系，只让玩家文字改变一处选择、关系或局部事件。",
@@ -173,8 +178,9 @@ def build_messages(
     }
     scope_instruction = scope_rules.get(scope, scope_rules["local"])
     system = (
-        f"你是一位严肃的文学合作者，正在改写《{work_title}》（{work_author}）。"
-        f"正文语言优先使用 {language}，除非玩家明确使用另一种语言。"
+        f"你是一位严肃的文学合作者，正在改写《{work.get('title') or '公共领域文学作品'}》"
+        f"（{work.get('author') or ''}）。"
+        f"正文语言优先使用 {work.get('language') or 'zh-CN'}，除非玩家明确使用另一种语言。"
         "玩家刚刚写入的文字已经成为作品中不可撤销的事实，后文必须让它产生具体而深远的因果影响。\n"
         f"{scope_instruction}\n"
         "规则：\n"
@@ -202,16 +208,14 @@ def build_messages(
 def build_upstream_request(
     context: str,
     intervention: str,
-    scope: str = "local",
-    work_title: str = "公共领域文学作品",
-    work_author: str = "",
-    language: str = "zh-CN",
+    scope: str,
+    work: dict[str, Any],
 ) -> urllib.request.Request:
     config = model_config()
     body = json.dumps(
         {
             "model": config["model"],
-            "messages": build_messages(context, intervention, scope, work_title, work_author, language),
+            "messages": build_messages(context, intervention, scope, work),
             "temperature": config["temperature"],
             "max_tokens": config["max_tokens"],
             "stream": True,
@@ -249,8 +253,12 @@ def stream_openai_response(response: Any) -> Iterator[str]:
             payload = json.loads(data)
         except json.JSONDecodeError:
             continue
-        choice = payload.get("choices", [{}])[0]
-        token = choice.get("delta", {}).get("content", "")
+        # llm-service 会注入 stream_options.include_usage，最后一帧是 choices 为空的用量块；
+        # 直接取 [0] 会 IndexError，把已经开始的流打断。
+        choices = payload.get("choices") or []
+        if not choices:
+            continue
+        token = choices[0].get("delta", {}).get("content", "")
         if token:
             yield token
 
@@ -271,6 +279,7 @@ class XuYeHandler(BaseHTTPRequestHandler):
             self.send_json(
                 {
                     "ready": config["ready"],
+                    "provider": config["provider"],
                     "model": config["model"] or None,
                     "host": config["host"] or None,
                 }
@@ -327,7 +336,7 @@ class XuYeHandler(BaseHTTPRequestHandler):
         config = model_config()
         if not config["ready"]:
             self.send_json(
-                {"error": "模型尚未配置，请设置 LLM_BASE_URL、LLM_MODEL 和 LLM_API_KEY。"},
+                {"error": "模型尚未配置，请设置 LLM_BASE_URL、LLM_MODEL 和 LLM_SERVICE_TOKEN。"},
                 HTTPStatus.SERVICE_UNAVAILABLE,
             )
             return
@@ -336,15 +345,16 @@ class XuYeHandler(BaseHTTPRequestHandler):
             context = payload.get("context", "")
             intervention = payload.get("intervention", "")
             scope = payload.get("scope", "local")
-            work_title = payload.get("workTitle", "公共领域文学作品")
-            work_author = payload.get("workAuthor", "")
-            language = payload.get("language", "zh-CN")
+            work_id = payload.get("workId", "")
             if not isinstance(context, str) or not isinstance(intervention, str):
                 raise ValueError("context 和 intervention 必须是字符串。")
             if scope not in {"local", "medium", "large"}:
                 raise ValueError("scope 必须是 local、medium 或 large。")
-            if not all(isinstance(value, str) for value in (work_title, work_author, language)):
-                raise ValueError("作品信息必须是字符串。")
+            if not isinstance(work_id, str):
+                raise ValueError("workId 必须是字符串。")
+            work = find_work(work_id)
+            if work is None:
+                raise ValueError(f"未知作品：{work_id or '(未提供 workId)'}")
             if not intervention.strip():
                 raise ValueError("续写内容不能为空。")
             if len(context) > MAX_CONTEXT_CHARS:
@@ -355,7 +365,7 @@ class XuYeHandler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
 
-        request = build_upstream_request(context, intervention, scope, work_title, work_author, language)
+        request = build_upstream_request(context, intervention, scope, work)
         try:
             upstream = urllib.request.urlopen(request, timeout=config["timeout"])
         except urllib.error.HTTPError as exc:

@@ -4,5 +4,12 @@ metadata:
   name: xuye-agent-config
   namespace: xuye
 data:
-  # Supported by XuYe: openai, deepseek, custom.
-  PROVIDER: deepseek
+  # 模型调用统一走集群内 llm-service；凭据（LLM_SERVICE_TOKEN）由 llm-token Secret 注入，不放这里。
+  # LLM_MODEL 是 llm-service 注册的**别名**，不是上游模型名 —— 改回 deepseek-v4-flash 之类会 400。
+  # 玩家点击字句写入的续写文字是自由文本，所以走 guarded 档（禁 tools/response_format，
+  # 但服务端会做不可信内容分隔与 canary 检测）。
+  LLM_BASE_URL: http://llm-service.llm.svc.cluster.local/v1
+  LLM_MODEL: deepseek-guarded
+  # ⚠️ guarded 档的 max_tokens 上限是 2048，改高会被 400 拒掉。
+  # 续页是长文生成（5-8 段），如果发现频繁截断，只能升到 2048，不能再高。
+  LLM_MAX_TOKENS: "1400"

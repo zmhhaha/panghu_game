@@ -6,9 +6,14 @@ docker build --no-cache \
   -t arm-cluster-master:5000/xuye-server:latest .
 docker push arm-cluster-master:5000/xuye-server:latest
 kubectl apply -f "$root_dir/deploy/k8s/namespace.yaml"
-kubectl apply -f "$root_dir/../../vault/inventory/xuye-agent-externalsecret.yaml"
+kubectl apply -f "$root_dir/../../vault/inventory/xuye-llm-token-externalsecret.yaml"
 kubectl apply -f "$root_dir/../../vault/inventory/xuye-externalsecret.yaml"
 kubectl apply -f "$root_dir/deploy/k8s/agent-configmap.yaml"
+# 模型调用统一走集群内 llm-service：这是本服务唯一的模型凭据入口。
+if ! kubectl wait --for=condition=Ready externalsecret/llm-token -n xuye --timeout=120s; then
+  echo "missing ExternalSecret output llm-token in namespace xuye" >&2
+  exit 1
+fi
 kubectl create configmap xuye-works -n xuye \
   --from-file=works.json="$root_dir/content/works.json" \
   --dry-run=client -o yaml | kubectl apply -f -
