@@ -17,7 +17,7 @@ kubectl create secret generic jwt-secret -n school-of-one \
   --from-literal=secret=your-random-jwt-secret-change-this
 
 # ===== 3. LLM API 密钥（三个 AI Agent 共用） =====
-# 三个 Python Agent 通过环境变量 DEEPSEEK_API_KEY 使用 DeepSeek
+# 三个 Python Agent 通过集群内 llm-service 调用模型（LLM_BASE_URL / LLM_MODEL / LLM_SERVICE_TOKEN）
 kubectl create secret generic llm-secret -n school-of-one \
   --from-literal=deepseek-api-key=sk-your-deepseek-api-key-here
 

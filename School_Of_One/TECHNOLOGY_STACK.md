@@ -241,7 +241,7 @@ cd apps/server && pnpm dev
 # 启动前端（端口 5173，自动代理 /api → localhost:3001）
 cd apps/martial-hegemony && pnpm dev
 
-# 启动 AI Agent（需要设置 DEEPSEEK_API_KEY）
+# 启动 AI Agent（需要设置 LLM_BASE_URL / LLM_MODEL / LLM_SERVICE_TOKEN，走集群内 llm-service）
 cd apps/agents/duel-judge && python duel_judge.py          # 端口 8003
 cd apps/agents/combo-judge && python combo_judge.py        # 端口 8004
 cd apps/agents/training-ground && python training_ground.py  # 端口 8005

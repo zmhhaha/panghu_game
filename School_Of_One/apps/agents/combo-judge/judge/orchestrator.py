@@ -10,7 +10,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 
-from .llm import call_llm, get_provider
+from .llm import call_llm
 from .tasks import ComboInput, build_combo_prompt
 
 logger = logging.getLogger(__name__)

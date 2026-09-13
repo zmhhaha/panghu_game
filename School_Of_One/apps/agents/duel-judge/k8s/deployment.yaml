@@ -1,7 +1,7 @@
 # ============================================================
 #  Duel Judge — API 服务（K8s 部署 - school-of-one 命名空间）
-#  通过 deploy/k8s/ai-service.yaml 注入 agent-config（PROVIDER）
-#  通过 llm-secret 注入 LLM 凭据
+#  模型调用走集群内 llm-service：入口与别名来自 agent-config（envFrom），
+#  令牌来自本项目共享的 llm-token Secret。
 #  部署:
 #    kubectl apply -n school-of-one -f k8s/deployment.yaml
 # ============================================================
@@ -22,6 +22,8 @@ spec:
     metadata:
       labels:
         app: duel-judge
+        # llm-service 的 NetworkPolicy 只放行带此标签的 Pod；缺了是超时，不是 401
+        llm-client: "true"
     spec:
       containers:
       - name: api
@@ -34,36 +36,12 @@ spec:
             name: agent-config
             optional: true
         env:
-        - name: DEEPSEEK_API_KEY
+        # LLM_BASE_URL / LLM_MODEL 由 agent-config 经 envFrom 注入；这里只注入令牌
+        - name: LLM_SERVICE_TOKEN
           valueFrom:
             secretKeyRef:
-              name: llm-secret
-              key: deepseek-api-key
-              optional: true
-        - name: OPENAI_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: llm-secret
-              key: openai-api-key
-              optional: true
-        - name: CUSTOM_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: llm-secret
-              key: custom-api-key
-              optional: true
-        - name: CUSTOM_API_BASE
-          valueFrom:
-            configMapKeyRef:
-              name: agent-config
-              key: CUSTOM_API_BASE
-              optional: true
-        - name: CUSTOM_MODEL
-          valueFrom:
-            configMapKeyRef:
-              name: agent-config
-              key: CUSTOM_MODEL
-              optional: true
+              name: llm-token
+              key: LLM_SERVICE_TOKEN
         resources:
           requests: { cpu: "50m", memory: "128Mi" }
           limits: { cpu: "2", memory: "2Gi" }

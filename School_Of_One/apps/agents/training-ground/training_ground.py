@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from judge.orchestrator import create_session, get_session, process_round, finalize_match, finalize_hermit, create_hermit_session
 from judge.data import get_factions
-from judge.llm import get_provider
+from judge.llm import BACKEND, get_model_alias
 
 logging.basicConfig(
     level=logging.INFO,
@@ -139,7 +139,7 @@ class FactionItem(BaseModel):
 
 @app.get("/api/training/health")
 def health():
-    return {"status": "ok", "service": "training-ground-agent", "provider": get_provider()}
+    return {"status": "ok", "service": "training-ground-agent", "provider": BACKEND, "model": get_model_alias()}
 
 
 @app.get("/api/training/factions", response_model=list[FactionItem])
@@ -234,7 +234,7 @@ def match_result(req: MatchRequest):
             masterSummary=session.master_summary,
             totalRounds=len(session.rounds),
             completed=session.completed,
-            provider=get_provider(),
+            provider=BACKEND,
             matched=session.final_confidence >= 0.7,
             cardDescription=session.card_description,
             cardDisplacement=session.card_displacement,
@@ -271,7 +271,7 @@ def match_result(req: MatchRequest):
         substyleName=substyle,
         totalRounds=len(session.rounds),
         completed=session.completed,
-        provider=get_provider(),
+        provider=BACKEND,
         matched=matched,
     )
 

@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, os.path.dirname(__file__))
 
 from judge.orchestrator import judge as run_judge
-from judge.llm import _get_provider
+from judge.llm import BACKEND, get_model_alias
 
 # ── 日志 ──
 logging.basicConfig(
@@ -92,7 +92,8 @@ def health():
     return {
         "status": "ok",
         "service": "duel-judge-agent",
-        "provider": _get_provider(),
+        "provider": BACKEND,
+        "model": get_model_alias(),
     }
 
 
@@ -138,7 +139,7 @@ def judge_endpoint(req: JudgeRequest):
             damageB=result.damageB,
             narration=result.narration,
             explanation=result.explanation,
-            provider=_get_provider(),
+            provider=BACKEND,
         )
 
     except Exception as e:

@@ -1,6 +1,9 @@
 # ============================================================
 #  Agent 通用配置（所有 Python FastAPI Agent 共用）
 #  通过 envFrom.configMapRef 注入
+#
+#  模型调用统一走集群内 llm-service：这里只放「走哪个入口、用哪个别名」。
+#  凭据（LLM_SERVICE_TOKEN）由 llm-token-externalsecret.yaml 注入，不放这里。
 # ============================================================
 apiVersion: v1
 kind: ConfigMap
@@ -8,4 +11,8 @@ metadata:
   name: agent-config
   namespace: school-of-one
 data:
-  PROVIDER: "deepseek"
+  LLM_BASE_URL: "http://llm-service.llm.svc.cluster.local/v1"
+  # 这是 llm-service 注册的**别名**，不是上游模型名 —— 别改回 deepseek-v4-flash 之类，会 400。
+  # 三个 judge 的输入都是「玩家写自由文本」，所以走 guarded 档：
+  # 禁 tools/response_format，但服务端会做不可信内容分隔（spotlight）与 canary 泄漏检测。
+  LLM_MODEL: "deepseek-guarded"

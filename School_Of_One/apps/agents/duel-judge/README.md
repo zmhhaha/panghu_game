@@ -19,9 +19,7 @@ duel-judge/
 ├── Dockerfile.base         # 基础镜像（依赖层）
 ├── k8s/
 │   ├── namespace.yaml      # 命名空间
-│   ├── configmap.yaml      # Provider 配置
-│   ├── secret.yaml         # API Key
-│   └── deployment.yaml     # Deployment + Service
+│   └── deployment.yaml     # Deployment + Service（含 llm-client 标签与令牌注入）
 └── scripts/
     └── deploy.sh           # 部署脚本
 ```

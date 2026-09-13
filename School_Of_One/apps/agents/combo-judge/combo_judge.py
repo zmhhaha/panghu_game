@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, os.path.dirname(__file__))
 
 from judge.orchestrator import judge_combo
-from judge.llm import get_provider
+from judge.llm import BACKEND, get_model_alias
 
 logging.basicConfig(
     level=logging.INFO,
@@ -66,7 +66,7 @@ class ComboResponse(BaseModel):
 
 @app.get("/api/combo/health")
 def health():
-    return {"status": "ok", "service": "combo-judge-agent", "provider": get_provider()}
+    return {"status": "ok", "service": "combo-judge-agent", "provider": BACKEND, "model": get_model_alias()}
 
 
 @app.post("/api/combo/judge", response_model=ComboResponse)
@@ -94,7 +94,7 @@ def combo_endpoint(req: ComboRequest):
             key_limitation=result.key_limitation,
             improvement_suggestion=result.improvement_suggestion,
             analysis=analysis,
-            provider=get_provider(),
+            provider=BACKEND,
         )
 
     except Exception as e:
