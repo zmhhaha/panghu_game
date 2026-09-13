@@ -80,9 +80,8 @@ describe("CampaignOrchestrator", () => {
   });
 
   it("asks the provider to repair an unrecoverable response once", async () => {
-    vi.stubEnv("PROVIDER", "deepseek");
-    vi.stubEnv("DEEPSEEK_API_KEY", "test-key");
-    vi.stubEnv("DEEPSEEK_BASE_URL", "https://example.test");
+    vi.stubEnv("LLM_BASE_URL", "https://example.test/v1");
+    vi.stubEnv("LLM_SERVICE_TOKEN", "test-token");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: "{broken" } }] }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: '{"visibleSpeech":"档案科收存公文，你问这个做什么？","privateIntent":"观察来意","evidenceQuote":"","relationshipReaction":"respected_boundary","reactionReason":"玩家没有越过档案来源边界","requestedEffects":[]}' } }] }) });

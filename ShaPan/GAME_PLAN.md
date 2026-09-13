@@ -514,7 +514,7 @@ Vault -> ExternalSecret -> shapan-database / shapan-agent Secret
 - OAuth：`oauth` namespace 中独立的 `oauth2-proxy-shapan`，回调地址使用 `https://shapan.panghuer.top/oauth2/callback`。
 - Cloudflare：增加 `shapan.panghuer.top` 路由，后端只指向 `oauth2-proxy-shapan.oauth.svc.cluster.local:4180`，不能绕过认证直接暴露 Web 或 API。
 
-公共基础设施清单不放在 ShaPan 应用目录：Vault ExternalSecret 位于 `vault/inventory/shapan-externalsecret.yaml` 和 `vault/inventory/shapan-agent-externalsecret.yaml`，OAuth2 Proxy 使用 `oauth/k8s/game-proxy-configmap.yaml` 与 `game-proxy-deployment.yaml` 公共模板生成 `shapan` 实例，Cloudflare 路由合并维护在 `cloudflare-tunnel/operator/tunnel-routes.yaml`。
+公共基础设施清单不放在 ShaPan 应用目录：Vault ExternalSecret 位于 `vault/inventory/shapan-externalsecret.yaml` 和 `vault/inventory/shapan-llm-token-externalsecret.yaml`，OAuth2 Proxy 使用 `oauth/k8s/game-proxy-configmap.yaml` 与 `game-proxy-deployment.yaml` 公共模板生成 `shapan` 实例，Cloudflare 路由合并维护在 `cloudflare-tunnel/operator/tunnel-routes.yaml`。
 
 Vault 路径按项目隔离：
 

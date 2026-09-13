@@ -61,7 +61,7 @@ cd panghu_game/ShaPan
 REGISTRY=arm-cluster-master:5000 BASE_REGISTRY=arm-cluster-master:5000 IMAGE_TAG=$(git rev-parse --short HEAD) ./deploy/build-images.sh
 kubectl apply -f deploy/k8s/namespace.yaml
 kubectl apply -f ../../vault/inventory/shapan-externalsecret.yaml
-kubectl apply -f ../../vault/inventory/shapan-agent-externalsecret.yaml
+kubectl apply -f ../../vault/inventory/shapan-llm-token-externalsecret.yaml
 kubectl apply -f ../../vault/inventory/oauth-externalsecret.yaml
 sed "s/__TARGET_NAME__/shapan/g" ../../oauth/k8s/game-proxy-configmap.yaml | kubectl apply -f -
 sed "s/__TARGET_NAME__/shapan/g" ../../oauth/k8s/game-proxy-deployment.yaml | kubectl apply -f -

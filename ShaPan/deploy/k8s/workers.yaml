@@ -38,7 +38,7 @@ spec:
     matchLabels: { app: shapan-agent-worker }
   template:
     metadata:
-      labels: { app: shapan-agent-worker }
+      labels: { app: shapan-agent-worker, llm-client: "true" }
     spec:
       containers:
         - name: agent
@@ -47,7 +47,7 @@ spec:
           command: ["node", "server/src/agent-worker.mjs"]
           envFrom:
             - configMapRef: { name: shapan-config }
-            - secretRef: { name: shapan-agent, optional: true }
+            - secretRef: { name: llm-token }
           env:
             - name: DATABASE_URL
               valueFrom: { secretKeyRef: { name: shapan-database, key: url } }

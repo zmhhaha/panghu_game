@@ -4,6 +4,8 @@ metadata:
   name: qianfu-agent-config
   namespace: qianfu
 data:
-  # Values: fallback, openai, deepseek, anthropic, custom.
-  # Credentials and connection fields are injected from the Vault Secret.
-  PROVIDER: deepseek
+  # 模型调用统一走集群内 llm-service；凭据（LLM_SERVICE_TOKEN）由 llm-token Secret 注入。
+  # LLM_MODEL 是 llm-service 注册的**别名**，不是上游模型名 —— 改回 deepseek-chat 之类会 400。
+  # 玩家能自由发言，所以走 guarded 档（禁 tools/response_format，但做不可信内容分隔与 canary 检测）。
+  LLM_BASE_URL: http://llm-service.llm.svc.cluster.local/v1
+  LLM_MODEL: deepseek-guarded

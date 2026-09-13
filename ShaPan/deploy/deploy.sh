@@ -22,6 +22,8 @@ kubectl delete job shapan-db-migration -n "$namespace" --ignore-not-found
 sed "s#arm-cluster-master:5000/shapan-api:latest#${api_image}#g" "$project_dir/deploy/k8s/migration-job.yaml" | kubectl apply -f -
 kubectl wait --for=condition=complete job/shapan-db-migration -n "$namespace" --timeout=180s
 kubectl apply -f "$project_dir/deploy/k8s/configmap.yaml"
+kubectl apply -f "$project_dir/../../vault/inventory/shapan-llm-token-externalsecret.yaml"
+kubectl wait --for=condition=Ready externalsecret/llm-token -n "$namespace" --timeout=120s
 kubectl apply -f "$project_dir/deploy/k8s/api.yaml" -f "$project_dir/deploy/k8s/web.yaml" -f "$project_dir/deploy/k8s/workers.yaml"
 kubectl set image deployment/shapan-api api="$api_image" -n "$namespace"
 kubectl set image deployment/shapan-web web="$web_image" -n "$namespace"

@@ -4,10 +4,9 @@ set -euo pipefail
 namespace=qianfu
 
 kubectl apply -f deploy/k8s/namespace.yaml
-
-# Select the LLM provider manually before deployment when it needs to change.
-# Supported values: fallback, openai, deepseek, anthropic, custom.
-# kubectl create configmap qianfu-agent-config -n "$namespace" --from-literal=PROVIDER=deepseek --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f deploy/k8s/agent-configmap.yaml
+kubectl apply -f ../../vault/inventory/qianfu-llm-token-externalsecret.yaml
+kubectl wait --for=condition=Ready externalsecret/llm-token -n "${namespace}" --timeout=120s
 
 if ! kubectl get secret qianfu-database -n "$namespace" >/dev/null 2>&1; then
   echo "missing secret qianfu-database in namespace ${namespace}" >&2

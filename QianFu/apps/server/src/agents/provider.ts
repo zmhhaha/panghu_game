@@ -96,7 +96,7 @@ class OpenAiCompatibleProvider implements AgentProvider {
       const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST", signal: controller.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
-        body: JSON.stringify({ model: this.model, temperature, response_format: { type: "json_object" }, messages }),
+        body: JSON.stringify({ model: this.model, temperature, messages }),
       });
       if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
       const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
@@ -107,42 +107,13 @@ class OpenAiCompatibleProvider implements AgentProvider {
   }
 }
 
-class AnthropicProvider implements AgentProvider {
-  readonly name = "anthropic";
-
-  async complete(system: string, user: string): Promise<unknown> {
-    const baseUrl = process.env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com/v1";
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error("Anthropic provider is not configured");
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS ?? 8000));
-    try {
-      const response = await fetch(`${baseUrl.replace(/\/$/, "")}/messages`, { method: "POST", signal: controller.signal,
-        headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-latest", max_tokens: 800, system, messages: [{ role: "user", content: user }] }), });
-      if (!response.ok) throw new Error(`Anthropic HTTP ${response.status}`);
-      const payload = await response.json() as { content?: Array<{ text?: string }> };
-      const content = payload.content?.find((item) => item.text)?.text;
-      if (!content) throw new Error("Anthropic returned no content");
-      return parseModelJson(content);
-    } finally { clearTimeout(timer); }
-  }
-}
-
 export function createAgentProvider(): AgentProvider | null {
-  switch ((process.env.PROVIDER ?? "fallback").toLowerCase()) {
-    case "openai":
-    case "openai-compatible":
-      return new OpenAiCompatibleProvider("openai", process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1", process.env.OPENAI_API_KEY, process.env.OPENAI_MODEL ?? "gpt-4o-mini");
-    case "anthropic":
-      return new AnthropicProvider();
-    case "deepseek":
-      return new OpenAiCompatibleProvider("deepseek", process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com", process.env.DEEPSEEK_API_KEY, process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash");
-    case "custom":
-      return new OpenAiCompatibleProvider("custom", process.env.CUSTOM_BASE_URL, process.env.CUSTOM_API_KEY, process.env.CUSTOM_MODEL ?? "qianfu-npc");
-    default:
-      return null;
-  }
+  // 模型调用统一走集群内 llm-service；本服务不再持有任何 provider 凭据。
+  // model 传的是 llm-service 注册的**别名**（如 deepseek-guarded），不是上游模型名。
+  const baseUrl = process.env.LLM_BASE_URL;
+  const apiKey = process.env.LLM_SERVICE_TOKEN;
+  if (!baseUrl || !apiKey) return null;
+  return new OpenAiCompatibleProvider("llm-service", baseUrl, apiKey, process.env.LLM_MODEL ?? "deepseek-guarded");
 }
 
 export function parseNpcResponse(value: unknown): NpcAgentResponse {

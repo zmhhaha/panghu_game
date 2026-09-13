@@ -42,11 +42,12 @@ function cleanText(value, maxLength) {
 }
 
 function providerConfig() {
-  const provider = String(process.env.PROVIDER || "").toLowerCase();
-  if (provider === "deepseek") return { provider, baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com", apiKey: process.env.DEEPSEEK_API_KEY, model: process.env.DEEPSEEK_MODEL || "deepseek-v4-flash" };
-  if (provider === "openai" || provider === "openai-compatible") return { provider: "openai", baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1", apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || "gpt-4o-mini" };
-  if (provider === "custom") return { provider, baseUrl: process.env.CUSTOM_BASE_URL, apiKey: process.env.CUSTOM_API_KEY, model: process.env.CUSTOM_MODEL || "tewu-npc" };
-  return null;
+  // 模型调用统一走集群内 llm-service；本服务不再持有任何 provider 凭据。
+  // model 传的是 llm-service 注册的**别名**（如 deepseek-guarded），不是上游模型名。
+  const baseUrl = process.env.LLM_BASE_URL;
+  const apiKey = process.env.LLM_SERVICE_TOKEN;
+  if (!baseUrl || !apiKey) return null;
+  return { provider: "llm-service", baseUrl, apiKey, model: process.env.LLM_MODEL || "deepseek-guarded" };
 }
 
 const MODEL_MAX_ATTEMPTS = 3;
@@ -168,6 +169,8 @@ function selfLabelsConflict(speech) {
 
 async function roleplay(payload) {
   const config = providerConfig();
+  // 早失败并给出可读原因，否则下面读 config.model 会是个难懂的 TypeError
+  if (!config) throw new Error("LLM provider 未配置：需要 LLM_BASE_URL 与 LLM_SERVICE_TOKEN");
   const campaign = payload.campaign || {};
   const dossier = payload.dossier || {};
   const history = Array.isArray(payload.history) ? payload.history.slice(-16).map((item) => ({
@@ -195,7 +198,7 @@ async function roleplay(payload) {
     "保持与此前回答一致，控制在25至140个汉字。只输出JSON：{\"speech\":\"本轮盘问回应\",\"claims\":[{\"factId\":\"账本中的 ID\",\"value\":\"本轮对该事实的说法\",\"stance\":\"确认/否认/不确定/修正\"}]}。不得在 claims 中创造账本之外的 ID。",
   ].join("\n");
   const user = JSON.stringify({ round: Number(payload.round || 1), history, question: cleanText(payload.question, 300), references: payload.references || [], disclosureFacts: payload.disclosureFacts || [], fairnessStage: payload.fairnessStage || "none", relationshipStage: payload.relationshipStage || "none", memorySummary: payload.memorySummary || {} });
-  const result = await requestModelWithRetry(config, { model: config.model, temperature: 0.75, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user }] }, "npc", (data) => {
+  const result = await requestModelWithRetry(config, { model: config.model, temperature: 0.75, messages: [{ role: "system", content: system }, { role: "user", content: user }] }, "npc", (data) => {
     const parsed = parseModelJson(data?.choices?.[0]?.message?.content);
     const speech = cleanText(parsed?.speech, 800);
     if (!speech) throw new Error("模型回答为空");
@@ -207,6 +210,8 @@ async function roleplay(payload) {
 
 async function judgeReply(payload) {
   const config = providerConfig();
+  // 早失败并给出可读原因，否则下面读 config.model 会是个难懂的 TypeError
+  if (!config) throw new Error("LLM provider 未配置：需要 LLM_BASE_URL 与 LLM_SERVICE_TOKEN");
   const campaign = payload.campaign || {};
   const profile = payload.profile || {};
   const round = Number(payload.round || 1);
@@ -232,7 +237,7 @@ async function judgeReply(payload) {
     "使用第三人称审查官视角，speech控制在20至130个汉字。只输出JSON：{\"speech\":\"不含问题和提前结论的本轮反应\",\"nextQuestion\":\"下一必查主题的问题\",\"followupQuestion\":\"当前主题的追问\",\"evaluation\":{\"relevance\":0,\"specificity\":0,\"dossierMatch\":0,\"consistency\":0,\"evasiveness\":0,\"evidenceFactIds\":[\"档案事实ID\"],\"contradictions\":[\"具体矛盾\"],\"unsupportedDetails\":[\"档案外新增姓名或事实\"],\"freeSlotClaims\":[{\"slotId\":\"自由口径ID\",\"value\":\"从本轮回答提取的简短口径\"}],\"summary\":\"本轮中文评价依据\"}}。",
   ].join("\n");
   const user = JSON.stringify({ round, topic, question: cleanText(payload.question, 300), currentAnswer: cleanText(payload.answer, 500) });
-  const result = await requestModelWithRetry(config, { model: config.model, temperature: 0.45, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user }] }, "judge", (data) => {
+  const result = await requestModelWithRetry(config, { model: config.model, temperature: 0.45, messages: [{ role: "system", content: system }, { role: "user", content: user }] }, "judge", (data) => {
     const parsed = parseModelJson(data?.choices?.[0]?.message?.content);
     const speech = boundedJudgeSpeech(parsed?.speech, round);
     if (!speech) throw new Error("审查官回答为空");

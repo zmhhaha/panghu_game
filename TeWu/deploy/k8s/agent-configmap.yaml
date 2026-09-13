@@ -4,10 +4,8 @@ metadata:
   name: tewu-agent-config
   namespace: tewu
 data:
-  # Supported values: openai, deepseek, custom. An LLM provider is required.
-  PROVIDER: deepseek
-  OPENAI_BASE_URL: https://api.openai.com/v1
-  OPENAI_MODEL: gpt-4o-mini
-  DEEPSEEK_BASE_URL: https://api.deepseek.com
-  DEEPSEEK_MODEL: deepseek-v4-flash
-  LLM_TIMEOUT_MS: "8000"
+  # 模型调用统一走集群内 llm-service；凭据（LLM_SERVICE_TOKEN）由 llm-token Secret 注入。
+  # LLM_MODEL 是 llm-service 注册的**别名**，不是上游模型名 —— 改回 deepseek-v4-flash 之类会 400。
+  # 玩家能自由盘问/作答，所以走 guarded 档（禁 tools/response_format，但做不可信内容分隔与 canary 检测）。
+  LLM_BASE_URL: http://llm-service.llm.svc.cluster.local/v1
+  LLM_MODEL: deepseek-guarded

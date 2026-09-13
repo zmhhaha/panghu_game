@@ -78,20 +78,29 @@ function fallbackDecision(job) {
 }
 
 function providerConfig() {
-  const provider = (process.env.PROVIDER || "fallback").toLowerCase();
-  if (provider === "deepseek") return {
-    provider,
-    apiKey: process.env.DEEPSEEK_API_KEY,
-    baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-    model: process.env.DEEPSEEK_MODEL || "deepseek-v4-flash"
-  };
-  if (provider === "openai") return {
-    provider,
-    apiKey: process.env.OPENAI_API_KEY,
-    baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini"
-  };
-  return { provider: "fallback", apiKey: null, baseUrl: null, model: "rules-v1" };
+  // 模型调用统一走集群内 llm-service；本服务不再持有任何 provider 凭据。
+  // model 传的是 llm-service 注册的**别名**（如 deepseek-guarded），不是上游模型名。
+  // 配置缺失时退回规则口径（rules-v1）——那是产品行为，不是直连 provider 的兜底。
+  const baseUrl = process.env.LLM_BASE_URL;
+  const apiKey = process.env.LLM_SERVICE_TOKEN;
+  if (!baseUrl || !apiKey) return { provider: "fallback", apiKey: null, baseUrl: null, model: "rules-v1" };
+  return { provider: "llm-service", apiKey, baseUrl, model: process.env.LLM_MODEL || "deepseek-guarded" };
+}
+
+/**
+ * 不再用 response_format，模型可能把 JSON 包进 ``` 代码块或前后带话术，所以自己剥一层。
+ * 剥完仍不是合法 JSON 就抛错，由调用方退回规则口径。
+ */
+function parseModelObject(content) {
+  const trimmed = String(content || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start >= 0 && end > start) return JSON.parse(trimmed.slice(start, end + 1));
+    throw new Error("LLM returned invalid JSON");
+  }
 }
 
 function validateDecision(value, fallback) {
@@ -122,7 +131,6 @@ export async function runAgentJob(job) {
       body: JSON.stringify({
         model: config.model,
         temperature: 0.35,
-        response_format: { type: "json_object" },
         messages: [
           { role: "system", content: "你是二战战役沙盘中的部队指挥智能体。只能依据给定军令、任务和不完整态势行动。输出JSON，字段必须为subject、body、status、summary、morale、comms；所有字段必须使用简体中文，不得输出英文标题、英文战报、中英混合句或技术术语。输入中的时间已经换算为HH:MM格式，战报必须沿用该格式，不得输出累计分钟数。不得引用战役全局百分比，不得宣称知道未提供的敌情，不得替上级决定战役胜负。" },
           { role: "user", content: JSON.stringify(buildAgentPromptInput(job.input)) }
@@ -134,7 +142,7 @@ export async function runAgentJob(job) {
     const payload = await response.json();
     const content = payload.choices?.[0]?.message?.content;
     if (!content) throw new Error("LLM returned no content");
-    const parsed = JSON.parse(content);
+    const parsed = parseModelObject(content);
     return {
       decision: { ...validateDecision(parsed, fallback), provider: config.provider },
       run: { provider: config.provider, model: config.model, durationMs: Date.now() - startedAt, resultStatus: "succeeded" }
