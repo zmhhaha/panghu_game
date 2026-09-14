@@ -1,6 +1,7 @@
+import { setting } from "./scheduler.js";
 export type AgentProvider = {
   readonly name: string;
-  complete(system: string, user: string): Promise<unknown>;
+  complete(system: string, user: string, signal?: AbortSignal): Promise<unknown>;
 };
 
 export function parseModelJson(content: string): unknown {
@@ -14,7 +15,7 @@ export function parseModelJson(content: string): unknown {
       try {
         return JSON.parse(trimmed.slice(start, end + 1));
       } catch {
-        // The provider gets one format-only repair attempt below.
+        // The orchestrator owns the single shared repair budget.
       }
     }
     throw new Error("LLM returned invalid JSON");
@@ -31,29 +32,17 @@ class OpenAiCompatibleProvider implements AgentProvider {
     private readonly model: string,
   ) {}
 
-  async complete(system: string, user: string): Promise<unknown> {
+  async complete(system: string, user: string, signal?: AbortSignal): Promise<unknown> {
     const messages: Message[] = [{ role: "system", content: system }, { role: "user", content: user }];
-    const content = await this.request(messages, 0.72);
-    try {
-      return parseModelJson(content);
-    } catch (error) {
-      if (!(error instanceof Error) || error.message !== "LLM returned invalid JSON") throw error;
-      console.warn(`[GuanLiao Agent] provider=${this.name} response=repair`);
-      const repaired = await this.request([
-        ...messages,
-        { role: "assistant", content },
-        { role: "user", content: "保持上一次内容语义不变，只修正格式。仅输出一个合法 JSON 对象，不要 Markdown、解释或额外文字。" },
-      ], 0);
-      return parseModelJson(repaired);
-    }
+    return parseModelJson(await this.request(messages, 0.72, signal));
   }
 
-  private async request(messages: Message[], temperature: number): Promise<string> {
+  private async request(messages: Message[], temperature: number, signal?: AbortSignal): Promise<string> {
     const controller = new AbortController();
-    // 超时必须盖过服务端最坏耗时，否则会在 llm-service 还在生成时就 abort，
-    // 白白丢掉一次已经成功、只是慢的调用，静默退回主控文本。
-    // 批量路径一次要出 5 个字段 × 全部官员，实测整日批量 35s+，所以给到 120s。
-    const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS ?? 120000));
+    const cancel = () => controller.abort(signal?.reason);
+    if (signal?.aborted) cancel();
+    else signal?.addEventListener("abort", cancel, { once: true });
+    const timer = setTimeout(() => controller.abort(new Error("call_timeout")), setting("LLM_TIMEOUT_MS", 120000, 1000, 120000));
     try {
       const payload: Record<string, unknown> = { model: this.model, temperature, messages };
       const maxTokens = optionalMaxTokens();
@@ -71,6 +60,7 @@ class OpenAiCompatibleProvider implements AgentProvider {
       return content;
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", cancel);
     }
   }
 }

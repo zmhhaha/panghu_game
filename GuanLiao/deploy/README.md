@@ -56,7 +56,7 @@ kubectl exec -n vault vault-0 -- vault kv patch secret/llm-service/callers \
 
 `deploy/k8s/agent-configmap.yaml` 只放非敏感的接线：走哪个入口（`LLM_BASE_URL`）、用哪个别名（`LLM_MODEL`）、超时（`LLM_TIMEOUT_MS`）。别名是 llm-service 注册的**别名**而不是上游模型名，改回 `deepseek-v4-flash` 之类会被 400 拒掉。玩家原批是自由文本，所以走 `deepseek-guarded` 档：禁 `tools` / `response_format`，但服务端会分隔不可信内容并检测 canary 泄漏。
 
-⚠️ **`LLM_TIMEOUT_MS` 是 120000，别改小。** 批量路径（`propagate-batch`）一次要出 5 个字段 × 全部官员，实测整日批量 **35 秒以上**。原来设 20000 会在 llm-service 还在生成时就 abort —— 而 llm-service 那边仍然记 `200 OK`（它不知道客户端已经走了），所以只看服务端日志会误判成「一切正常」，实际玩家拿到的是主控的确定性兜底文本。两个日志要对着看：**拿 llm-service 的 `latency_ms` 和这里的超时值比。**
+退堂下行批次和每条办结链各自共用 60 秒服务端预算（包含排队、生成和最多一次修复）。`LLM_TIMEOUT_MS=120000` 只是单次调用上限，实际同时受剩余总预算限制。浏览器超时 75 秒并覆盖响应体读取；部署脚本为 GuanLiao 的 oauth2-proxy 上游明确设置 `timeout: 80s` 并重启代理。Cloudflare 的线上超时仍需部署后核对，不能只看 llm-service 的 200 状态判断玩家是否收到模型结果。
 
 ⚠️ **ConfigMap 里故意不设 `LLM_MAX_TOKENS`。** 上游是推理模型，输出分 `reasoning_content`（思考）和 `content`（正文）两路，预算不够时思考会把它吃光、正文为空。这里原来是 1000，实测每次 `completion_tokens` 都正好顶到 1000 —— 也就是每次都被截断，叙事 JSON 解析失败后静默退回主控给的确定性文本，**看起来能用，其实不是模型写的**。现在默认把预算交给上游；确实要设上限时把那个键加回来，注意 `guarded` 档上限是 2048。
 
@@ -64,7 +64,25 @@ Pod 模板带 `llm-client: "true"` 标签 —— llm-service 的 NetworkPolicy �
 
 `LLM_BASE_URL` / `LLM_SERVICE_TOKEN` 缺失时应用进程不报错，只退回主控给出的确定性文本；标准 `deploy.sh` 会先等待并校验 `llm-token` Secret，避免声明启用模型却以 fallback 状态上线。
 
-客户端会在玩家完成当天全部批示并退堂时，统一调用 `/api/agents/propagate-batch`。该接口把当天待处理的官员步骤放在一次编排请求中，服务端 Agent 对整批内容生成叙事；单条 `/api/agents/propagate` 仍保留用于兼容和调试。批量输出格式异常或模型超时时，整批自动回退为浏览器内置的确定性文本，不会阻塞推进日期。
+客户端在当天全部批示完成后退堂，调用一次 `/api/agents/propagate-batch`（protocolVersion 2）。服务端按依赖选择就绪步骤，每块最多两条不同政令；同一政令后级等待前级最终 forwardedText，包含前级失败时的兜底文书。模型结果按 stepId 校验、重排，并返回逐步骤 model/fallback 来源。某块失败只回退该块，截止时保留已完成结果。旧版请求仍走兼容整批路径，无法修复其缺失的依赖信息，因此发布后应确认浏览器加载新版静态资源。
+
+所有下行、办结和修复请求共用进程调度器；配置如下：
+
+| 参数 | 默认值 | 范围 |
+| --- | --- | --- |
+| LLM_PROPAGATION_CHUNK_SIZE | 2 | 1..4 |
+| LLM_CONCURRENCY | 2 | 1..3 |
+| LLM_QUEUE_MAX | 32 | 1..128 |
+| LLM_QUEUE_WAIT_MS | 10000 | 1000..30000 |
+| LLM_BATCH_DEADLINE_MS | 60000 | 10000..65000 |
+
+总截止时间上限 65 秒，为固定 75 秒浏览器超时保留余量。非整数/空值回默认，整数越界取边界。当前两副本稳态最多 4 个模型请求；maxSurge=1 发布期间最多 6 个，不是集群全局硬配额。队列按批次轮转，有等待与长度限制。429、网络错误直接降级，不自动重试整个批次；JSON/schema 修复最多一次且重新排队，避免多层重试放大调用量。llm-service 的调用方 RPM 配额依然有效。
+
+办结链内部从末级向上串行，多条链可并发。浏览器先固定顺序决定权威结果，等待叙事后按同样顺序提交数值和结局。下行与办结是两个阶段，完整退堂可能超过单个 60 秒预算。
+
+查看日志中的 batch、phase、queue_ms、call_ms、elapsed_ms、fallback_count 和 repair；浏览器控制台记录 end_day_ms。模型 token 成本与 429/5xx 从 llm-service 对照读取。评估必须同时比较完整退堂 p50/p95、模型成功比例和成本，不能把快速兜底作为加速证据。
+
+部署后在服务器运行 `npm test`，并验证：同批相邻官员的 receivedText 等于前级最终 forwardedText；多客户端与办结同时执行仍遵守上限；截止保留成功步骤；连续退堂没有单条批示触发 LLM；不同网络完成顺序不改变结局。测试用例已准备，本地仅作类型与语法检查。
 
 ## 构建与发布
 

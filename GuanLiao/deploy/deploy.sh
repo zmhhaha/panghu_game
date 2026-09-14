@@ -34,9 +34,11 @@ if ! kubectl get secret oauth2-proxy-secret -n oauth >/dev/null 2>&1; then
   exit 1
 fi
 
-sed 's/__TARGET_NAME__/guanliao/g' "${infrastructure_root}/oauth/k8s/game-proxy-configmap.yaml" > "${tmp_dir}/oauth-config.yaml"
+sed -e 's/__TARGET_NAME__/guanliao/g' -e '/proxyWebSockets: true/a\          timeout: 80s' "${infrastructure_root}/oauth/k8s/game-proxy-configmap.yaml" > "${tmp_dir}/oauth-config.yaml"
 sed 's/__TARGET_NAME__/guanliao/g' "${infrastructure_root}/oauth/k8s/game-proxy-deployment.yaml" > "${tmp_dir}/oauth-deployment.yaml"
 kubectl apply -f "${tmp_dir}/oauth-config.yaml" -f "${tmp_dir}/oauth-deployment.yaml"
+# Mounted ConfigMap changes require the proxy process to reload its configuration.
+kubectl rollout restart deployment/oauth2-proxy-guanliao -n oauth
 kubectl apply -f "${infrastructure_root}/cloudflare-tunnel/operator/tunnel-routes.yaml"
 
 kubectl delete job guanliao-db-migration -n "$namespace" --ignore-not-found

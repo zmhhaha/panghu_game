@@ -1553,6 +1553,7 @@
 
   async function enrichAgentStepsBatch(candidates) {
     if (!candidates.length) return "fallback";
+    const activeState = state;
     const client = window.GuanLiaoAgents;
     if (!client?.propagateBatch) {
       candidates.forEach(({ step }) => { step.provider = "fallback"; });
@@ -1560,7 +1561,13 @@
     }
 
     const response = await client.propagateBatch({
+      protocolVersion: 2,
       requests: candidates.map(({ item, agent, step }) => ({
+        directiveId: item.id,
+        stepId: item.id + ":" + item.chain.indexOf(step),
+        predecessorStepId: item.chain.indexOf(step) > 0
+          && candidates.some(candidate => candidate.item === item && candidate.step === item.chain[item.chain.indexOf(step) - 1])
+          ? item.id + ":" + (item.chain.indexOf(step) - 1) : null,
         era: state.era,
         day: step.day,
         orderText: item.orderText,
@@ -1585,6 +1592,7 @@
         }
       }))
     });
+    if (state !== activeState) return "fallback";
     const narratives = response?.steps;
     if (!Array.isArray(narratives) || narratives.length !== candidates.length) {
       candidates.forEach(({ step }) => { step.provider = "fallback"; });
@@ -1592,8 +1600,11 @@
     }
 
     const provider = response.provider || "fallback";
+    const resultMap = new Map((response.results || []).map(result => [result.stepId, result]));
     candidates.forEach(({ item, agent, step }, index) => {
-      applyAgentNarrative(item, agent, step, narratives[index], provider);
+      const result = resultMap.get(item.id + ":" + item.chain.indexOf(step));
+      if (result && typeof result.receivedText === "string") step.receivedText = result.receivedText;
+      applyAgentNarrative(item, agent, step, result?.narrative || narratives[index], result?.provider || provider);
     });
     return provider;
   }
@@ -1727,8 +1738,6 @@
       const completion = buildCompletionReport(step, incoming, outcome, success, step === item.chain[0]);
       completionChain.push(completion);
       incoming = completion;
-      const agent = agentById(step.agentId);
-      if (agent) agent.lastOfficialReport = completion.reportText;
     });
     return completionChain;
   }
@@ -1763,10 +1772,6 @@
         reportText: generated.reportText
       };
     });
-    chain.forEach((completion) => {
-      const agent = agentById(completion.agentId);
-      if (agent) agent.lastOfficialReport = completion.reportText;
-    });
     return { provider: response.provider || "fallback", chain };
   }
 
@@ -1787,7 +1792,12 @@
     const finalEffects = mergeEffects(outcome.effects, item.modifiers);
     const fallbackCompletionChain = buildCompletionChain(item, outcome, success);
     const enrichedCompletion = await enrichCompletionChain(item, outcome, fallbackCompletionChain);
+    return () => {
     const completionChain = enrichedCompletion.chain;
+    completionChain.forEach((completion) => {
+      const agent = agentById(completion.agentId);
+      if (agent) agent.lastOfficialReport = completion.reportText;
+    });
     const directOfficialReport = completionChain.at(-1)?.reportText || `奉结。${outcome.title}。`;
     const finalOfficialReport = directOfficialReport;
     const thresholdResult = applyEffects(finalEffects, true);
@@ -1824,11 +1834,13 @@
     state.reports.unshift(report);
     state.unreadReports += 1;
     return report;
+    };
   }
 
   async function endDay() {
     if (state.ended || agentBusy || Object.keys(state.decisions).length !== state.docket.length) return;
     const activeState = state;
+    const dayStarted = performance.now();
     setAgentBusy(true, "本日政令已齐，正在集中拟具各级回文");
     try {
       state.day += 1;
@@ -1844,8 +1856,9 @@
       });
       await enrichAgentStepsBatch(candidates);
       if (state !== activeState) return;
-      const freshReports = await Promise.all(ready.map(resolvePending));
+      const commits = await Promise.all(ready.map(resolvePending));
       if (state !== activeState) return;
+      const freshReports = commits.map(commit => commit());
       state.pending = state.pending.filter((item) => !ready.includes(item));
       const promotion = updateRank();
       if (promotion) {
@@ -1868,6 +1881,7 @@
       else if (freshReports.length) showResultModal(freshReports);
       else showToast("新的一日，政令又向下转行了一层");
     } finally {
+      console.info("[GuanLiao] end_day_ms=" + Math.round(performance.now() - dayStarted));
       setAgentBusy(false);
     }
   }

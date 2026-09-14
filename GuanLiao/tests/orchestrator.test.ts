@@ -1,7 +1,125 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { limits } from "../src/agents/scheduler.js";
 import { BureaucracyOrchestrator } from "../src/agents/orchestrator.js";
 import type { AgentProvider } from "../src/agents/provider.js";
 import type { CompletionRequest, PropagationRequest } from "../src/agents/schemas.js";
+import { propagationBatchRequestSchema } from "../src/agents/schemas.js";
+
+describe("dependency batches", () => {
+  const step = (directiveId: string, stepId: string, predecessorStepId: string | null = null) => ({
+    ...propagationRequest(), directiveId, stepId, predecessorStepId,
+  });
+
+  it("shares one deadline across generation and schema repair", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const service = new BureaucracyOrchestrator({
+        name: "test", async complete(_system, _user, signal) {
+          calls++;
+          if (calls === 1) {
+            await new Promise(resolve => setTimeout(resolve, limits.deadline - 1000));
+            return { steps: [] };
+          }
+          return new Promise((_resolve, reject) => {
+            signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+          });
+        },
+      });
+      const result = service.preparePropagationBatch({ protocolVersion: 2, requests: [step("a", "a0")] });
+      await vi.advanceTimersByTimeAsync(limits.deadline);
+      expect((await result).provider).toBe("fallback");
+      expect(calls).toBe(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("passes generated predecessor text forward and maps reversed model IDs", async () => {
+    const seen: Array<Array<ReturnType<typeof step>>> = [];
+    const service = new BureaucracyOrchestrator({
+      name: "test",
+      async complete(_system, user) {
+        const requests = JSON.parse(user).requests as Array<ReturnType<typeof step>>;
+        seen.push(requests);
+        return { steps: requests.map(item => ({
+          ...item.controllerProjection.narrative, stepId: item.stepId,
+          forwardedText: "依照本官新拟文书办理" + item.stepId,
+        })).reverse() };
+      },
+    });
+    const result = await service.preparePropagationBatch({
+      protocolVersion: 2,
+      requests: [step("a", "a0"), step("a", "a1", "a0"), step("b", "b0")],
+    });
+    expect(seen[0].map(item => item.stepId)).toEqual(["a0", "b0"]);
+    expect(seen[1][0].receivedText).toBe("依照本官新拟文书办理a0");
+    expect(result.results?.map(item => item.stepId)).toEqual(["a0", "a1", "b0"]);
+    expect(result.steps.map(item => item.forwardedText)).toEqual([
+      "依照本官新拟文书办理a0", "依照本官新拟文书办理a1", "依照本官新拟文书办理b0",
+    ]);
+  });
+
+  it("isolates a failed chunk and feeds fallback to its successor", async () => {
+    const seen: string[] = [];
+    const service = new BureaucracyOrchestrator({
+      name: "test",
+      async complete(_system, user) {
+        const requests = JSON.parse(user).requests as Array<ReturnType<typeof step>>;
+        if (requests.some(item => item.stepId === "a0")) throw new Error("LLM HTTP 429");
+        seen.push(...requests.map(item => item.receivedText));
+        return { steps: requests.map(item => ({ ...item.controllerProjection.narrative, stepId: item.stepId })) };
+      },
+    });
+    const result = await service.preparePropagationBatch({
+      protocolVersion: 2, requests: [step("a", "a0"), step("a", "a1", "a0"), step("b", "b0"), step("c", "c0")],
+    });
+    expect(result.provider).toBe("mixed");
+    expect(result.results?.find(item => item.stepId === "a1")?.provider).toBe("model");
+    expect(seen).toContain(propagationRequest().controllerProjection.narrative.forwardedText);
+  });
+
+  it("repairs duplicate IDs only once without accepting a positional match", async () => {
+    let calls = 0;
+    const service = new BureaucracyOrchestrator({
+      name: "test", async complete() {
+        calls++;
+        return { steps: [0, 1].map(() => ({ ...propagationRequest().controllerProjection.narrative, stepId: "a0" })) };
+      },
+    });
+    const result = await service.preparePropagationBatch({ protocolVersion: 2, requests: [step("a", "a0"), step("b", "b0")] });
+    expect(calls).toBe(2);
+    expect(result.provider).toBe("fallback");
+  });
+
+  it("rejects cycles, branches, disconnected chains and cross-directive dependencies", () => {
+    const invalid = [
+      [step("a", "a0", "a1"), step("a", "a1", "a0")],
+      [step("a", "a0"), step("a", "a1", "a0"), step("a", "a2", "a0")],
+      [step("a", "a0"), step("a", "a1")],
+      [step("a", "a0"), step("b", "b0", "a0")],
+    ];
+    for (const requests of invalid) expect(propagationBatchRequestSchema.safeParse({ protocolVersion: 2, requests }).success).toBe(false);
+  });
+
+  it("keeps successful steps when cancellation interrupts their successor", async () => {
+    const controller = new AbortController();
+    const service = new BureaucracyOrchestrator({
+      name: "test", async complete(_system, user, signal) {
+        const requests = JSON.parse(user).requests as Array<ReturnType<typeof step>>;
+        if (requests[0].stepId === "a1") {
+          controller.abort();
+          signal!.throwIfAborted();
+        }
+        return { steps: requests.map(item => ({ ...item.controllerProjection.narrative, stepId: item.stepId })) };
+      },
+    });
+    const result = await service.preparePropagationBatch({
+      protocolVersion: 2, requests: [step("a", "a0"), step("a", "a1", "a0"), step("a", "a2", "a1")],
+    }, controller.signal);
+    expect(result.results?.map(item => item.provider)).toEqual(["model", "fallback", "fallback"]);
+    expect(result.results?.[2].receivedText).toBe(result.steps[1].forwardedText);
+  });
+});
+
 
 const directAgent = {
   id: "local-0",
@@ -107,7 +225,7 @@ describe("BureaucracyOrchestrator", () => {
     expect(result.step).not.toHaveProperty("effects");
   });
 
-  it("handles a day's propagation steps in one model request", async () => {
+  it("preserves the legacy batch protocol", async () => {
     let calls = 0;
     const provider: AgentProvider = {
       name: "test",

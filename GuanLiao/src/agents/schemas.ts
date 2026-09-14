@@ -47,9 +47,42 @@ export const propagationRequestSchema = z.object({
   }),
 });
 
-export const propagationBatchRequestSchema = z.object({
-  requests: z.array(propagationRequestSchema).min(1).max(24),
+const dependencyStepSchema = propagationRequestSchema.extend({
+  directiveId: z.string().min(1).max(240),
+  stepId: z.string().min(1).max(320),
+  predecessorStepId: z.string().min(1).max(320).nullable(),
 });
+
+export const propagationBatchRequestSchema = z.union([z.object({
+  protocolVersion: z.literal(2),
+  requests: z.array(dependencyStepSchema).min(1).max(24),
+}).superRefine(({ requests }, ctx) => {
+  const ids = new Map(requests.map(item => [item.stepId, item]));
+  const successors = new Set<string>();
+  const roots = new Set<string>();
+  let invalid = ids.size !== requests.length;
+  for (const item of requests) {
+    if (!item.predecessorStepId) {
+      if (roots.has(item.directiveId)) invalid = true;
+      roots.add(item.directiveId);
+    } else {
+      const parent = ids.get(item.predecessorStepId);
+      if (!parent || parent.directiveId !== item.directiveId || successors.has(parent.stepId)) invalid = true;
+      successors.add(item.predecessorStepId);
+    }
+    const seen = new Set<string>();
+    let current: typeof item | undefined = item;
+    while (current) {
+      if (seen.has(current.stepId)) { invalid = true; break; }
+      seen.add(current.stepId);
+      current = current.predecessorStepId ? ids.get(current.predecessorStepId) : undefined;
+    }
+  }
+  if (invalid) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid directive dependency chain" });
+}), z.object({
+  protocolVersion: z.literal(1).optional(),
+  requests: z.array(propagationRequestSchema).min(1).max(24),
+})]);
 
 export const propagationBatchNarrativeSchema = z.object({
   steps: z.array(stepNarrativeSchema).min(1).max(24),

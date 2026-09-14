@@ -26,6 +26,8 @@ spec:
           image: arm-cluster-master:5000/guanliao-server:latest
           imagePullPolicy: Always
           ports: [{ name: http, containerPort: 4173 }]
+          envFrom:
+            - configMapRef: { name: guanliao-agent-config }
           env:
             - name: HOST
               value: 0.0.0.0

@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const AGENT_TIMEOUT_MS = 25000;
+  const AGENT_TIMEOUT_MS = 75000;
   const STATE_TIMEOUT_MS = 8000;
   let agentApiUnavailable = false;
   let stateMutationQueue = Promise.resolve();
@@ -18,12 +18,15 @@
 
   async function agentRequest(path, payload) {
     if (agentApiUnavailable) return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
     try {
-      const response = await fetchWithTimeout(path, {
+      const response = await fetch(path, {
+        signal: controller.signal,
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload)
-      }, AGENT_TIMEOUT_MS);
+      });
       if (response.status === 404 || response.status === 405 || response.status === 501) {
         agentApiUnavailable = true;
         return null;
@@ -35,6 +38,8 @@
         console.warn("GuanLiao Agent API unavailable; using deterministic fallback", error);
       }
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

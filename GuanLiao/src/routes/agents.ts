@@ -8,6 +8,14 @@ import {
 
 export function createAgentsRouter(orchestrator: BureaucracyOrchestrator = bureaucracyOrchestrator): Router {
   const router = Router();
+  router.use((req, res, next) => {
+    const controller = new AbortController();
+    res.locals.agentSignal = controller.signal;
+    const close = () => { if (!res.writableEnded) controller.abort(new Error("client_disconnected")); };
+    res.once("close", close);
+    res.once("finish", () => res.removeListener("close", close));
+    next();
+  });
 
   router.get("/status", (_req, res) => res.json(orchestrator.status()));
 
@@ -18,7 +26,8 @@ export function createAgentsRouter(orchestrator: BureaucracyOrchestrator = burea
       return;
     }
     try {
-      res.json(await orchestrator.preparePropagation(parsed.data));
+      const result = await orchestrator.preparePropagation(parsed.data, res.locals.agentSignal);
+      if (!res.destroyed) res.json(result);
     } catch (error) {
       next(error);
     }
@@ -31,7 +40,8 @@ export function createAgentsRouter(orchestrator: BureaucracyOrchestrator = burea
       return;
     }
     try {
-      res.json(await orchestrator.preparePropagationBatch(parsed.data));
+      const result = await orchestrator.preparePropagationBatch(parsed.data, res.locals.agentSignal);
+      if (!res.destroyed) res.json(result);
     } catch (error) {
       next(error);
     }
@@ -44,7 +54,8 @@ export function createAgentsRouter(orchestrator: BureaucracyOrchestrator = burea
       return;
     }
     try {
-      res.json(await orchestrator.prepareCompletion(parsed.data));
+      const result = await orchestrator.prepareCompletion(parsed.data, res.locals.agentSignal);
+      if (!res.destroyed) res.json(result);
     } catch (error) {
       next(error);
     }
