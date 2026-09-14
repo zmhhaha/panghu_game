@@ -107,7 +107,7 @@ REGISTRY=arm-cluster-master:5000 IMAGE_TAG=2026-08-04 ./deploy/build-images.sh
 REGISTRY=arm-cluster-master:5000 IMAGE_TAG=2026-08-04 ./deploy/deploy.sh
 ```
 
-`deploy.sh` 会依次创建 namespace、同步 Vault Secret、生成 GuanLiao 专用 oauth2-proxy 清单、应用 Cloudflare 路由、执行幂等数据库迁移，最后滚动发布两个应用副本。迁移成功前不会更新服务。
+`deploy.sh` 会依次创建 namespace、同步 Vault Secret、生成 GuanLiao 专用 oauth2-proxy 清单、应用 Cloudflare 路由、执行幂等数据库迁移，最后滚动发布两个应用副本。迁移成功前不会更新服务。GuanLiao 的 oauth2-proxy 使用 Redis 共享会话（数据库 2），避免两个副本并发刷新同一 Casdoor refresh token；首次发布后需清理旧 `_oauth2_proxy` Cookie 并重新登录。
 
 ## 验证
 
