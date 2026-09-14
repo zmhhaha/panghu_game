@@ -519,7 +519,7 @@ Vault -> ExternalSecret -> shapan-database / shapan-agent Secret
 Vault 路径按项目隔离：
 
 - 数据库密码沿用公共 PostgreSQL 的 `secret/postgres/app`，ESO 将它渲染为仅存在于 `shapan` namespace 的 `shapan-database.url`；应用不直接读取公共 Vault 路径，也不重复保存一份密码。
-- `secret/shapan/agent`：LLM API key、base URL 与模型名，ESO 读取路径为 `secret/data/shapan/agent`。
+- `secret/llm-service/callers` 中的 `LLM_TOKEN_SHAPAN`：ShaPan 调 `llm-service` 的调用方令牌，ESO 读取路径为 `secret/data/llm-service/callers`，渲染成 `shapan/llm-token`。provider 凭据与模型别名路由都由 `llm-service` 持有，ShaPan 不再有 `secret/shapan/agent`。
 - OAuth 客户端凭据继续由 OAuth 公共服务管理。第一版在现有 Casdoor 游戏应用中增加 `ShaPan` 回调地址；若以后需要独立授权策略，再拆分为独立 OIDC 客户端。
 
 初始副本建议为 Web 2、API 2、Sim Worker 1、Agent Worker 1。Sim Worker 即使后续扩容也必须遵守每战局单租约；Agent Worker 可以按待处理任务数量水平扩容。所有服务提供 readiness/liveness probe、资源 requests/limits 和结构化日志，日志使用 `request_id`、`game_id`、`event_sequence` 关联，但不输出命令全文、密钥或未公开敌情。

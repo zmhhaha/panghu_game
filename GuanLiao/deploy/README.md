@@ -56,6 +56,8 @@ kubectl exec -n vault vault-0 -- vault kv patch secret/llm-service/callers \
 
 `deploy/k8s/agent-configmap.yaml` 只放非敏感的接线：走哪个入口（`LLM_BASE_URL`）、用哪个别名（`LLM_MODEL`）、超时（`LLM_TIMEOUT_MS`）。别名是 llm-service 注册的**别名**而不是上游模型名，改回 `deepseek-v4-flash` 之类会被 400 拒掉。玩家原批是自由文本，所以走 `deepseek-guarded` 档：禁 `tools` / `response_format`，但服务端会分隔不可信内容并检测 canary 泄漏。
 
+⚠️ **`LLM_TIMEOUT_MS` 是 120000，别改小。** 批量路径（`propagate-batch`）一次要出 5 个字段 × 全部官员，实测整日批量 **35 秒以上**。原来设 20000 会在 llm-service 还在生成时就 abort —— 而 llm-service 那边仍然记 `200 OK`（它不知道客户端已经走了），所以只看服务端日志会误判成「一切正常」，实际玩家拿到的是主控的确定性兜底文本。两个日志要对着看：**拿 llm-service 的 `latency_ms` 和这里的超时值比。**
+
 ⚠️ **ConfigMap 里故意不设 `LLM_MAX_TOKENS`。** 上游是推理模型，输出分 `reasoning_content`（思考）和 `content`（正文）两路，预算不够时思考会把它吃光、正文为空。这里原来是 1000，实测每次 `completion_tokens` 都正好顶到 1000 —— 也就是每次都被截断，叙事 JSON 解析失败后静默退回主控给的确定性文本，**看起来能用，其实不是模型写的**。现在默认把预算交给上游；确实要设上限时把那个键加回来，注意 `guarded` 档上限是 2048。
 
 Pod 模板带 `llm-client: "true"` 标签 —— llm-service 的 NetworkPolicy 只放行带此标签的 Pod，**缺了表现为超时而不是 401**，这是本迁移最容易踩的坑。

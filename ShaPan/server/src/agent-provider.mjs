@@ -123,7 +123,10 @@ export async function runAgentJob(job) {
 
   const controller = new AbortController();
   const startedAt = Date.now();
-  const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS || 20_000));
+  // 超时必须盖过服务端最坏耗时，否则会在 llm-service 还在生成时就 abort，
+  // 白白丢掉一次已经成功、只是慢的调用，静默退回规则口径。
+  // 上游是推理模型，思考与正文共用预算，耗时方差比直连大得多。
+  const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS || 60_000));
   try {
     const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",

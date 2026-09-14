@@ -9,7 +9,9 @@ data:
   # 玩家原批是自由文本，所以走 guarded 档（禁 tools/response_format，但做不可信内容分隔与 canary 检测）。
   LLM_BASE_URL: http://llm-service.llm.svc.cluster.local/v1
   LLM_MODEL: deepseek-guarded
-  LLM_TIMEOUT_MS: "20000"
+  # ⚠️ 超时必须盖过服务端最坏耗时。批量路径（propagate-batch）一次要出 5 个字段 × 全部官员，
+  # 实测整日批量 35s+；原来设 20000 会在 llm-service 还在生成时就 abort，静默退回主控文本。
+  LLM_TIMEOUT_MS: "120000"
   # 这里**故意不设 LLM_MAX_TOKENS**。
   #
   # 上游是推理模型：输出分 reasoning_content（思考）和 content（正文）两路，

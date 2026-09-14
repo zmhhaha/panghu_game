@@ -28,7 +28,8 @@ spec:
               valueFrom:
                 secretKeyRef: { name: llm-token, key: LLM_SERVICE_TOKEN }
             - name: LLM_TIMEOUT_MS
-              value: "20000"
+              # 上游是推理模型，思考与正文共用预算，耗时方差大；给足余量再走报错
+              value: "60000"
             - name: TRUST_PROXY_AUTH_HEADERS
               value: "true"
             - name: DATABASE_URL

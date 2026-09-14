@@ -89,9 +89,11 @@ class OpenAiCompatibleProvider implements AgentProvider {
   }
 
   private async request(messages: Array<{ role: string; content: string }>, temperature: number): Promise<string> {
-    if (!this.baseUrl || !this.apiKey) throw new Error("LLM provider is not configured");
+    if (!this.baseUrl || !this.apiKey) throw new Error("llm-service is not configured");
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS ?? 8000));
+    // 超时必须盖过服务端最坏耗时，否则会在 llm-service 还在生成时就 abort，
+    // 白白丢掉一次已经成功、只是慢的调用。上游是推理模型，耗时方差比直连大得多。
+    const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS ?? 60000));
     try {
       const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST", signal: controller.signal,

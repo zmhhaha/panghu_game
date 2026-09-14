@@ -57,7 +57,9 @@ async function requestModelWithRetry(config, body, label, validate = (value) => 
   let lastError;
   for (let attempt = 1; attempt <= MODEL_MAX_ATTEMPTS; attempt += 1) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS || 20000));
+    // 超时必须盖过服务端最坏耗时，否则会在 llm-service 还在生成时就 abort，
+    // 白白丢掉一次已经成功、只是慢的调用。上游是推理模型，思考也占预算，耗时方差比直连大。
+    const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS || 60000));
     try {
       const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",

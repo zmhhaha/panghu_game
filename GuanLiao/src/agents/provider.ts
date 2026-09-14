@@ -50,7 +50,10 @@ class OpenAiCompatibleProvider implements AgentProvider {
 
   private async request(messages: Message[], temperature: number): Promise<string> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS ?? 20000));
+    // 超时必须盖过服务端最坏耗时，否则会在 llm-service 还在生成时就 abort，
+    // 白白丢掉一次已经成功、只是慢的调用，静默退回主控文本。
+    // 批量路径一次要出 5 个字段 × 全部官员，实测整日批量 35s+，所以给到 120s。
+    const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS ?? 120000));
     try {
       const payload: Record<string, unknown> = { model: this.model, temperature, messages };
       const maxTokens = optionalMaxTokens();

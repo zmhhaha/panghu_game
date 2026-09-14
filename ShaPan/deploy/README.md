@@ -43,14 +43,7 @@ IMAGE_TAG=$(git rev-parse --short HEAD) \
 
 API 镜像会在第一次 `apt-get` 中显式安装 `ca-certificates`。不要通过 `Acquire::https::Verify-Peer=false` 绕过 TLS 校验；如果内网代理使用自签根证书，应将根证书加入基础镜像或通过受控构建上下文安装。
 
-需要启用模型时，把供应商凭据写入 Vault，例如：
-
-```bash
-kubectl exec -n vault vault-0 -- vault kv put secret/shapan/agent \
-  OPENAI_API_KEY="..." OPENAI_BASE_URL="https://api.openai.com/v1" OPENAI_MODEL="..."
-```
-
-写入命令使用不带 `data/` 的 KV v2 路径；ExternalSecret 中的 `remoteRef.key` 才使用 `secret/data/...`。未配置模型时无需创建该 Vault 路径，`shapan-config.PROVIDER=fallback` 会保留确定性降级模式。
+ShaPan 不持有任何 provider 凭据。模型调用统一走集群内 `llm-service`：入口、模型别名和长度上限由 `deploy/k8s/agent-configmap.yaml` 给出，调用方令牌由 `vault/inventory/shapan-llm-token-externalsecret.yaml` 从 `secret/llm-service/callers` 取出并渲染成 `shapan/llm-token`。接入规范见 `llm-service/INTEGRATION.md`，不需要再往 `secret/shapan/...` 写任何东西。
 
 ## 发布顺序
 
