@@ -1110,7 +1110,7 @@
     } else {
       $("#emptyDesk").innerHTML = `<div class="empty-seal" aria-hidden="true">毕</div><h2>今日案牍已清</h2><p>可退堂更衣。待明日，政令自有回响。</p>`;
     }
-    $("#endDayButton").disabled = ended || agentBusy || handled !== total || daySettlementCancelled;
+    $("#endDayButton").disabled = ended || agentBusy || handled !== total;
     if (agentBusy || ended) {
       $$("#documentStack .decision-button, #documentStack .custom-dispatch").forEach((button) => { button.disabled = true; });
     }
@@ -2002,7 +2002,7 @@
       if (activeDayRun) {
         activeDayRun.cancelled = true;
         activeDayRun.controller.abort();
-        daySettlementCancelled = true;
+        daySettlementCancelled = false;
         renderAll();
       }
       showToast("已返回案头，本日尚未结算。");
@@ -2013,7 +2013,7 @@
         if (activeDayRun) {
           activeDayRun.cancelled = true;
           activeDayRun.controller.abort();
-          daySettlementCancelled = true;
+          daySettlementCancelled = false;
           renderAll();
         }
       }
