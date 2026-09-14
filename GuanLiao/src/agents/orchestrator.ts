@@ -1,4 +1,5 @@
 import { budget, limits, modelScheduler } from "./scheduler.js";
+import { dayRequestSchema, type DayRequest, type DayProgress } from "./day-schema.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { createAgentProvider, type AgentProvider } from "./provider.js";
@@ -44,6 +45,147 @@ const META_LANGUAGE = /(?:作为(?:一个)?AI|语言模型|系统提示|提示�
  * incoming document. Authoritative mechanics stay in the browser controller.
  */
 export class BureaucracyOrchestrator {
+
+  async prepareDay(raw: unknown, onProgress: (event: DayProgress) => void, parent?: AbortSignal) {
+    const request = dayRequestSchema.parse(raw);
+    const scope = budget(parent);
+    const started = Date.now();
+    const owner = {};
+    type DownResult = NonNullable<PropagationBatchResult["results"]>[number];
+    const down = new Map<string, DownResult>();
+    const up = new Map<string, Array<CompletionFallback & { provider: "model" | "fallback" }>>();
+    type Node = { id: string; dependency: string | null; rank: number; order: number;
+      phase: "down" | "up"; down?: DayRequest["propagation"][number];
+      chain?: DayRequest["completions"][number]; index?: number };
+    const nodes: Node[] = request.propagation.map((step, order) => ({
+      id: "down:" + step.stepId, dependency: step.predecessorStepId ? "down:" + step.predecessorStepId : null,
+      rank: 1, order, phase: "down", down: step,
+    }));
+    request.completions.forEach((chain, ci) => {
+      up.set(chain.directiveId, []);
+      chain.agents.forEach((_item, index) => nodes.push({
+        id: "up:" + ci + ":" + index,
+        dependency: index ? "up:" + ci + ":" + (index - 1) : chain.dependsOnStepId ? "down:" + chain.dependsOnStepId : null,
+        rank: 1, order: nodes.length, phase: "up", chain, index,
+      }));
+    });
+    const successors = new Map(nodes.filter(n => n.dependency).map(n => [n.dependency!, n]));
+    const rank = (node: Node): number => { const next = successors.get(node.id); return next ? 1 + rank(next) : 1; };
+    nodes.forEach(node => { node.rank = rank(node); });
+    const done = new Set<string>();
+    const pending = new Set(nodes);
+    const running = new Set<Promise<void>>();
+    let completedDown = 0, completedUp = 0, priorityTurns = 0;
+    const totalUp = request.completions.reduce((n, chain) => n + chain.agents.length, 0);
+    const emit = (status: DayProgress["status"], node?: Node, result?: DownResult | (CompletionFallback & { provider: string })) => {
+      if (parent?.aborted) return;
+      const direct = node?.phase === "down" ? node.down!.level === 0
+        : node?.index === (node?.chain?.agents.length ?? 0) - 1;
+      if (request.difficulty === "opaque" && node && (!direct || status !== "completed")) return;
+      const event: DayProgress = { dayRunId: request.dayRunId, status, elapsedMs: Date.now() - started };
+      if (request.difficulty !== "opaque") {
+        event.down = { done: completedDown, total: request.propagation.length };
+        event.up = { done: completedUp, total: totalUp };
+      }
+      if (node) {
+        event.phase = node.phase;
+        const agent = node.down?.agent ?? node.chain!.agents[node.index!].agent;
+        event.official = agent.role + " " + agent.name;
+        if (result) {
+          if ("narrative" in result) {
+            event.report = result.narrative.officialReport;
+            if (request.difficulty === "guided") {
+              event.action = result.narrative.action;
+              event.calculation = result.narrative.calculation;
+            }
+          } else {
+            event.report = result.reportText;
+            if (request.difficulty === "guided") event.calculation = result.reportingCalculation;
+          }
+        }
+      }
+      onProgress(event);
+    };
+    const execute = async (group: Node[]) => {
+      group.forEach(node => emit("working", node));
+      const callStarted = Date.now();
+      console.info(`[GuanLiao Agent] day=${request.dayRunId} phase=${group[0].phase} status=scheduled nodes=${group.map(n => n.id).join(",")}`);
+      if (group[0].phase === "down") {
+        const inputs = group.map(node => ({
+          ...node.down!,
+          receivedText: node.down!.predecessorStepId
+            ? down.get(node.down!.predecessorStepId)!.narrative.forwardedText : node.down!.receivedText,
+          predecessorStepId: null,
+        }));
+        const result = await this.dependencyBatch(inputs, scope.signal, owner);
+        group.forEach((node, index) => {
+          const value = result.results![index];
+          down.set(node.down!.stepId, value); done.add(node.id); completedDown++;
+          emit("completed", node, value);
+        });
+      } else {
+        const node = group[0], chain = node.chain!, index = node.index!;
+        const item = chain.agents[index], records = up.get(chain.directiveId)!;
+        const receivedReport = index ? records[index - 1].reportText
+          : `现场执行实情：${chain.outcome.title}。${chain.outcome.text}`;
+        let narrative = { reportingCalculation: item.fallback.reportingCalculation, reportText: item.fallback.reportText };
+        let provider: "model" | "fallback" = "fallback";
+        try {
+          const generated = await this.completeValidated(completionNarrativeSchema,
+            this.completionSystem(chain, index, index === 0, index === chain.agents.length - 1),
+            JSON.stringify({
+              scene: { day: chain.day, era: chain.era }, originalOrder: chain.orderText,
+              receivedCompletionReport: receivedReport, officialPrivateTraits: item.agent.traits,
+              controllerBoundary: index === 0 ? { authoritativeOutcome: chain.outcome }
+                : { statusBand: chain.outcome.success ? "已形成可报成效" : "办理中出现不利结果" },
+              fallbackNarrative: narrative,
+            }), scope.signal, owner);
+          if (index === chain.agents.length - 1) assertNoDeepIdentity(generated.reportText, chain, item.agent.id);
+          narrative = generated; provider = "model";
+        } catch (error) {
+          console.info(`[GuanLiao Agent] day=${request.dayRunId} phase=up reason=${scope.signal.aborted ? "deadline_or_cancelled" : errorMessage(error)}`);
+        }
+        const record = { ...item.fallback, ...narrative, receivedReport, provider };
+        records.push(record); done.add(node.id); completedUp++;
+        emit("completed", node, record);
+      }
+      console.info(`[GuanLiao Agent] day=${request.dayRunId} phase=${group[0].phase} nodes=${group.map(n => n.order).join(",")} elapsed_ms=${Date.now() - callStarted}`);
+    };
+    try {
+      emit("started");
+      while (pending.size || running.size) {
+        while (pending.size && running.size < limits.concurrency) {
+          const ready = [...pending].filter(node => !node.dependency || done.has(node.dependency));
+          if (!ready.length) break;
+          ready.sort((a, b) => b.rank - a.rank || a.order - b.order);
+          if (priorityTurns % 3 === 2 && ready.length > 1) {
+            const favored = ready.shift()!;
+            ready.sort((a, b) => a.order - b.order);
+            ready.push(favored);
+          }
+          priorityTurns++;
+          const first = ready[0];
+          const group = first.phase === "down" ? ready.filter(n => n.phase === "down").slice(0, limits.chunk) : [first];
+          group.forEach(node => pending.delete(node));
+          const task: Promise<void> = execute(group).finally(() => running.delete(task));
+          running.add(task);
+        }
+        if (running.size) await Promise.race(running);
+        else if (pending.size) throw new Error("Invalid day graph");
+      }
+      const propagation = request.propagation.map(step => down.get(step.stepId)!);
+      const completions = request.completions.map(chain => ({
+        directiveId: chain.directiveId, completionChain: up.get(chain.directiveId)!,
+        provider: modeOf(up.get(chain.directiveId)!),
+      }));
+      const fallbackCount = propagation.filter(s => s.provider === "fallback").length
+        + completions.reduce((n, c) => n + c.completionChain.filter(s => s.provider === "fallback").length, 0);
+      console.info(`[GuanLiao Agent] day=${request.dayRunId} phase=day elapsed_ms=${Date.now() - started} fallback_count=${fallbackCount}`);
+      return { dayRunId: request.dayRunId, propagation, completions, elapsedMs: Date.now() - started, fallbackCount };
+    } finally { scope.close(); }
+  }
+
+
   constructor(private readonly provider: AgentProvider | null = createAgentProvider()) {
     console.info(`[GuanLiao Agent] provider=${provider?.name ?? "fallback"}`);
   }
@@ -240,14 +382,13 @@ export class BureaucracyOrchestrator {
 
   private async dependencyBatch(requests: Array<PropagationRequest & {
     directiveId: string; stepId: string; predecessorStepId: string | null;
-  }>, signal: AbortSignal): Promise<PropagationBatchResult> {
+  }>, signal: AbortSignal, owner: object = {}): Promise<PropagationBatchResult> {
     const started = Date.now();
     const batchId = randomUUID();
     type Result = NonNullable<PropagationBatchResult["results"]>[number];
     const done = new Map<string, Result>();
     const remaining = new Set(requests);
     const running = new Set<Promise<void>>();
-    const owner = {};
     const execute = async (chunk: typeof requests) => {
       const chunkStarted = Date.now();
       const inputs = chunk.map(item => ({
@@ -331,6 +472,11 @@ export class BureaucracyOrchestrator {
 }
 
 export const bureaucracyOrchestrator = new BureaucracyOrchestrator();
+
+function modeOf(records: Array<{ provider: string }>): AgentRunMode {
+  const count = records.filter(record => record.provider === "model").length;
+  return count === records.length ? "model" : count === 0 ? "fallback" : "mixed";
+}
 
 function assertNoMetaLanguage(value: unknown): void {
   if (META_LANGUAGE.test(JSON.stringify(value))) throw new Error("agent response exposed model or controller language");

@@ -2036,6 +2036,24 @@ legend,
   }
 }
 
+.day-progress-panel { width: min(760px, calc(100vw - 32px)); }
+.day-progress-panel h1 { font-size: clamp(26px, 4vw, 36px); }
+.day-progress-panel #dayCurrent { font-size: 19px; line-height: 1.6; }
+.day-progress-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 20px 0; }
+.day-progress-counts label { display: grid; gap: 10px; font-size: 17px; }
+.day-progress-counts progress { width: 100%; height: 14px; accent-color: #285648; }
+.day-progress-wait { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 20px; }
+.day-progress-wait p { margin: 0; }
+.day-progress-messages { max-height: 38vh; overflow-y: auto; overscroll-behavior: contain; margin: 18px 0; }
+.day-progress-messages article { padding: 16px 18px; margin-bottom: 12px; border: 1px solid #b7ad94; border-radius: 8px; background: #faf4e5; }
+.day-progress-messages strong { font-size: 19px; color: #173f36; }
+.day-progress-messages p { margin: 10px 0 0; font-size: 18px; line-height: 1.8; color: #34392e; overflow-wrap: anywhere; }
+.day-progress-note { font-size: 15px; line-height: 1.6; }
+@media (max-width: 560px) {
+  .day-progress-counts { grid-template-columns: 1fr; gap: 14px; }
+  .day-progress-messages { max-height: 32vh; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;

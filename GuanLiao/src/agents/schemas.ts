@@ -47,7 +47,7 @@ export const propagationRequestSchema = z.object({
   }),
 });
 
-const dependencyStepSchema = propagationRequestSchema.extend({
+export const dependencyStepSchema = propagationRequestSchema.extend({
   directiveId: z.string().min(1).max(240),
   stepId: z.string().min(1).max(320),
   predecessorStepId: z.string().min(1).max(320).nullable(),

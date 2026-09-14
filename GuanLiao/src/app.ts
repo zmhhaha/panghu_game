@@ -15,7 +15,7 @@ export function createApp(repository: GameStateRepository, staticRoot: string): 
   ).toString(36);
 
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "512kb" }));
+  app.use(express.json({ limit: "1mb" }));
   app.get("/api/health", (_req, res) => res.json({ status: "ok", service: "guanliao-server" }));
   app.get("/api/ready", async (_req, res) => {
     const ready = await repository.ready();

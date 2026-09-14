@@ -238,6 +238,22 @@
     </div>
   </div>
 
+  <div id="dayProgressModal" class="overlay" role="dialog" aria-modal="true" aria-labelledby="dayProgressTitle" aria-describedby="dayWaitHint" hidden>
+    <div class="result-panel day-progress-panel">
+      <p class="eyebrow">文书在途 · 驿递往还</p>
+      <h1 id="dayProgressTitle">本日案牍办理中</h1>
+      <p id="dayCurrent" role="status" aria-live="polite">所属衙门办理中</p>
+      <div id="dayProgressCounts" class="day-progress-counts">
+        <label><span id="dayDownCount">政令下行：待转行</span><progress id="dayDownProgress" max="1" value="0" aria-labelledby="dayDownCount"></progress></label>
+        <label><span id="dayUpCount">办结回文：待呈递</span><progress id="dayUpProgress" max="1" value="0" aria-labelledby="dayUpCount"></progress></label>
+      </div>
+      <div class="day-progress-wait"><span id="dayElapsed">已等待 0 秒</span><p id="dayWaitHint">本日政令正在传递，无需重复退堂。</p></div>
+      <section id="dayMessages" class="day-progress-messages" aria-label="已送达回文" tabindex="0"></section>
+      <p class="day-progress-note">此处先阅在途回文，待本日办理结束后统一结算。</p>
+      <button id="cancelDayButton" class="quiet-button" type="button">返回案头，暂不结算</button>
+    </div>
+  </div>
+
   <div id="resultModal" class="overlay" role="dialog" aria-modal="true" aria-labelledby="resultTitle" hidden>
     <div class="result-panel">
       <p class="eyebrow">驿报新至</p>

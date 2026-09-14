@@ -606,6 +606,7 @@
   let selectedDifficulty = "guided";
   let toastTimer = null;
   let agentBusy = false;
+  let activeDayRun = null;
   let remoteStateReady = false;
   let remoteSaveTimer = null;
   let stateEpoch = 0;
@@ -917,7 +918,7 @@
     if (!remote.available) return;
 
     remoteStateReady = true;
-    if (hydrationEpoch !== stateEpoch) {
+    if (agentBusy || hydrationEpoch !== stateEpoch) {
       if (localStorage.getItem(STORAGE_KEY)) scheduleRemoteSave();
       return;
     }
@@ -937,6 +938,7 @@
   }
 
   function clearSavedState() {
+    activeDayRun?.controller.abort();
     stateEpoch += 1;
     clearTimeout(remoteSaveTimer);
     localStorage.removeItem(STORAGE_KEY);
@@ -1551,64 +1553,6 @@
     return true;
   }
 
-  async function enrichAgentStepsBatch(candidates) {
-    if (!candidates.length) return "fallback";
-    const activeState = state;
-    const client = window.GuanLiaoAgents;
-    if (!client?.propagateBatch) {
-      candidates.forEach(({ step }) => { step.provider = "fallback"; });
-      return "fallback";
-    }
-
-    const response = await client.propagateBatch({
-      protocolVersion: 2,
-      requests: candidates.map(({ item, agent, step }) => ({
-        directiveId: item.id,
-        stepId: item.id + ":" + item.chain.indexOf(step),
-        predecessorStepId: item.chain.indexOf(step) > 0
-          && candidates.some(candidate => candidate.item === item && candidate.step === item.chain[item.chain.indexOf(step) - 1])
-          ? item.id + ":" + (item.chain.indexOf(step) - 1) : null,
-        era: state.era,
-        day: step.day,
-        orderText: item.orderText,
-        receivedText: step.receivedText,
-        analysis: {
-          clarity: item.analysis.clarity,
-          clarityLabel: item.analysis.clarityLabel,
-          dominant: item.analysis.dominant
-        },
-        agent: agentDescriptor(agent),
-        controllerProjection: {
-          narrative: {
-            interpretation: step.interpretation,
-            calculation: step.calculation,
-            action: step.action,
-            officialReport: step.officialReport,
-            forwardedText: step.forwardedText
-          },
-          fidelity: step.fidelity,
-          holdDays: step.holdDays || 0,
-          effects: step.effects
-        }
-      }))
-    });
-    if (state !== activeState) return "fallback";
-    const narratives = response?.steps;
-    if (!Array.isArray(narratives) || narratives.length !== candidates.length) {
-      candidates.forEach(({ step }) => { step.provider = "fallback"; });
-      return "fallback";
-    }
-
-    const provider = response.provider || "fallback";
-    const resultMap = new Map((response.results || []).map(result => [result.stepId, result]));
-    candidates.forEach(({ item, agent, step }, index) => {
-      const result = resultMap.get(item.id + ":" + item.chain.indexOf(step));
-      if (result && typeof result.receivedText === "string") step.receivedText = result.receivedText;
-      applyAgentNarrative(item, agent, step, result?.narrative || narratives[index], result?.provider || provider);
-    });
-    return provider;
-  }
-
   function advanceDirective(item, initial = false) {
     if (!initial && item.holdDays > 0) {
       item.holdDays -= 1;
@@ -1742,40 +1686,7 @@
     return completionChain;
   }
 
-  async function enrichCompletionChain(item, outcome, completionChain) {
-    const client = window.GuanLiaoAgents;
-    if (!client?.complete) return { provider: "fallback", chain: completionChain };
-    const response = await client.complete({
-      era: state.era,
-      day: state.day,
-      orderText: item.orderText,
-      outcome: {
-        success: outcome.success,
-        title: outcome.title,
-        text: outcome.text
-      },
-      agents: completionChain.map((fallback) => ({
-        agent: agentDescriptor(agentById(fallback.agentId)),
-        fallback
-      }))
-    });
-    if (!Array.isArray(response?.completionChain) || response.completionChain.length !== completionChain.length) {
-      return { provider: "fallback", chain: completionChain };
-    }
-    const chain = completionChain.map((fallback, index) => {
-      const generated = response.completionChain[index];
-      if (!generated || typeof generated.reportingCalculation !== "string" || typeof generated.reportText !== "string") return fallback;
-      return {
-        ...fallback,
-        receivedReport: typeof generated.receivedReport === "string" ? generated.receivedReport : fallback.receivedReport,
-        reportingCalculation: generated.reportingCalculation,
-        reportText: generated.reportText
-      };
-    });
-    return { provider: response.provider || "fallback", chain };
-  }
-
-  async function resolvePending(item) {
+  function preparePending(item) {
     const documentItem = findDocument(item.caseId);
     const option = documentItem.options[item.optionIndex];
     const averageFidelity = item.chain.reduce((sum, step) => sum + step.fidelity, 0) / item.chain.length;
@@ -1791,8 +1702,11 @@
     const outcome = { ...(success ? option.success : option.failure), success };
     const finalEffects = mergeEffects(outcome.effects, item.modifiers);
     const fallbackCompletionChain = buildCompletionChain(item, outcome, success);
-    const enrichedCompletion = await enrichCompletionChain(item, outcome, fallbackCompletionChain);
-    return () => {
+    return { item, documentItem, averageFidelity, outcome, success, finalEffects, fallbackCompletionChain };
+  }
+
+  function commitPending(prepared, enrichedCompletion) {
+    const { item, documentItem, averageFidelity, outcome, success, finalEffects } = prepared;
     const completionChain = enrichedCompletion.chain;
     completionChain.forEach((completion) => {
       const agent = agentById(completion.agentId);
@@ -1834,55 +1748,198 @@
     state.reports.unshift(report);
     state.unreadReports += 1;
     return report;
-    };
+  }
+
+  function dayRequests(candidates) {
+    return candidates.map(({ item, agent, step }) => {
+      const level = item.chain.indexOf(step);
+      return {
+        directiveId: item.id, stepId: item.id + ":" + level, level,
+        predecessorStepId: level > 0 && candidates.some(c => c.item === item && c.step === item.chain[level - 1])
+          ? item.id + ":" + (level - 1) : null,
+        era: state.era, day: step.day, orderText: item.orderText, receivedText: step.receivedText,
+        analysis: { clarity: item.analysis.clarity, clarityLabel: item.analysis.clarityLabel, dominant: item.analysis.dominant },
+        agent: agentDescriptor(agent),
+        controllerProjection: {
+          narrative: { interpretation: step.interpretation, calculation: step.calculation, action: step.action,
+            officialReport: step.officialReport, forwardedText: step.forwardedText },
+          fidelity: step.fidelity, holdDays: step.holdDays || 0, effects: step.effects
+        }
+      };
+    });
+  }
+
+  function validateDayResult(result, payload) {
+    if (result?.dayRunId !== payload.dayRunId || !Array.isArray(result.propagation)
+      || !Array.isArray(result.completions) || result.propagation.length !== payload.propagation.length
+      || result.completions.length !== payload.completions.length) return false;
+    const down = new Map(result.propagation.map(step => [step.stepId, step]));
+    const up = new Map(result.completions.map(chain => [chain.directiveId, chain]));
+    if (down.size !== payload.propagation.length || up.size !== payload.completions.length) return false;
+    const source = value => ["model", "fallback"].includes(value);
+    return payload.propagation.every(step => {
+      const value = down.get(step.stepId);
+      return value && source(value.provider) && isAgentNarrative(value.narrative)
+        && value.receivedText === (step.predecessorStepId
+          ? down.get(step.predecessorStepId)?.narrative?.forwardedText : step.receivedText);
+    }) && payload.completions.every(chain => {
+      const value = up.get(chain.directiveId);
+      return value && ["model", "mixed", "fallback"].includes(value.provider)
+        && Array.isArray(value.completionChain) && value.completionChain.length === chain.agents.length
+        && value.completionChain.every((report, index) => report.agentId === chain.agents[index].agent.id
+          && source(report.provider) && typeof report.reportText === "string" && report.reportText.trim()
+          && typeof report.reportingCalculation === "string"
+          && report.receivedReport === (index ? value.completionChain[index - 1].reportText
+            : "现场执行实情：" + chain.outcome.title + "。" + chain.outcome.text));
+    });
+  }
+
+  function showDayProgress(run, event) {
+    if (activeDayRun !== run || event.dayRunId !== run.id) return;
+    const opaque = run.difficulty === "opaque";
+    if (!opaque && event.down && event.up) {
+      $("#dayDownCount").textContent = "政令下行：" + event.down.done + " / " + event.down.total + " 个环节";
+      $("#dayUpCount").textContent = "办结回文：" + event.up.done + " / " + event.up.total + " 个环节";
+      $("#dayDownProgress").max = Math.max(1, event.down.total);
+      $("#dayDownProgress").value = event.down.done;
+      $("#dayUpProgress").max = Math.max(1, event.up.total);
+      $("#dayUpProgress").value = event.up.done;
+    }
+    if (event.official) {
+      $("#dayCurrent").textContent = event.status === "completed"
+        ? event.official + (event.phase === "up" ? "的办结回文已递到。" : "已具接令回文。")
+        : event.official + (event.phase === "up" ? "正在拟具上呈回文。" : "正在阅令转行。");
+    }
+    if (event.status === "completed" && event.report) {
+      const card = document.createElement("article");
+      const title = document.createElement("strong");
+      title.textContent = event.official + (event.phase === "up" ? " · 办结回文" : " · 接令回文");
+      card.append(title);
+      for (const text of [event.report, ...(run.difficulty === "guided" ? [event.action, event.calculation] : [])]) {
+        if (!text) continue;
+        const paragraph = document.createElement("p");
+        paragraph.textContent = text;
+        card.append(paragraph);
+      }
+      $("#dayMessages").prepend(card);
+    }
+  }
+
+  function openDayProgress(run) {
+    run.previousFocus = document.activeElement;
+    $("#dayMessages").replaceChildren();
+    $("#dayProgressCounts").hidden = run.difficulty === "opaque";
+    $("#dayDownCount").textContent = "政令下行：待转行";
+    $("#dayUpCount").textContent = "办结回文：待呈递";
+    $("#dayDownProgress").value = 0;
+    $("#dayUpProgress").value = 0;
+    $("#dayCurrent").textContent = "所属衙门办理中，回文抵达后将在此呈阅。";
+    $("#dayWaitHint").textContent = "本日政令正在传递，无需重复退堂。";
+    $("#dayElapsed").textContent = "已等待 0 秒";
+    $("#dayProgressModal").hidden = false;
+    $(".app-shell").inert = true;
+    $("#cancelDayButton").focus();
+    run.timer = setInterval(() => {
+      const elapsed = Math.floor((performance.now() - run.started) / 1000);
+      $("#dayElapsed").textContent = "已等待 " + elapsed + " 秒";
+      if (elapsed >= 20) $("#dayWaitHint").textContent = "各衙门仍在办理，请稍候，无需重复退堂。";
+    }, 1000);
   }
 
   async function endDay() {
     if (state.ended || agentBusy || Object.keys(state.decisions).length !== state.docket.length) return;
-    const activeState = state;
-    const dayStarted = performance.now();
-    setAgentBusy(true, "本日政令已齐，正在集中拟具各级回文");
+    const original = state;
+    const run = { id: crypto.randomUUID(), controller: new AbortController(), difficulty: state.difficulty, started: performance.now() };
+    activeDayRun = run;
+    stateEpoch++;
+    setAgentBusy(true);
+    openDayProgress(run);
+    let draft, payload, candidates = [], ready = [], prepared = [];
+    let usedFallback = false;
     try {
-      state.day += 1;
-      const ready = [];
-      const candidates = [];
-      state.pending.forEach((item) => {
-        if (advanceDirective(item)) ready.push(item);
-        item.chain.forEach((step) => {
-          if (step.provider === "pending") {
-            candidates.push({ item, agent: agentById(step.agentId), step });
-          }
+      // Existing mechanics operate synchronously on a private draft; restore the visible
+      // state before the first await so no timer or save can persist an unfinished day.
+      state = JSON.parse(JSON.stringify(original));
+      try {
+        state.day++;
+        state.pending.forEach(item => {
+          if (advanceDirective(item)) ready.push(item);
+          item.chain.forEach(step => {
+            if (step.provider === "pending") candidates.push({ item, agent: agentById(step.agentId), step });
+          });
         });
-      });
-      await enrichAgentStepsBatch(candidates);
-      if (state !== activeState) return;
-      const commits = await Promise.all(ready.map(resolvePending));
-      if (state !== activeState) return;
-      const freshReports = commits.map(commit => commit());
-      state.pending = state.pending.filter((item) => !ready.includes(item));
-      const promotion = updateRank();
-      if (promotion) {
-        freshReports.unshift({
-          success: true,
-          category: "考成",
-          title: "吏部考成",
-          text: promotion,
-          cause: "任期内多道政令的执行结果汇入考成。",
-          effects: {},
-          chain: [],
-          read: true
-        });
+        prepared = ready.map(preparePending);
+        payload = {
+          protocolVersion: 1, dayRunId: run.id, difficulty: run.difficulty,
+          propagation: dayRequests(candidates),
+          completions: prepared.map(({ item, outcome, fallbackCompletionChain }) => ({
+            directiveId: item.id,
+            dependsOnStepId: candidates.some(c => c.item === item) ? item.id + ":" + (item.chain.length - 1) : null,
+            era: state.era, day: state.day, orderText: item.orderText,
+            outcome: { success: outcome.success, title: outcome.title, text: outcome.text },
+            agents: fallbackCompletionChain.map(fallback => ({ agent: agentDescriptor(agentById(fallback.agentId)), fallback }))
+          }))
+        };
+        draft = state;
+      } finally { state = original; }
+      let result;
+      try {
+        if (!window.GuanLiaoAgents?.day) throw new Error("Day API unavailable");
+        result = await window.GuanLiaoAgents.day(payload, event => showDayProgress(run, event), run.controller.signal);
+        if (!validateDayResult(result, payload)) throw new Error("Invalid day result");
+      } catch (error) {
+        if (run.controller.signal.aborted) return;
+        usedFallback = true;
+        console.warn("[GuanLiao] day response unavailable; applying prepared fallback");
       }
+      if (run.controller.signal.aborted || activeDayRun !== run || state !== original) return;
+      state = draft;
+      const down = new Map((usedFallback ? [] : result.propagation).map(step => [step.stepId, step]));
+      candidates.forEach(({ item, agent, step }) => {
+        const index = item.chain.indexOf(step);
+        const value = down.get(item.id + ":" + index);
+        step.receivedText = value?.receivedText || (index ? item.chain[index - 1].forwardedText : item.orderText);
+        if (value) applyAgentNarrative(item, agent, step, value.narrative, value.provider);
+        else step.provider = "fallback";
+      });
+      const up = new Map((usedFallback ? [] : result.completions).map(chain => [chain.directiveId, chain]));
+      const freshReports = prepared.map(entry => {
+        const generated = up.get(entry.item.id);
+        return commitPending(entry, generated
+          ? { chain: generated.completionChain, provider: generated.provider }
+          : { chain: entry.fallbackCompletionChain, provider: "fallback" });
+      });
+      state.pending = state.pending.filter(item => !ready.includes(item));
+      const promotion = updateRank();
+      if (promotion) freshReports.unshift({
+        success: true, category: "考成", title: "吏部考成", text: promotion,
+        cause: "任期内多道政令的执行结果汇入考成。", effects: {}, chain: [], read: true
+      });
       drawDocket();
       saveState();
       renderAll();
-      window.scrollTo({ top: 0, behavior: "smooth" });
       if (state.ended) renderEnding();
       else if (freshReports.length) showResultModal(freshReports);
       else showToast("新的一日，政令又向下转行了一层");
+      if (usedFallback || result?.fallbackCount) showToast("部分回文暂未送达，本日已按备用文本结算。");
+    } catch (error) {
+      // No partial-day save is made if local preparation/commit fails.
+      state = original;
+      renderAll();
+      showToast("本日办理未完成，案头与存档保持原状。");
+      console.error("[GuanLiao] day settlement failed");
     } finally {
-      console.info("[GuanLiao] end_day_ms=" + Math.round(performance.now() - dayStarted));
-      setAgentBusy(false);
+      clearInterval(run.timer);
+      console.info("[GuanLiao] day=" + run.id + " click_to_done_ms=" + Math.round(performance.now() - run.started));
+      if (activeDayRun === run) {
+        activeDayRun = null;
+        $("#dayProgressModal").hidden = true;
+        $(".app-shell").inert = false;
+        setAgentBusy(false);
+        if (!$("#resultModal").hidden) $("#closeResultButton").focus();
+        else if (!$("#endingModal").hidden) $("#endingReportsButton").focus();
+        else run.previousFocus?.focus();
+      }
     }
   }
 
@@ -1939,6 +1996,17 @@
   }
 
   function bindEvents() {
+    $("#cancelDayButton").addEventListener("click", () => {
+      activeDayRun?.controller.abort();
+      showToast("已返回案头，本日尚未结算。");
+    });
+    $("#dayProgressModal").addEventListener("keydown", event => {
+      if (event.key === "Escape") { event.preventDefault(); activeDayRun?.controller.abort(); }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        (document.activeElement === $("#cancelDayButton") ? $("#dayMessages") : $("#cancelDayButton")).focus();
+      }
+    });
     $("#documentStack").addEventListener("click", (event) => {
       const customButton = event.target.closest(".custom-dispatch");
       if (customButton) {

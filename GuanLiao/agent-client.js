@@ -93,6 +93,60 @@
   }
 
   window.GuanLiaoAgents = {
+    async day(payload, onProgress, parentSignal) {
+      const controller = new AbortController();
+      const cancel = () => controller.abort(parentSignal?.reason);
+      if (parentSignal?.aborted) cancel();
+      else parentSignal?.addEventListener("abort", cancel, { once: true });
+      const timer = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
+      let reader;
+      try {
+        const response = await fetch("/api/agents/day", {
+          method: "POST", signal: controller.signal,
+          headers: { "content-type": "application/json", accept: "text/event-stream" },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok || !response.body || !response.headers.get("content-type")?.includes("text/event-stream")) {
+          throw new Error("Day stream unavailable");
+        }
+        reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "", result = null;
+        const consume = () => {
+          let boundary;
+          while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+            const frame = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            const lines = frame.split("\n");
+            const event = lines.find(line => line.startsWith("event:"))?.slice(6).trim();
+            const data = lines.filter(line => line.startsWith("data:")).map(line => line.slice(5).trimStart()).join("\n");
+            if (!data) continue;
+            const value = JSON.parse(data);
+            if (value.dayRunId !== payload.dayRunId) throw new Error("Day identity mismatch");
+            if (event === "failure") throw new Error("Day stream interrupted");
+            if (event === "progress" && !result) onProgress?.(value);
+            if (event === "result") {
+              if (result) throw new Error("Duplicate day result");
+              result = value;
+            }
+          }
+        };
+        while (true) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value, { stream: !done });
+          buffer = buffer.replace(/\r\n/g, "\n");
+          if (buffer.length > 4 * 1024 * 1024) throw new Error("Day frame too large");
+          consume();
+          if (result) return result;
+          if (done) throw new Error("Missing final day result");
+        }
+      } finally {
+        clearTimeout(timer);
+        parentSignal?.removeEventListener("abort", cancel);
+        await reader?.cancel().catch(() => {});
+        controller.abort();
+      }
+    },
     async propagate(payload) {
       return agentRequest("/api/agents/propagate", payload);
     },
