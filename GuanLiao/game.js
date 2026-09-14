@@ -607,7 +607,6 @@
   let toastTimer = null;
   let agentBusy = false;
   let activeDayRun = null;
-  let daySettlementCancelled = false;
   let remoteStateReady = false;
   let remoteSaveTimer = null;
   let stateEpoch = 0;
@@ -1594,7 +1593,6 @@
   function issueDecision(caseId, optionIndex, customText = "") {
     if (state.ended || agentBusy || !state.docket.includes(caseId) || state.decisions[caseId] !== undefined) return;
     const documentItem = findDocument(caseId);
-    daySettlementCancelled = false;
     const trimmedCustom = customText.trim();
     if (trimmedCustom && trimmedCustom.length < 4) {
       showToast("朱批至少写四个字");
@@ -1840,7 +1838,7 @@
     $("#dayElapsed").textContent = "已等待 0 秒";
     $("#dayProgressModal").hidden = false;
     $(".app-shell").inert = true;
-    $("#cancelDayButton").focus();
+    $("#dayMessages").focus();
     run.timer = setInterval(() => {
       const elapsed = Math.floor((performance.now() - run.started) / 1000);
       $("#dayElapsed").textContent = "已等待 " + elapsed + " 秒";
@@ -1998,28 +1996,10 @@
   }
 
   function bindEvents() {
-    $("#cancelDayButton").addEventListener("click", () => {
-      if (activeDayRun) {
-        activeDayRun.cancelled = true;
-        activeDayRun.controller.abort();
-        daySettlementCancelled = false;
-        renderAll();
-      }
-      showToast("已返回案头，本日尚未结算。");
-    });
     $("#dayProgressModal").addEventListener("keydown", event => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        if (activeDayRun) {
-          activeDayRun.cancelled = true;
-          activeDayRun.controller.abort();
-          daySettlementCancelled = false;
-          renderAll();
-        }
-      }
       if (event.key === "Tab") {
         event.preventDefault();
-        (document.activeElement === $("#cancelDayButton") ? $("#dayMessages") : $("#cancelDayButton")).focus();
+        $("#dayMessages").focus();
       }
     });
     $("#documentStack").addEventListener("click", (event) => {
