@@ -607,6 +607,7 @@
   let toastTimer = null;
   let agentBusy = false;
   let activeDayRun = null;
+  let daySettlementCancelled = false;
   let remoteStateReady = false;
   let remoteSaveTimer = null;
   let stateEpoch = 0;
@@ -1109,7 +1110,7 @@
     } else {
       $("#emptyDesk").innerHTML = `<div class="empty-seal" aria-hidden="true">毕</div><h2>今日案牍已清</h2><p>可退堂更衣。待明日，政令自有回响。</p>`;
     }
-    $("#endDayButton").disabled = ended || agentBusy || handled !== total;
+    $("#endDayButton").disabled = ended || agentBusy || handled !== total || daySettlementCancelled;
     if (agentBusy || ended) {
       $$("#documentStack .decision-button, #documentStack .custom-dispatch").forEach((button) => { button.disabled = true; });
     }
@@ -1593,6 +1594,7 @@
   function issueDecision(caseId, optionIndex, customText = "") {
     if (state.ended || agentBusy || !state.docket.includes(caseId) || state.decisions[caseId] !== undefined) return;
     const documentItem = findDocument(caseId);
+    daySettlementCancelled = false;
     const trimmedCustom = customText.trim();
     if (trimmedCustom && trimmedCustom.length < 4) {
       showToast("朱批至少写四个字");
@@ -1849,7 +1851,7 @@
   async function endDay() {
     if (state.ended || agentBusy || Object.keys(state.decisions).length !== state.docket.length) return;
     const original = state;
-    const run = { id: crypto.randomUUID(), controller: new AbortController(), difficulty: state.difficulty, started: performance.now() };
+    const run = { id: crypto.randomUUID(), controller: new AbortController(), difficulty: state.difficulty, started: performance.now(), cancelled: false };
     activeDayRun = run;
     stateEpoch++;
     setAgentBusy(true);
@@ -1997,11 +1999,24 @@
 
   function bindEvents() {
     $("#cancelDayButton").addEventListener("click", () => {
-      activeDayRun?.controller.abort();
+      if (activeDayRun) {
+        activeDayRun.cancelled = true;
+        activeDayRun.controller.abort();
+        daySettlementCancelled = true;
+        renderAll();
+      }
       showToast("已返回案头，本日尚未结算。");
     });
     $("#dayProgressModal").addEventListener("keydown", event => {
-      if (event.key === "Escape") { event.preventDefault(); activeDayRun?.controller.abort(); }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (activeDayRun) {
+          activeDayRun.cancelled = true;
+          activeDayRun.controller.abort();
+          daySettlementCancelled = true;
+          renderAll();
+        }
+      }
       if (event.key === "Tab") {
         event.preventDefault();
         (document.activeElement === $("#cancelDayButton") ? $("#dayMessages") : $("#cancelDayButton")).focus();
