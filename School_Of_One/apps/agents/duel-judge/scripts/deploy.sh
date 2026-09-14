@@ -25,22 +25,17 @@ echo "Image: ${REGISTRY}/duel-judge:latest"
 # 2. 创建命名空间
 kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml $K | kubectl apply $K -f -
 
-# 3. 注入 duel_judge.py 到 ConfigMap
-kubectl create configmap duel-judge-code -n ${NAMESPACE} \
-    --from-file=duel_judge.py=./duel_judge.py \
-    --dry-run=client -o yaml $K | kubectl apply $K -f -
-
-# 4. 部署
+# 3. 部署（代码由镜像提供，见 Dockerfile 的 COPY）
 sed "s/__NAMESPACE__/${NAMESPACE}/g" k8s/deployment.yaml | kubectl apply $K -f -
 
-# 5. 重启
+# 4. 重启
 kubectl rollout restart deploy/duel-judge -n ${NAMESPACE} $K
 
-# 6. 等待就绪
+# 5. 等待就绪
 echo "=== Waiting for deployment to become ready ==="
 kubectl rollout status deploy/duel-judge -n ${NAMESPACE} $K --timeout=120s
 
-# 7. 检查 pod 状态
+# 6. 检查 pod 状态
 echo "=== Pods ==="
 kubectl get pods -n ${NAMESPACE} $K | grep duel-judge
 

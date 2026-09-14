@@ -22,12 +22,7 @@ docker push ${REGISTRY}/combo-judge:latest
 # 命名空间
 kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml $K | kubectl apply $K -f -
 
-# ConfigMap 注入代码
-kubectl create configmap combo-judge-code -n ${NAMESPACE} \
-    --from-file=combo_judge.py=./combo_judge.py \
-    --dry-run=client -o yaml $K | kubectl apply $K -f -
-
-# 部署
+# 部署（代码由镜像提供，见 Dockerfile 的 COPY）
 sed "s/__NAMESPACE__/${NAMESPACE}/g" k8s/deployment.yaml | kubectl apply $K -f -
 
 # 重启

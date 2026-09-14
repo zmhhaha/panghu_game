@@ -121,6 +121,20 @@ kubectl exec -n school-of-one deploy/frontend -- sh -c \
 
 ## Python Agent ConfigMap 挂载问题
 
+> ### ⚠️ 已废弃的做法（2026-09-14 标注）
+>
+> 本节描述的 **ConfigMap 挂载代码**方案已经不使用了。现在三个 judge 的代码都由镜像提供
+> （各 `Dockerfile` 里的 `COPY . .`），`k8s/deployment.yaml` 只有 `envFrom: agent-config`，
+> **没有任何 `volumes` / `volumeMounts`**。
+>
+> 部署脚本里曾经仍然在创建 `duel-judge-code` / `combo-judge-code` / `training-code`
+> 三个 ConfigMap，但**没有任何 Deployment 挂载它们** —— 每次部署建一份死配置。这三步已从
+> `scripts/deploy.sh` 移除，集群里的三个 ConfigMap 也已删除。
+>
+> **下面保留原文，因为排查思路仍然通用**（`subPath` 不跟随 ConfigMap 更新、ConfigMap key
+> 不支持 `/`）—— 只是现在不适用于本项目。判断某个 ConfigMap 是不是死配置，看它**有没有被
+> 任何工作负载的 `envFrom` / `env.valueFrom` / `volumes` 引用**。
+
 ### 问题描述
 
 training-ground Agent 的 Python 代码更新后，重启 Pod 但新代码未生效，ConfigMap 内容已更新但 Pod 内仍是旧文件。

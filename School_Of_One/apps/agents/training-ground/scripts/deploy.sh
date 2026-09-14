@@ -21,10 +21,7 @@ docker push ${REGISTRY}/training-ground:latest
 
 kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml $K | kubectl apply $K -f -
 
-kubectl create configmap training-code -n ${NAMESPACE} \
-    --from-file=training_ground.py=./training_ground.py \
-    --dry-run=client -o yaml $K | kubectl apply $K -f -
-
+# 代码由镜像提供，见 Dockerfile 的 COPY
 sed "s/__NAMESPACE__/${NAMESPACE}/g" k8s/deployment.yaml | kubectl apply $K -f -
 
 kubectl rollout restart deploy/training-ground -n ${NAMESPACE} $K

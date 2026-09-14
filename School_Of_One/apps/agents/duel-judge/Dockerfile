@@ -5,7 +5,8 @@
 ARG REGISTRY=arm-cluster-master:5000
 FROM ${REGISTRY}/duel-judge-base:latest
 
-# 复制代码（duel_judge.py 在 ConfigMap 中覆盖）
+# 复制代码。duel_judge.py 由镜像提供 —— 部署脚本曾经另外建一个 duel-judge-code
+# ConfigMap 想覆盖它，但 Deployment 从来没挂载过，那是套死代码，已移除。
 COPY . .
 
 ENV PYTHONUNBUFFERED=1
