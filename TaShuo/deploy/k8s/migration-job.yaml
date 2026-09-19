@@ -4,6 +4,7 @@ metadata:
   name: tashuo-db-migration
   namespace: tashuo
 spec:
+  ttlSecondsAfterFinished: 3600
   backoffLimit: 3
   template:
     metadata:
@@ -21,4 +22,3 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef: { name: tashuo-database, key: url }
-

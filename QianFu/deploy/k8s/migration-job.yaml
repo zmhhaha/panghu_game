@@ -4,6 +4,7 @@ metadata:
   name: qianfu-db-migration
   namespace: qianfu
 spec:
+  ttlSecondsAfterFinished: 3600
   backoffLimit: 3
   template:
     metadata:
