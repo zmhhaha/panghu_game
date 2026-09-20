@@ -67,6 +67,8 @@ Model calls go exclusively through the in-cluster `llm-service`; XuYe holds no p
 
 The Pod template carries the `llm-client: "true"` label because the `llm-service` NetworkPolicy admits only labelled Pods — omitting it surfaces as a timeout, not as a 401.
 
+> 🔴 **Correction (2026-09-20, measured on the cluster):** that NetworkPolicy is **not in effect** — the CNI is `kube-flannel`, which does not implement NetworkPolicy, so the label gates nothing today. Writing the label remains correct (it becomes the admission condition once a policy engine exists), but omitting it currently does **not** surface as a timeout. See [docs/network-policy-engine.md](../../docs/network-policy-engine.md).
+
 Build and apply the baseline manifests:
 
 ```bash

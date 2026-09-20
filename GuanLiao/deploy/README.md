@@ -62,6 +62,8 @@ kubectl exec -n vault vault-0 -- vault kv patch secret/llm-service/callers \
 
 Pod 模板带 `llm-client: "true"` 标签 —— llm-service 的 NetworkPolicy 只放行带此标签的 Pod，**缺了表现为超时而不是 401**，这是本迁移最容易踩的坑。
 
+> 🔴 **更正（2026-09-20 实测）**：该 NetworkPolicy 在本集群**未生效** —— CNI 是 `kube-flannel`，不实现 NetworkPolicy，标签当前不构成任何准入。打标签仍是正确写法，但**缺了当前不会被拦，也不会表现为超时** —— 遇到超时请往别处查。见 [docs/network-policy-engine.md](../../../docs/network-policy-engine.md)。
+
 `LLM_BASE_URL` / `LLM_SERVICE_TOKEN` 缺失时应用进程不报错，只退回主控给出的确定性文本；标准 `deploy.sh` 会先等待并校验 `llm-token` Secret，避免声明启用模型却以 fallback 状态上线。
 
 客户端完成当天批示后才请求模型。整日协议使用 dayRunId 关联下行步骤与办结链；同一政令后级等待前级最终 forwardedText，其最后下行一旦完成，办结即可与其他政令下行同时进行。每次下行最多两条不同政令，办结每级独立调用。结果按 ID 校验、重排，截止时保留成功步骤并补齐未完成节点的备用文本。旧 `propagate-batch`、`complete` 接口仍兼容；新版退堂失败后不会自动重发旧接口或重新抽取随机结果。

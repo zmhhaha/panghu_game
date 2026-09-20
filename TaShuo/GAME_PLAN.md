@@ -946,6 +946,8 @@ TaShuo 侧只保留三件非敏感的事：`LLM_BASE_URL`（集群内入口）�
 
 Pod 模板带 `llm-client: "true"` 标签 —— `llm-service` 的 NetworkPolicy 只放行带此标签的 Pod，缺了表现为超时而不是 401。
 
+> 🔴 **更正（2026-09-20 实测）**：该 NetworkPolicy 在本集群**未生效**——CNI 是 `kube-flannel`，不实现 NetworkPolicy，标签当前不构成任何准入。打标签仍是正确写法（策略生效后即为准入条件），但**缺了当前不会被拦**，也不会表现为超时。见 [docs/network-policy-engine.md](../../docs/network-policy-engine.md)。
+
 ### 13.6 无 fallback 原则
 
 生产环境必须配置一个可用的模型 Provider。Provider 缺失时服务启动失败，不能进入无模型模式。
