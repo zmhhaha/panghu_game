@@ -1,11 +1,11 @@
 # ============================================================
 #  Frontend + Server 构建 + 部署脚本
 #  用法:
-#    bash deploy-frontend-server.sh                # 构建 frontend + server
-#    bash deploy-frontend-server.sh --push         # 构建 + 推送 + 重启 K8s
+#    bash deploy-frontend-server.sh                # 构建 + 推送 + 重启 K8s（默认）
+#    bash deploy-frontend-server.sh --no-push      # 仅构建（不推送、不重启）
 #    bash deploy-frontend-server.sh --restart      # 仅重启 K8s 部署
-#    bash deploy-frontend-server.sh --push --frontend-only  # 仅 frontend
-#    bash deploy-frontend-server.sh --push --server-only    # 仅 server
+#    bash deploy-frontend-server.sh --frontend-only  # 仅 frontend
+#    bash deploy-frontend-server.sh --server-only    # 仅 server
 # ============================================================
 set -euo pipefail
 
@@ -17,17 +17,19 @@ BUILD_FRONTEND=true
 BUILD_SERVER=true
 
 # ── 解析参数 ────────────────────────────────────────────────
-PUSH_MODE=false
+# 默认构建 + 推送 + 重启 K8s；--no-push 仅构建（不推送、不重启）
+PUSH_MODE=true
 RESTART_MODE=false
 
 for arg in "$@"; do
   case "$arg" in
     --push)      PUSH_MODE=true ;;
+    --no-push)   PUSH_MODE=false ;;
     --restart)   RESTART_MODE=true ;;
     --frontend-only) BUILD_SERVER=false ;;
     --server-only)   BUILD_FRONTEND=false ;;
     --help|-h)
-      echo "用法: $0 [--push] [--restart] [--frontend-only|--server-only]"
+      echo "用法: $0 [--push|--no-push] [--restart] [--frontend-only|--server-only]"
       exit 0
       ;;
   esac
