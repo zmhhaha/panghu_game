@@ -1,3 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tewu-web-nginx-headers
+  namespace: tewu
+data:
+  # oauth2-proxy 的会话超过 4KB 时会被拆成多个 cookie，浏览器回传的 Cookie 行会超过
+  # nginx 默认的 4x8k，导致 400 Request Header Or Cookie Too Large。
+  # 2026-10-15 实测：修复前 9KB 单行必 400；修复后 9/16/20/30KB 均 200。
+  # 数值与国内 VPS 的 nginx 保持一致（那里修的是同一条链路的上一跳）。
+  00-large-headers.conf: |
+    client_header_buffer_size   16k;
+    large_client_header_buffers 8 32k;
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -22,6 +36,12 @@ spec:
           ports:
             - name: http
               containerPort: 80
+          volumeMounts:
+            # 只覆盖这一个文件名，不动镜像里原有的 conf.d/default.conf
+            - name: nginx-headers
+              mountPath: /etc/nginx/conf.d/00-large-headers.conf
+              subPath: 00-large-headers.conf
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /
@@ -41,6 +61,10 @@ spec:
             limits:
               cpu: 250m
               memory: 128Mi
+      volumes:
+        - name: nginx-headers
+          configMap:
+            name: tewu-web-nginx-headers
 ---
 apiVersion: v1
 kind: Service
