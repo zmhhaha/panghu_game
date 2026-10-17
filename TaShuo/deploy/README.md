@@ -15,7 +15,7 @@ Model calls go exclusively through the in-cluster `llm-service`, which owns the 
 alias routing and the prompt-hijack guard; TaShuo holds no provider credential of its own. See
 `llm-service/INTEGRATION.md` for the integration contract. `deploy/k8s/agent-configmap.yaml` carries
 only the non-secret half — `LLM_BASE_URL` and `LLM_MODEL`, where `LLM_MODEL` is an alias registered
-by `llm-service` (`custom-guarded`), not an upstream model name.
+by `llm-service` (`llm-guarded`), not an upstream model name.
 
 TaShuo does not switch provider or generate fallback content after a model error: a missing
 `LLM_BASE_URL` or `LLM_SERVICE_TOKEN` makes the process refuse to start rather than quietly degrade.

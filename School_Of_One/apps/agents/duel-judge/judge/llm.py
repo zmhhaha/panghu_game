@@ -3,7 +3,7 @@
 本服务不持有任何 provider 凭据：密钥、模型别名路由、超时重试与提示词劫持防护
 都由 llm-service 负责（见 llm-service/README.md）。这里只给别名和内部令牌。
 
-`LLM_MODEL` 传的是 llm-service 注册的**别名**（如 `custom-guarded`），不是上游模型名 ——
+`LLM_MODEL` 传的是 llm-service 注册的**别名**（如 `llm-guarded`），不是上游模型名 ——
 别改回 `deepseek-v4-flash` 之类的真实模型名，那样会被 400 拒掉。
 """
 
@@ -23,7 +23,7 @@ _client: OpenAI | None = None
 
 def get_model_alias() -> str:
     """llm-service 注册的模型别名（不是上游模型名）。"""
-    return os.getenv("LLM_MODEL", "custom-guarded")
+    return os.getenv("LLM_MODEL", "llm-guarded")
 
 
 def _get_client() -> OpenAI:

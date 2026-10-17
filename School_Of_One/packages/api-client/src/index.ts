@@ -94,16 +94,6 @@ async function request<T>(
 
 // ── API 模块 ──────────────────────────────────────────────
 
-/**
- * 连招判定缓存
- * key = "${moveA}|${moveB}" 的 MD5 简化版
- */
-const comboCache = new Map<string, ComboJudgeResponse>();
-
-function comboCacheKey(params: { moveA: string; moveB: string }): string {
-  return `${params.moveA.slice(0, 80)}|${params.moveB.slice(0, 80)}`;
-}
-
 export const apiClient = {
   health: {
     check(signal?: AbortSignal) {
@@ -170,19 +160,11 @@ export const apiClient = {
       params: { moveA: string; moveB: string },
       signal?: AbortSignal,
     ) {
-      const key = comboCacheKey(params);
-      const cached = comboCache.get(key);
-      if (cached) return Promise.resolve(cached);
-
-      return request<ComboJudgeResponse>("POST", "/api/ai/combo/judge", params, { signal })
-        .then((res) => {
-          comboCache.set(key, res);
-          return res;
-        });
+      return request<ComboJudgeResponse>("POST", "/api/ai/combo/judge", params, { signal });
     },
-    /** 清除连招缓存（换卡组或起手式变化时调用） */
+    /** 判定结果不再缓存；保留调用接口供 UI 清理动作使用。 */
     clearCache() {
-      comboCache.clear();
+      // No result cache: upstream can change centrally.
     },
   },
 

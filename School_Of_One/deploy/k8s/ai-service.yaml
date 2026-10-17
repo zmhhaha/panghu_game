@@ -15,4 +15,4 @@ data:
   # 这是 llm-service 注册的**别名**，不是上游模型名 —— 别改回 deepseek-v4-flash 之类，会 400。
   # 三个 judge 的输入都是「玩家写自由文本」，所以走 guarded 档：
   # 禁 tools/response_format，但服务端会做不可信内容分隔（spotlight）与 canary 泄漏检测。
-  LLM_MODEL: "custom-guarded"
+  LLM_MODEL: "llm-guarded"

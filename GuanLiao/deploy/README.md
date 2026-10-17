@@ -54,7 +54,7 @@ kubectl exec -n vault vault-0 -- vault kv patch secret/llm-service/callers \
 
 `vault/inventory/guanliao-llm-token-externalsecret.yaml` 用 `data` + `property` 只取这一个键，渲染成 `guanliao/llm-token` Secret 的 `LLM_SERVICE_TOKEN` —— Pod 拿不到别的调用方的令牌。llm-service 由变量名反推身份（`LLM_TOKEN_GUANLIAO` → `guanliao`），所以请求里不需要 `X-Caller`。
 
-`deploy/k8s/agent-configmap.yaml` 只放非敏感的接线：走哪个入口（`LLM_BASE_URL`）、用哪个别名（`LLM_MODEL`）、超时（`LLM_TIMEOUT_MS`）。别名是 llm-service 注册的**别名**而不是上游模型名，改回 `deepseek-v4-flash` 之类会被 400 拒掉。玩家原批是自由文本，所以走 `custom-guarded` 档：禁 `tools` / `response_format`，但服务端会分隔不可信内容并检测 canary 泄漏。
+`deploy/k8s/agent-configmap.yaml` 只放非敏感的接线：走哪个入口（`LLM_BASE_URL`）、用哪个别名（`LLM_MODEL`）、超时（`LLM_TIMEOUT_MS`）。别名是 llm-service 注册的**别名**而不是上游模型名，改回 `deepseek-v4-flash` 之类会被 400 拒掉。玩家原批是自由文本，所以走 `llm-guarded` 档：禁 `tools` / `response_format`，但服务端会分隔不可信内容并检测 canary 泄漏。
 
 新版退堂通过一次 `POST /api/agents/day` 完成下行与办结，整日共用 60 秒服务端预算（包含排队、生成和最多一次修复），办结不会重新计时。`LLM_TIMEOUT_MS=120000` 只是单次调用上限，实际同时受剩余总预算限制。浏览器超时 75 秒并覆盖整个流，心跳不会重置计时；部署脚本为 GuanLiao 的 oauth2-proxy 上游设置 `timeout: 80s`。认证刷新发生在应用预算之外；Cloudflare 的实际流式转发需部署后核对，不能只看 HTTP 200 就判断结算完成。
 

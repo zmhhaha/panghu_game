@@ -137,13 +137,13 @@ def load_works() -> list[dict[str, Any]]:
 def model_config() -> dict[str, Any]:
     """模型调用统一走集群内 llm-service；本服务不持有任何 provider 凭据。
 
-    `LLM_MODEL` 传的是 llm-service 注册的**别名**（如 custom-guarded），不是上游模型名 ——
+    `LLM_MODEL` 传的是 llm-service 注册的**别名**（如 llm-guarded），不是上游模型名 ——
     改回 `deepseek-v4-flash` 之类会被 400 拒掉。
     `LLM_MAX_TOKENS` 默认**不设**（见 optional_positive_int）；确实要设时最高 2048。
     """
     base_url = env("LLM_BASE_URL")
     api_key = env("LLM_SERVICE_TOKEN")
-    model = env("LLM_MODEL", "custom-guarded")
+    model = env("LLM_MODEL", "llm-guarded")
     return {
         "provider": "llm-service",
         "base_url": base_url.rstrip("/"),
