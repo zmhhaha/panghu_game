@@ -79,12 +79,12 @@ function fallbackDecision(job) {
 
 function providerConfig() {
   // 模型调用统一走集群内 llm-service；本服务不再持有任何 provider 凭据。
-  // model 传的是 llm-service 注册的**别名**（如 deepseek-guarded），不是上游模型名。
+  // model 传的是 llm-service 注册的**别名**（如 custom-guarded），不是上游模型名。
   // 配置缺失时退回规则口径（rules-v1）——那是产品行为，不是直连 provider 的兜底。
   const baseUrl = process.env.LLM_BASE_URL;
   const apiKey = process.env.LLM_SERVICE_TOKEN;
   if (!baseUrl || !apiKey) return { provider: "fallback", apiKey: null, baseUrl: null, model: "rules-v1" };
-  return { provider: "llm-service", apiKey, baseUrl, model: process.env.LLM_MODEL || "deepseek-guarded" };
+  return { provider: "llm-service", apiKey, baseUrl, model: process.env.LLM_MODEL || "custom-guarded" };
 }
 
 /**

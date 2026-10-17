@@ -8,7 +8,7 @@ data:
   # LLM_MODEL 是 llm-service 注册的**别名**，不是上游模型名 —— 改回 deepseek-v4-flash 之类会 400。
   # 玩家原批是自由文本，所以走 guarded 档（禁 tools/response_format，但做不可信内容分隔与 canary 检测）。
   LLM_BASE_URL: http://llm-service.llm.svc.cluster.local/v1
-  LLM_MODEL: deepseek-guarded
+  LLM_MODEL: custom-guarded
   # 单次调用同时受批次剩余时间限制；排队与修复共用 60 秒总预算。
   LLM_TIMEOUT_MS: "120000"
   LLM_PROPAGATION_CHUNK_SIZE: "2"

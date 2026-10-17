@@ -46,7 +46,7 @@ describe("createAgentProvider", () => {
   it("targets the in-cluster llm-service", () => {
     vi.stubEnv("LLM_BASE_URL", "http://llm-service.llm.svc.cluster.local/v1");
     vi.stubEnv("LLM_SERVICE_TOKEN", "test-token");
-    vi.stubEnv("LLM_MODEL", "deepseek-guarded");
+    vi.stubEnv("LLM_MODEL", "custom-guarded");
 
     expect(createAgentProvider()?.name).toBe("llm-service");
   });

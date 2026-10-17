@@ -16,16 +16,16 @@ describe("required model provider", () => {
       LLM_SERVICE_TOKEN: "test-token",
     });
     expect(provider.name).toBe("llm-service");
-    expect(provider.model).toBe("deepseek-guarded");
+    expect(provider.model).toBe("custom-guarded");
   });
 
   it("honours an explicitly configured alias", () => {
     const provider = createRequiredAgentProvider({
       LLM_BASE_URL: "http://llm-service.llm.svc.cluster.local/v1",
       LLM_SERVICE_TOKEN: "test-token",
-      LLM_MODEL: "deepseek-trusted",
+      LLM_MODEL: "custom-trusted",
     });
-    expect(provider.model).toBe("deepseek-trusted");
+    expect(provider.model).toBe("custom-trusted");
   });
 
   it("parses fenced structured output", () => {

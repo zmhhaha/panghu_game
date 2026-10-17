@@ -81,7 +81,7 @@ export function optionalMaxTokens(): number | null {
 
 /**
  * 模型调用统一走集群内 llm-service：密钥、别名路由与提示词劫持防护都由它负责。
- * LLM_MODEL 传的是 llm-service 注册的**别名**（deepseek-guarded），不是上游模型名 ——
+ * LLM_MODEL 传的是 llm-service 注册的**别名**（custom-guarded），不是上游模型名 ——
  * 改回 `deepseek-v4-flash` 之类会被 400 拒掉。
  *
  * 返回 null 表示未配置模型，此时编排器使用主控给出的确定性文本；这是产品行为，
@@ -93,7 +93,7 @@ export function createAgentProvider(): AgentProvider | null {
   if (!isHttpUrl(baseUrl)) return unavailableProvider("llm-service", "invalid LLM_BASE_URL");
   const apiKey = process.env.LLM_SERVICE_TOKEN?.trim();
   if (!apiKey) return unavailableProvider("llm-service", "missing LLM_SERVICE_TOKEN");
-  return new OpenAiCompatibleProvider("llm-service", baseUrl, apiKey, process.env.LLM_MODEL?.trim() || "deepseek-guarded");
+  return new OpenAiCompatibleProvider("llm-service", baseUrl, apiKey, process.env.LLM_MODEL?.trim() || "custom-guarded");
 }
 
 function unavailableProvider(name: string, reason: string): null {

@@ -64,7 +64,7 @@ const required = (value: string | undefined, name: string): string => {
 
 /**
  * 模型调用统一走集群内 llm-service：密钥、别名路由与提示词劫持防护都由它负责。
- * LLM_MODEL 传的是 llm-service 注册的**别名**（deepseek-guarded），不是上游模型名 ——
+ * LLM_MODEL 传的是 llm-service 注册的**别名**（custom-guarded），不是上游模型名 ——
  * 改回 `deepseek-v4-flash` 之类会被 400 拒掉。
  *
  * TaShuo 不提供 fallback：缺配置就抛错让进程拒绝启动，模型失败时游戏实例保持原状态等待重试。
@@ -72,7 +72,7 @@ const required = (value: string | undefined, name: string): string => {
 export function createRequiredAgentProvider(env: NodeJS.ProcessEnv = process.env): AgentProvider {
   const baseUrl = required(env.LLM_BASE_URL, "LLM_BASE_URL");
   const serviceToken = required(env.LLM_SERVICE_TOKEN, "LLM_SERVICE_TOKEN");
-  const model = env.LLM_MODEL?.trim() || "deepseek-guarded";
+  const model = env.LLM_MODEL?.trim() || "custom-guarded";
   const timeoutMs = Number(env.LLM_TIMEOUT_MS ?? 120_000);
   return new OpenAiCompatibleProvider("llm-service", baseUrl, serviceToken, model, timeoutMs);
 }

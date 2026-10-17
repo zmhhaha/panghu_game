@@ -929,7 +929,7 @@ final_reports
 
 大模型调用**统一走集群内 `llm-service`**，TaShuo 不持有任何 provider 凭据。provider 密钥、模型别名路由、重试与提示词劫持防护都由 `llm-service` 负责，接入规范见 `llm-service/INTEGRATION.md`。
 
-TaShuo 侧只保留三件非敏感的事：`LLM_BASE_URL`（集群内入口）、`LLM_MODEL`（llm-service 注册的**别名**，不是上游模型名）与 `LLM_SERVICE_TOKEN`（本项目的调用方令牌）。玩家发言是自由文本，所以走 `deepseek-guarded` 档：该档禁 `tools` 与 `response_format`，但服务端会分隔不可信内容并检测 canary 泄漏 —— 这也是把调用收敛进来的主要理由。
+TaShuo 侧只保留三件非敏感的事：`LLM_BASE_URL`（集群内入口）、`LLM_MODEL`（llm-service 注册的**别名**，不是上游模型名）与 `LLM_SERVICE_TOKEN`（本项目的调用方令牌）。玩家发言是自由文本，所以走 `custom-guarded` 档：该档禁 `tools` 与 `response_format`，但服务端会分隔不可信内容并检测 canary 泄漏 —— 这也是把调用收敛进来的主要理由。
 
 由于不能再用 `response_format` 强制结构化输出，每类 Agent 依靠 prompt 约束输出，并继续用独立 Zod schema 校验后才进入规则引擎；解析器容忍 Markdown 代码围栏，schema 不符时保留一次格式修复重试。
 

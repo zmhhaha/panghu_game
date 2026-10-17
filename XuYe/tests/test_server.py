@@ -36,12 +36,12 @@ class ServerTests(unittest.TestCase):
             os.environ.update({
                 "LLM_BASE_URL": "http://llm-service.llm.svc.cluster.local/v1",
                 "LLM_SERVICE_TOKEN": "test-token",
-                "LLM_MODEL": "deepseek-guarded",
+                "LLM_MODEL": "custom-guarded",
             })
             config = server.model_config()
             self.assertEqual(config["provider"], "llm-service")
             self.assertEqual(config["base_url"], "http://llm-service.llm.svc.cluster.local/v1")
-            self.assertEqual(config["model"], "deepseek-guarded")
+            self.assertEqual(config["model"], "custom-guarded")
             self.assertTrue(config["ready"])
         finally:
             for key, value in previous.items():

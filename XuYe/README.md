@@ -24,7 +24,7 @@ OpenAI-compatible `/chat/completions`；令牌不会发送到浏览器。接入�
 
 ```ini
 LLM_BASE_URL=http://llm-service.llm.svc.cluster.local/v1
-LLM_MODEL=deepseek-guarded
+LLM_MODEL=custom-guarded
 LLM_SERVICE_TOKEN=your-caller-token
 ```
 
