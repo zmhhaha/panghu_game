@@ -260,8 +260,8 @@ async function runCases() {
   console.log("judge-state: all assertions passed");
 }
 
-const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
-const serverSource = fs.readFileSync(path.join(__dirname, "..", "server", "server.js"), "utf8");
+const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8").replace(/\r\n/g, "\n");
+const serverSource = fs.readFileSync(path.join(__dirname, "..", "server", "server.js"), "utf8").replace(/\r\n/g, "\n");
 const browserEntry = 'const app = document.querySelector("#app");';
 const browserEntryIndex = appSource.indexOf(browserEntry);
 if (browserEntryIndex < 0) throw new Error("无法定位 app.js 的浏览器入口");

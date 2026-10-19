@@ -83,15 +83,19 @@ describe("CampaignOrchestrator", () => {
     vi.stubEnv("LLM_BASE_URL", "https://example.test/v1");
     vi.stubEnv("LLM_SERVICE_TOKEN", "test-token");
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: "{broken" } }] }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: '{"visibleSpeech":"档案科收存公文，你问这个做什么？","privateIntent":"观察来意","evidenceQuote":"","relationshipReaction":"respected_boundary","reactionReason":"玩家没有越过档案来源边界","requestedEffects":[]}' } }] }) });
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "{broken" }] }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"visibleSpeech":"档案科收存公文，你问这个做什么？","privateIntent":"观察来意","evidenceQuote":"","relationshipReaction":"respected_boundary","reactionReason":"玩家没有越过档案来源边界","requestedEffects":[]}' }] }] }) });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await createAgentProvider()?.complete("system", "user");
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const repairRequest = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
-    expect(repairRequest.messages.at(-1).content).toContain("relationshipReaction");
+    expect(fetchMock.mock.calls.every(([url]) => url === "https://example.test/v1/responses")).toBe(true);
+    expect(repairRequest.store).toBe(false);
+    expect(repairRequest).not.toHaveProperty("messages");
+    expect(repairRequest.input.at(-1).content).toContain("relationshipReaction");
+    expect(repairRequest.input.at(-2)).toEqual({ role: "assistant", content: "{broken" });
     expect(result).toEqual({
       visibleSpeech: "档案科收存公文，你问这个做什么？",
       privateIntent: "观察来意",
@@ -100,6 +104,21 @@ describe("CampaignOrchestrator", () => {
       reactionReason: "玩家没有越过档案来源边界",
       requestedEffects: [],
     });
+  });
+
+  it("reads Responses text parts while ignoring reasoning and rejects text mixed with refusal", async () => {
+    vi.stubEnv("LLM_BASE_URL", "https://example.test/v1");
+    vi.stubEnv("LLM_SERVICE_TOKEN", "test-token");
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ status: "completed", output: [
+      { type: "reasoning", content: [{ type: "output_text", text: "must ignore" }] },
+      { type: "message", content: [{ type: "output_text", text: '{"visibleSpeech":' }, { type: "output_text", text: '"你好"}' }] },
+    ] }) }).mockResolvedValueOnce({ ok: true, json: async () => ({ status: "completed", output: [
+      { type: "message", content: [{ type: "output_text", text: '{"visibleSpeech":"不得采用"}' }, { type: "refusal", refusal: "不能协助" }] },
+    ] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await createAgentProvider()!.complete("system", "user")).toEqual({ visibleSpeech: "你好" });
+    await expect(createAgentProvider()!.complete("system", "user")).rejects.toThrow("LLM refused request");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("gives an NPC its personality, relationship and recent private memory in one model call", async () => {

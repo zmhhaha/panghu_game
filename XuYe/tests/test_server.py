@@ -84,12 +84,14 @@ class ServerTests(unittest.TestCase):
 
             os.environ.pop("LLM_MAX_TOKENS", None)
             body = json.loads(server.build_upstream_request("上一段。", "续写。", "local", work).data)
-            self.assertNotIn("max_tokens", body)
+            self.assertNotIn("max_output_tokens", body)
+            self.assertIn("input", body)
+            self.assertFalse(body["store"])
             self.assertTrue(body["stream"])
 
             os.environ["LLM_MAX_TOKENS"] = "2048"
             body = json.loads(server.build_upstream_request("上一段。", "续写。", "local", work).data)
-            self.assertEqual(body["max_tokens"], 2048)
+            self.assertEqual(body["max_output_tokens"], 2048)
         finally:
             for key, value in previous.items():
                 if value is None:
@@ -104,14 +106,14 @@ class ServerTests(unittest.TestCase):
         self.assertIsNotNone(work)
         self.assertEqual(work["title"], "Frankenstein")
 
-    def test_chat_url_accepts_base_or_full_endpoint(self):
+    def test_responses_url_accepts_base_or_full_endpoint(self):
         self.assertEqual(
-            server.chat_completions_url("https://example.com/v1/"),
-            "https://example.com/v1/chat/completions",
+            server.responses_url("https://example.com/v1/"),
+            "https://example.com/v1/responses",
         )
         self.assertEqual(
-            server.chat_completions_url("https://example.com/v1/chat/completions"),
-            "https://example.com/v1/chat/completions",
+            server.responses_url("https://example.com/v1/responses"),
+            "https://example.com/v1/responses",
         )
 
     def test_prompt_marks_player_text_as_canonical_fiction(self):
@@ -138,30 +140,70 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn("旧" * (server.MAX_CONTEXT_CHARS + 1), user_message)
         self.assertIn("结尾", user_message)
 
-    def test_stream_parser_reads_openai_sse(self):
-        lines = (
-            b'data: {"choices":[{"delta":{"content":"\\u96e8"}}]}\n\n'
-            b'data: {"choices":[{"delta":{"content":"\\u505c\\u4e86"}}]}\n\n'
-            b'data: [DONE]\n\n'
-        )
-        response = FakeResponse(lines, "text/event-stream")
-        self.assertEqual(list(server.stream_openai_response(response)), ["雨", "停了"])
+    def test_stream_parser_reads_responses_and_ignores_reasoning(self):
+        final = {"status": "completed", "output": [
+            {"type": "reasoning", "summary": []},
+            {"type": "message", "content": [{"type": "output_text", "text": "雨停了"}]},
+        ]}
+        events = [
+            {"type": "response.reasoning_summary_text.delta", "delta": "思考"},
+            {"type": "response.output_text.delta", "delta": "雨"},
+            {"type": "response.output_text.delta", "delta": "停了"},
+            {"type": "response.completed", "response": final},
+        ]
+        body = "".join("data: " + json.dumps(event) + "\n\n" for event in events).encode()
+        self.assertEqual(list(server.stream_responses(FakeResponse(body, "text/event-stream"))), ["雨", "停了"])
 
-    def test_stream_parser_ignores_the_usage_only_chunk(self):
-        # llm-service 注入了 stream_options.include_usage，最后一帧 choices 是空数组；
-        # 直接索引会 IndexError，把已经开始的流打断。
-        lines = (
-            b'data: {"choices":[{"delta":{"content":"\\u96e8"}}]}\n\n'
-            b'data: {"choices":[],"usage":{"prompt_tokens":9,"completion_tokens":1}}\n\n'
-            b'data: [DONE]\n\n'
-        )
-        response = FakeResponse(lines, "text/event-stream")
-        self.assertEqual(list(server.stream_openai_response(response)), ["雨"])
+    def test_stream_parser_rejects_truncation_and_failure(self):
+        for event in ({"type": "response.output_text.delta", "delta": "partial"},
+                      {"type": "error", "message": "failure"}):
+            body = ("data: " + json.dumps(event) + "\n\n").encode()
+            with self.subTest(event=event), self.assertRaises(RuntimeError):
+                list(server.stream_responses(FakeResponse(body, "text/event-stream")))
 
-    def test_stream_parser_accepts_non_streaming_compatible_server(self):
-        body = json.dumps({"choices": [{"message": {"content": "后来，灯灭了。"}}]}).encode()
-        response = FakeResponse(body, "application/json")
-        self.assertEqual(list(server.stream_openai_response(response)), ["后来，灯灭了。"])
+    def test_stream_parser_fills_terminal_text_without_duplicate(self):
+        events = [{"type": "response.output_text.delta", "delta": "雨"},
+                  {"type": "response.completed", "response": {"status": "completed", "output": [
+                      {"type": "message", "content": [{"type": "output_text", "text": "雨停了"}]}]}}]
+        body = "".join("data: " + json.dumps(event) + "\n\n" for event in events).encode()
+        self.assertEqual(list(server.stream_responses(FakeResponse(body, "text/event-stream"))), ["雨", "停了"])
+
+    def test_stream_parser_accepts_non_streaming_responses(self):
+        body = json.dumps({"status": "completed", "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "后来，灯灭了。"}]}]}).encode()
+        self.assertEqual(list(server.stream_responses(FakeResponse(body, "application/json"))), ["后来，灯灭了。"])
+
+    def test_mixed_text_and_refusal_is_not_success_for_json_or_terminal_stream(self):
+        final = {"status": "completed", "output": [
+            {"type": "message", "content": [
+                {"type": "output_text", "text": "partial"},
+                {"type": "refusal", "refusal": "Unavailable"},
+            ]},
+        ]}
+        bodies = (
+            (json.dumps(final).encode(), "application/json"),
+            (("data: " + json.dumps({"type": "response.completed", "response": final}) + "\n\n").encode(),
+             "text/event-stream"),
+        )
+        for body, content_type in bodies:
+            with self.subTest(content_type=content_type), self.assertRaisesRegex(RuntimeError, "拒绝"):
+                list(server.stream_responses(FakeResponse(body, content_type)))
+
+    def test_refusal_event_after_text_fails_before_completion(self):
+        for kind in ("response.refusal.delta", "response.refusal.done"):
+            events = [
+                {"type": "response.output_text.delta", "delta": "partial"},
+                {"type": kind, "delta": "Unavailable", "refusal": "Unavailable"},
+                {"type": "response.completed", "response": {"status": "completed", "output": [
+                    {"type": "message", "content": [{"type": "output_text", "text": "partial"}]},
+                ]}},
+            ]
+            body = "".join("data: " + json.dumps(event) + "\n\n" for event in events).encode()
+            with self.subTest(kind=kind):
+                stream = server.stream_responses(FakeResponse(body, "text/event-stream"))
+                self.assertEqual(next(stream), "partial")
+                with self.assertRaisesRegex(RuntimeError, "拒绝"):
+                    next(stream)
 
 
 if __name__ == "__main__":

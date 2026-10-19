@@ -170,11 +170,11 @@ def find_work(work_id: str) -> dict[str, Any] | None:
     return next((work for work in load_works() if work.get("id") == work_id), None)
 
 
-def chat_completions_url(base_url: str) -> str:
+def responses_url(base_url: str) -> str:
     clean = base_url.rstrip("/")
-    if clean.endswith("/chat/completions"):
+    if clean.endswith("/responses"):
         return clean
-    return f"{clean}/chat/completions"
+    return f"{clean}/responses"
 
 
 def build_messages(
@@ -226,52 +226,83 @@ def build_upstream_request(
     config = model_config()
     payload: dict[str, Any] = {
         "model": config["model"],
-        "messages": build_messages(context, intervention, scope, work),
+        "input": build_messages(context, intervention, scope, work),
+        "store": False,
         "temperature": config["temperature"],
         "stream": True,
     }
     if config["max_tokens"] is not None:
-        payload["max_tokens"] = config["max_tokens"]
+        payload["max_output_tokens"] = config["max_tokens"]
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
     if config["api_key"]:
         headers["Authorization"] = f"Bearer {config['api_key']}"
     return urllib.request.Request(
-        chat_completions_url(config["base_url"]),
+        responses_url(config["base_url"]),
         data=body,
         headers=headers,
         method="POST",
     )
 
 
-def stream_openai_response(response: Any) -> Iterator[str]:
+def response_text(payload: dict[str, Any]) -> str:
+    if payload.get("status") != "completed":
+        raise RuntimeError("模型响应未正常完成。")
+    if any(part.get("type") == "refusal" for item in payload.get("output", []) if item.get("type") == "message"
+           for part in item.get("content", [])):
+        raise RuntimeError("模型拒绝了本次请求。")
+    return "".join(part["text"] for item in payload.get("output", []) if item.get("type") == "message"
+                   for part in item.get("content", []) if part.get("type") == "output_text")
+
+
+def stream_responses(response: Any) -> Iterator[str]:
     content_type = response.headers.get("Content-Type", "")
     if "text/event-stream" not in content_type:
         payload = json.loads(response.read().decode("utf-8"))
-        content = payload.get("choices", [{}])[0].get("message", {}).get("content", "")
+        content = response_text(payload)
         if content:
             yield content
         return
 
+    completed = False
+    emitted = ""
+    data_lines = []
+
+    def consume() -> Iterator[str]:
+        nonlocal completed, emitted
+        payload = json.loads("\n".join(data_lines))
+        kind = payload.get("type")
+        if kind in ("error", "response.failed", "response.incomplete", "response.cancelled"):
+            raise RuntimeError("模型流式响应未正常完成。")
+        if kind in ("response.refusal.delta", "response.refusal.done"):
+            raise RuntimeError("模型拒绝了本次请求。")
+        if kind == "response.output_text.delta":
+            token = payload["delta"]
+            emitted += token
+            if token:
+                yield token
+        elif kind == "response.completed":
+            content = response_text(payload["response"])
+            if not content.startswith(emitted):
+                raise RuntimeError("模型流式正文与最终响应不一致。")
+            if len(content) > len(emitted):
+                yield content[len(emitted):]
+            completed = True
+
     for raw_line in response:
-        line = raw_line.decode("utf-8", errors="replace").strip()
-        if not line.startswith("data:"):
-            continue
-        data = line[5:].strip()
-        if not data or data == "[DONE]":
-            continue
-        try:
-            payload = json.loads(data)
-        except json.JSONDecodeError:
-            continue
-        # llm-service 会注入 stream_options.include_usage，最后一帧是 choices 为空的用量块；
-        # 直接取 [0] 会 IndexError，把已经开始的流打断。
-        choices = payload.get("choices") or []
-        if not choices:
-            continue
-        token = choices[0].get("delta", {}).get("content", "")
-        if token:
-            yield token
+        line = raw_line.decode("utf-8", errors="strict").rstrip("\r\n")
+        if not line:
+            if data_lines:
+                yield from consume()
+                data_lines.clear()
+                if completed:
+                    return
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].lstrip(" "))
+    if data_lines:
+        yield from consume()
+    if not completed:
+        raise RuntimeError("模型流式连接在完成前中断。")
 
 
 class XuYeHandler(BaseHTTPRequestHandler):
@@ -397,7 +428,7 @@ class XuYeHandler(BaseHTTPRequestHandler):
         try:
             emitted = False
             with upstream:
-                for token in stream_openai_response(upstream):
+                for token in stream_responses(upstream):
                     emitted = True
                     self.send_sse("token", {"token": token})
             if not emitted:

@@ -61,7 +61,7 @@ async function requestModelWithRetry(config, body, label, validate = (value) => 
     // 白白丢掉一次已经成功、只是慢的调用。上游是推理模型，思考也占预算，耗时方差比直连大。
     const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS || 60000));
     try {
-      const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/responses`, {
         method: "POST",
         signal: controller.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
@@ -88,6 +88,16 @@ function parseModelJson(content) {
     if (start >= 0 && end > start) return JSON.parse(trimmed.slice(start, end + 1));
     throw new Error("模型没有返回合法 JSON");
   }
+}
+
+function modelResponseText(data) {
+  if (data.status !== "completed") throw new Error("LLM response is not completed");
+  if (data.output?.some(item => item.content?.some(part => part.type === "refusal"))) throw new Error("LLM refused request");
+  const content = data.output?.filter(item => item.type === "message")
+    .flatMap(item => item.content ?? []).filter(part => part.type === "output_text" && typeof part.text === "string")
+    .map(part => part.text).join("");
+  if (!content?.trim()) throw new Error("LLM returned no content");
+  return content;
 }
 
 function boundedClaims(parsed, facts) {
@@ -200,8 +210,8 @@ async function roleplay(payload) {
     "保持与此前回答一致，控制在25至140个汉字。只输出JSON：{\"speech\":\"本轮盘问回应\",\"claims\":[{\"factId\":\"账本中的 ID\",\"value\":\"本轮对该事实的说法\",\"stance\":\"确认/否认/不确定/修正\"}]}。不得在 claims 中创造账本之外的 ID。",
   ].join("\n");
   const user = JSON.stringify({ round: Number(payload.round || 1), history, question: cleanText(payload.question, 300), references: payload.references || [], disclosureFacts: payload.disclosureFacts || [], fairnessStage: payload.fairnessStage || "none", relationshipStage: payload.relationshipStage || "none", memorySummary: payload.memorySummary || {} });
-  const result = await requestModelWithRetry(config, { model: config.model, temperature: 0.75, messages: [{ role: "system", content: system }, { role: "user", content: user }] }, "npc", (data) => {
-    const parsed = parseModelJson(data?.choices?.[0]?.message?.content);
+  const result = await requestModelWithRetry(config, { model: config.model, temperature: 0.75, store: false, input: [{ role: "system", content: system }, { role: "user", content: user }] }, "npc", (data) => {
+    const parsed = parseModelJson(modelResponseText(data));
     const speech = cleanText(parsed?.speech, 800);
     if (!speech) throw new Error("模型回答为空");
     if (dossier.isTarget && [payload.fairnessStage, payload.relationshipStage].includes("reveal") && selfLabelsConflict(speech)) throw new Error("目标回答替玩家宣布了矛盾");
@@ -239,8 +249,8 @@ async function judgeReply(payload) {
     "使用第三人称审查官视角，speech控制在20至130个汉字。只输出JSON：{\"speech\":\"不含问题和提前结论的本轮反应\",\"nextQuestion\":\"下一必查主题的问题\",\"followupQuestion\":\"当前主题的追问\",\"evaluation\":{\"relevance\":0,\"specificity\":0,\"dossierMatch\":0,\"consistency\":0,\"evasiveness\":0,\"evidenceFactIds\":[\"档案事实ID\"],\"contradictions\":[\"具体矛盾\"],\"unsupportedDetails\":[\"档案外新增姓名或事实\"],\"freeSlotClaims\":[{\"slotId\":\"自由口径ID\",\"value\":\"从本轮回答提取的简短口径\"}],\"summary\":\"本轮中文评价依据\"}}。",
   ].join("\n");
   const user = JSON.stringify({ round, topic, question: cleanText(payload.question, 300), currentAnswer: cleanText(payload.answer, 500) });
-  const result = await requestModelWithRetry(config, { model: config.model, temperature: 0.45, messages: [{ role: "system", content: system }, { role: "user", content: user }] }, "judge", (data) => {
-    const parsed = parseModelJson(data?.choices?.[0]?.message?.content);
+  const result = await requestModelWithRetry(config, { model: config.model, temperature: 0.45, store: false, input: [{ role: "system", content: system }, { role: "user", content: user }] }, "judge", (data) => {
+    const parsed = parseModelJson(modelResponseText(data));
     const speech = boundedJudgeSpeech(parsed?.speech, round);
     if (!speech) throw new Error("审查官回答为空");
     return { speech, evaluation: boundedJudgeEvaluation(parsed, profile, topic), nextQuestion: boundedJudgeQuestion(parsed?.nextQuestion), followupQuestion: boundedJudgeQuestion(parsed?.followupQuestion), provider: config.provider };

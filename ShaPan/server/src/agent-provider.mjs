@@ -128,13 +128,14 @@ export async function runAgentJob(job) {
   // 上游是推理模型，思考与正文共用预算，耗时方差比直连大得多。
   const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS || 60_000));
   try {
-    const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/responses`, {
       method: "POST",
       headers: { authorization: `Bearer ${config.apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
         model: config.model,
         temperature: 0.35,
-        messages: [
+        store: false,
+        input: [
           { role: "system", content: "你是二战战役沙盘中的部队指挥智能体。只能依据给定军令、任务和不完整态势行动。输出JSON，字段必须为subject、body、status、summary、morale、comms；所有字段必须使用简体中文，不得输出英文标题、英文战报、中英混合句或技术术语。输入中的时间已经换算为HH:MM格式，战报必须沿用该格式，不得输出累计分钟数。不得引用战役全局百分比，不得宣称知道未提供的敌情，不得替上级决定战役胜负。" },
           { role: "user", content: JSON.stringify(buildAgentPromptInput(job.input)) }
         ]
@@ -143,8 +144,12 @@ export async function runAgentJob(job) {
     });
     if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
     const payload = await response.json();
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) throw new Error("LLM returned no content");
+    if (payload.status !== "completed") throw new Error("LLM response is not completed");
+    if (payload.output?.some(item => item.content?.some(part => part.type === "refusal"))) throw new Error("LLM refused request");
+    const content = payload.output?.filter(item => item.type === "message")
+      .flatMap(item => item.content ?? []).filter(part => part.type === "output_text" && typeof part.text === "string")
+      .map(part => part.text).join("");
+    if (!content?.trim()) throw new Error("LLM returned no content");
     const parsed = parseModelObject(content);
     return {
       decision: { ...validateDecision(parsed, fallback), provider: config.provider },

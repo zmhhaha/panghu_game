@@ -44,19 +44,26 @@ class OpenAiCompatibleProvider implements AgentProvider {
     else signal?.addEventListener("abort", cancel, { once: true });
     const timer = setTimeout(() => controller.abort(new Error("call_timeout")), setting("LLM_TIMEOUT_MS", 120000, 1000, 120000));
     try {
-      const payload: Record<string, unknown> = { model: this.model, temperature, messages };
+      const payload: Record<string, unknown> = { model: this.model, temperature, input: messages, store: false };
       const maxTokens = optionalMaxTokens();
-      if (maxTokens !== null) payload.max_tokens = maxTokens;
-      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      if (maxTokens !== null) payload.max_output_tokens = maxTokens;
+      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/responses`, {
         method: "POST",
         signal: controller.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
         body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
-      const payloadResponse = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-      const content = payloadResponse.choices?.[0]?.message?.content;
-      if (!content) throw new Error("LLM returned no content");
+      const payloadResponse = await response.json() as {
+        status?: string;
+        output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
+      };
+      if (payloadResponse.status !== "completed") throw new Error("LLM response is not completed");
+      if (payloadResponse.output?.some(item => item.content?.some(part => part.type === "refusal"))) throw new Error("LLM refused request");
+      const content = payloadResponse.output?.filter(item => item.type === "message")
+        .flatMap(item => item.content ?? []).filter(part => part.type === "output_text" && typeof part.text === "string")
+        .map(part => part.text).join("");
+      if (!content?.trim()) throw new Error("LLM returned no content");
       return content;
     } finally {
       clearTimeout(timer);
@@ -69,7 +76,7 @@ class OpenAiCompatibleProvider implements AgentProvider {
  * 上游是推理模型：输出分 `reasoning_content`（思考）和 `content`（正文）两路，
  * 预算不够时思考会把它吃光，正文一个字都出不来。
  *
- * 所以默认**不发送** `max_tokens`，把预算交给上游；只有显式设了 `LLM_MAX_TOKENS` 才带上。
+ * 所以默认**不发送** `max_output_tokens`，把预算交给上游；只有显式设了 `LLM_MAX_TOKENS` 才带上。
  * 注意 guarded 档的上限是 2048，设更高会被 llm-service 用 400 拒掉。
  */
 export function optionalMaxTokens(): number | null {

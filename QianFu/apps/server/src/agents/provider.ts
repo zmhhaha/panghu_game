@@ -95,15 +95,22 @@ class OpenAiCompatibleProvider implements AgentProvider {
     // 白白丢掉一次已经成功、只是慢的调用。上游是推理模型，耗时方差比直连大得多。
     const timer = setTimeout(() => controller.abort(), Number(process.env.LLM_TIMEOUT_MS ?? 60000));
     try {
-      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/responses`, {
         method: "POST", signal: controller.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
-        body: JSON.stringify({ model: this.model, temperature, messages }),
+        body: JSON.stringify({ model: this.model, temperature, input: messages, store: false }),
       });
       if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
-      const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-      const content = payload.choices?.[0]?.message?.content;
-      if (!content) throw new Error("LLM returned no content");
+      const payload = await response.json() as {
+        status?: string;
+        output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
+      };
+      if (payload.status !== "completed") throw new Error("LLM response is not completed");
+      if (payload.output?.some(item => item.content?.some(part => part.type === "refusal"))) throw new Error("LLM refused request");
+      const content = payload.output?.filter(item => item.type === "message")
+        .flatMap(item => item.content ?? []).filter(part => part.type === "output_text" && typeof part.text === "string")
+        .map(part => part.text).join("");
+      if (!content?.trim()) throw new Error("LLM returned no content");
       return content;
     } finally { clearTimeout(timer); }
   }

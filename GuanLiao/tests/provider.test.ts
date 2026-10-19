@@ -4,6 +4,7 @@ import { createAgentProvider, optionalMaxTokens, parseModelJson } from "../src/a
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("parseModelJson", () => {
@@ -18,7 +19,7 @@ describe("parseModelJson", () => {
 });
 
 describe("optionalMaxTokens", () => {
-  it("omits max_tokens unless LLM_MAX_TOKENS is set", () => {
+  it("omits the output budget unless LLM_MAX_TOKENS is set", () => {
     // 上游是推理模型：卡住 max_tokens 会让思考吃光预算、正文为空，所以默认不发送。
     vi.stubEnv("LLM_MAX_TOKENS", "");
     expect(optionalMaxTokens()).toBeNull();
@@ -43,6 +44,33 @@ describe("optionalMaxTokens", () => {
 });
 
 describe("createAgentProvider", () => {
+  it("uses stateless Responses and reads only output_text across message parts", async () => {
+    vi.stubEnv("LLM_BASE_URL", "https://example.test/v1/");
+    vi.stubEnv("LLM_SERVICE_TOKEN", "test-token");
+    vi.stubEnv("LLM_MODEL", "llm-guarded");
+    vi.stubEnv("LLM_MAX_TOKENS", "2048");
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ status: "completed", output: [
+      { type: "reasoning", content: [{ type: "output_text", text: "not the answer" }] },
+      { type: "message", content: [{ type: "output_text", text: '{"reportText":' }, { type: "output_text", text: '"办毕。"}' }] },
+    ] }) }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await createAgentProvider()!.complete("system", "user")).toEqual({ reportText: "办毕。" });
+    const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://example.test/v1/responses");
+    expect(JSON.parse(String(options.body))).toEqual({ model: "llm-guarded", temperature: 0.72,
+      input: [{ role: "system", content: "system" }, { role: "user", content: "user" }], store: false, max_output_tokens: 2048 });
+  });
+
+  it.each([
+    { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"reportText":"不得采用"}' }, { type: "refusal", refusal: "不能协助" }] }] },
+    { status: "incomplete", output: [{ type: "message", content: [{ type: "output_text", text: '{"ok":true}' }] }] },
+  ])("rejects a refusal or unfinished response", async (payload) => {
+    vi.stubEnv("LLM_BASE_URL", "https://example.test/v1");
+    vi.stubEnv("LLM_SERVICE_TOKEN", "test-token");
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => payload })));
+    await expect(createAgentProvider()!.complete("system", "user")).rejects.toThrow(/LLM/);
+  });
+
   it("targets the in-cluster llm-service", () => {
     vi.stubEnv("LLM_BASE_URL", "http://llm-service.llm.svc.cluster.local/v1");
     vi.stubEnv("LLM_SERVICE_TOKEN", "test-token");

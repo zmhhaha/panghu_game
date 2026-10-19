@@ -46,17 +46,22 @@ def call_llm(system_prompt: str, user_prompt: str, temperature: float = 0.5) -> 
     client = _get_client()
     payload = {
         "model": get_model_alias(),
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
+        "instructions": system_prompt,
+        "input": user_prompt,
+        "store": False,
         "temperature": temperature,
     }
 
     last_error: Exception | None = None
     for attempt in range(MAX_RETRIES + 1):
         try:
-            return client.chat.completions.create(**payload).choices[0].message.content or ""
+            result = client.responses.create(**payload)
+            if result.status != "completed" or not result.output_text:
+                raise RuntimeError("LLM returned no completed output text")
+            if any(item.type == "message" and any(part.type == "refusal" for part in item.content)
+                   for item in result.output):
+                raise RuntimeError("LLM response contains a refusal")
+            return result.output_text
         except Exception as error:
             last_error = error
             if attempt < MAX_RETRIES:
