@@ -120,16 +120,31 @@ async function handle(request, response) {
     if (request.method === "GET" && eventsId) {
       const state = await store.getState(principal.id, eventsId);
       if (!state) { const error = new Error("game not found"); error.statusCode = 404; throw error; }
-      let cursor = Number(url.searchParams.get("after") || request.headers["last-event-id"] || 0);
+      // The snapshot replaces prior public state. Resume before any report that is still in transit.
+      let cursor = Number(state.eventCursor ?? url.searchParams.get("after") ?? request.headers["last-event-id"] ?? 0);
+      const snapshotSequence = Number(state.game.eventSequence || 0);
+      const snapshotMinute = Number(state.game.clockMinute);
       response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", connection: "keep-alive", "x-accel-buffering": "no" });
       response.write(`event: snapshot\ndata: ${JSON.stringify(state)}\n\n`);
+      let polling = false;
       const timer = setInterval(async () => {
+        if (polling) return;
+        polling = true;
         try {
           const events = await store.getEvents(principal.id, eventsId, cursor);
           if (events === null) { clearInterval(timer); response.end(); return; }
-          for (const event of events) { cursor = event.id; response.write(`id: ${event.id}\nevent: world_event\ndata: ${JSON.stringify(event)}\n\n`); }
+          for (const event of events) {
+            cursor = event.id;
+            const report = event.payload?.message;
+            const arrivedAt = Number(report?.availableAtMinute ?? report?.deliveredAtMinute ?? -Infinity);
+            // A delayed report must still arrive after the snapshot; old clocks and status events must not replay.
+            if (event.id <= snapshotSequence && (!report || arrivedAt <= snapshotMinute)) continue;
+            response.write(`id: ${event.id}\nevent: world_event\ndata: ${JSON.stringify(event)}\n\n`);
+          }
+          cursor = Math.max(cursor, Number(events.nextCursor ?? cursor));
           response.write(`: heartbeat ${Date.now()}\n\n`);
         } catch { clearInterval(timer); response.end(); }
+        finally { polling = false; }
       }, Number(process.env.SSE_POLL_MS || 2000));
       request.on("close", () => clearInterval(timer));
       return;

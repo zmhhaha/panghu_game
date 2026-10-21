@@ -31,6 +31,7 @@ RUN npm config set registry "${NPM_REGISTRY}" \
   && npm ci --ignore-scripts \
   && npm cache clean --force
 COPY web ./
+COPY shared /app/shared
 RUN npm run build
 
 FROM ${NODE_IMAGE}

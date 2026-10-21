@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getUnitProfile } from "./content.mjs";
-import { campaignAnchors } from "./map-anchors.mjs";
+import { campaignMap, initialPosition, MAP_VERSION, mapDistance, planMapRoute, targetForOrder } from "./map-anchors.mjs";
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Number(value) || 0));
@@ -108,9 +108,11 @@ function positionOf(unit, fallback = { x: 50, y: 50 }) {
 }
 
 function coordinateFromOrder(text) {
-  const match = String(text || "").match(/(?:坐标|网格|位置)?\s*(\d{1,3}(?:\.\d+)?)\s*[,，、/]\s*(\d{1,3}(?:\.\d+)?)/);
+  // A map click appends an explicit target; it overrides older coordinates in prose.
+  const instruction = String(text || "").split(/地图目标[:：]/).at(-1) || "";
+  const match = instruction.match(/(?:坐标|网格|位置)?\s*(\d{1,3}(?:\.\d+)?)\s*[,，、/]\s*(\d{1,3}(?:\.\d+)?)/);
   if (!match) return null;
-  return { x: clamp(match[1], 3, 97), y: clamp(match[2], 3, 97) };
+  return { x: clamp(match[1], 0, 100), y: clamp(match[2], 0, 100) };
 }
 
 function routeLabel(campaignId, text, doctrine) {
@@ -164,96 +166,116 @@ function applyOperationalRecovery(campaign, state) {
   });
 }
 
-const movementRoutes = {
-  taierzhuang: {
-    cn31: { from: { x: 46, y: 55 }, to: { x: 52, y: 49 }, label: "东门防御" },
-    cn30: { from: { x: 29, y: 78 }, to: { x: 43, y: 64 }, label: "增援台儿庄" },
-    cn27: { from: { x: 18, y: 35 }, to: { x: 34, y: 43 }, label: "牵制西北" },
-    cnart: { from: { x: 77, y: 25 }, to: { x: 66, y: 36 }, label: "火力支援" },
-    cnreserve: { from: { x: 78, y: 69 }, to: { x: 67, y: 58 }, label: "预备队机动" },
-    jpseya: { from: { x: 73, y: 44 }, to: { x: 61, y: 50 }, label: "城东突击" },
-    jparmor: { from: { x: 78, y: 61 }, to: { x: 65, y: 53 }, label: "战车突进" }
-  },
-  arnhem: {
-    uk1para: { from: { x: 29, y: 59 }, to: { x: 46, y: 52 }, label: "向桥区推进" },
-    uk2para: { from: { x: 58, y: 67 }, to: { x: 75, y: 76 }, label: "保持桥头" },
-    ukairland: { from: { x: 20, y: 72 }, to: { x: 35, y: 61 }, label: "机降部队集结" },
-    ukrecon: { from: { x: 49, y: 55 }, to: { x: 62, y: 48 }, label: "侦察支路" },
-    ukart: { from: { x: 17, y: 39 }, to: { x: 32, y: 43 }, label: "炮兵跟进" },
-    deinf: { from: { x: 70, y: 50 }, to: { x: 75, y: 68 }, label: "桥区增援" },
-    de9ss: { from: { x: 79, y: 66 }, to: { x: 75, y: 76 }, label: "装甲机动" }
-  }
-};
-
-const routeSegments = {
-  taierzhuang: {
-    cn31: [{ x: 46, y: 55 }, { x: 52, y: 49 }, { x: 55, y: 46 }],
-    cn30: [{ x: 29, y: 78 }, { x: 36, y: 69 }, { x: 43, y: 64 }],
-    cn27: [{ x: 18, y: 35 }, { x: 27, y: 39 }, { x: 34, y: 43 }],
-    jpseya: [{ x: 73, y: 44 }, { x: 67, y: 47 }, { x: 61, y: 50 }],
-    jparmor: [{ x: 78, y: 61 }, { x: 71, y: 57 }, { x: 65, y: 53 }]
-  },
-  arnhem: {
-    uk1para: [{ x: 29, y: 59 }, { x: 38, y: 56 }, { x: 46, y: 52 }],
-    uk2para: [{ x: 58, y: 67 }, { x: 65, y: 71 }, { x: 75, y: 76 }],
-    deinf: [{ x: 70, y: 50 }, { x: 73, y: 59 }, { x: 75, y: 68 }],
-    de9ss: [{ x: 79, y: 66 }, { x: 77, y: 71 }, { x: 75, y: 76 }]
-  }
-};
-
 function interpolateRoute(points, progress) {
   if (!points?.length) return null;
   if (points.length === 1) return { ...points[0], segment: 0, progress: 1 };
   const clamped = Math.min(1, Math.max(0, progress));
-  const scaled = clamped * (points.length - 1);
-  const segment = Math.min(points.length - 2, Math.floor(scaled));
-  const local = scaled - segment;
+  const lengths = points.slice(1).map((point, index) => mapDistance(points[index], point));
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  if (!total) return { ...points.at(-1), segment: points.length - 2, progress: clamped };
+  let distance = total * clamped;
+  let segment = 0;
+  while (segment < lengths.length - 1 && distance > lengths[segment]) distance -= lengths[segment++];
+  const local = lengths[segment] ? distance / lengths[segment] : 1;
   const from = points[segment];
   const to = points[segment + 1];
   return { x: from.x + (to.x - from.x) * local, y: from.y + (to.y - from.y) * local, segment, progress: clamped };
 }
 
-function routeForOrder(campaignId, unit, text) {
-  const normalized = String(text || "");
-  const current = positionOf(unit);
-  const anchors = campaignAnchors(campaignId);
-  const coordinate = coordinateFromOrder(normalized);
-  const target = coordinate || (/撤|退|回撤/.test(normalized) ? anchors.retreat
-    : campaignId === "arnhem" && /北|北侧|北岸/.test(normalized) ? anchors.north
-    : campaignId === "arnhem" && /桥|桥头|阿纳姆/.test(normalized) ? anchors.bridge
-    : campaignId === "arnhem" ? anchors.west
-    : /东/.test(normalized) ? anchors.east
-    : /西|阻击|牵制/.test(normalized) ? anchors.west
-    : anchors.city);
-  if (Math.hypot(current.x - target.x, current.y - target.y) < 0.5) return [current];
-  const direction = unit?.id?.charCodeAt?.(0) % 2 ? 1 : -1;
-  const mid = {
-    x: clamp((current.x + target.x) / 2 + direction * Math.min(3, Math.abs(target.y - current.y) * 0.08), 2, 98),
-    y: clamp((current.y + target.y) / 2 - direction * Math.min(3, Math.abs(target.x - current.x) * 0.08), 2, 98)
+function reportSnapshot(campaign, state, unitId, atMinute, { updatesUnitState = true, summary, status } = {}) {
+  const profile = getUnitProfile(campaign.id, unitId);
+  let known = state.unitStates[unitId] || {};
+  if (Number(known.updatedAtMinute ?? -Infinity) > atMinute) {
+    // A scenario report delivered late must not borrow a state learned afterwards.
+    const previous = state.messages
+      .filter((message) => message.location === unitId && message.reportedUnitState && Number(message.reportedPosition?.atMinute) <= atMinute)
+      .sort((left, right) => right.reportedPosition.atMinute - left.reportedPosition.atMinute)[0];
+    known = previous?.reportedUnitState || {};
+  }
+  let position = positionOf(known, initialPosition(campaign.id, unitId));
+  const movement = known.movement;
+  if (movement?.route?.length && Number(movement.startedAtMinute) <= atMinute && !movement.blocked && !["engaged", "delayed"].includes(movement.phase) && !["fire_support", "hold"].includes(movement.kind)) {
+    const interpolated = interpolateRoute(movement.route, (atMinute - movement.startedAtMinute) / Math.max(1, Number(movement.durationMinutes || 30)));
+    if (interpolated) position = { x: interpolated.x, y: interpolated.y };
+  }
+  const enemy = profile.side === "enemy";
+  const reportedMovement = enemy
+    ? { kind: "intel", confidence: "推定", updatedAtMinute: atMinute }
+    : movement ? clone(movement) : null;
+  return {
+    updatesUnitState,
+    reportedPosition: { ...position, atMinute },
+    reportedUnitState: {
+      ...position,
+      status: status || known.status || (enemy ? "敌情待核" : "已回报"),
+      summary: summary || known.summary || profile.role || "暂无详细报告",
+      morale: enemy ? "不明" : known.morale || "尚未报告",
+      comms: enemy ? "情报推定" : known.comms || "报文已送达",
+      movement: reportedMovement,
+      lastReportAtMinute: atMinute
+    }
   };
-  return [current, mid, target];
+}
+
+function queueArrivalReport(campaign, state, unitId, movement, atMinute) {
+  const unit = getUnitProfile(campaign.id, unitId);
+  if (unit.side !== "friendly") return;
+  const channel = movement.reportChannel || "radio";
+  const channelName = { radio: "电台", phone: "电话", courier: "通信员", underground: "联络员" }[channel] || "电台";
+  const delay = Math.max(1, Number(movement.reportDelayMinutes) || (channel === "courier" ? 35 : 12));
+  const position = positionOf(state.unitStates[unitId], movement.to);
+  const grid = `${Math.round(position.x)},${Math.round(position.y)}`;
+  const label = movement.label || "指定地域";
+  const summary = movement.holdOnArrival ? `已抵达${label}，开始组织防御。` : `已抵达${label}，等待后续指示。`;
+  state.pendingMovementReports.push({
+    id: `arrival-${randomUUID()}`,
+    type: "normal",
+    source: `${unit.name}${channelName}`,
+    subject: movement.holdOnArrival ? "已抵达目标，转入固守" : "已抵达指定目标",
+    body: `${summary}本部位置为网格 ${grid}。本报经${channelName}回传。`,
+    received: null,
+    deliveredAtMinute: atMinute + delay,
+    availableAtMinute: atMinute + delay,
+    location: unitId,
+    orderId: movement.orderId || null,
+    generatedBy: "simulation",
+    confidence: "confirmed",
+    expiresAtMinute: atMinute + 360,
+    outcome: movement.holdOnArrival ? "军令结果：抵达目标并转入防御" : "军令结果：行军完成",
+    requiresDecision: false,
+    ...reportSnapshot(campaign, state, unitId, atMinute, { summary, status: movement.holdOnArrival ? "固守中" : completionStatus(movement) })
+  });
 }
 
 function movementForOrder(campaignId, unitId, currentState, text, clockMinute, priority) {
   const doctrine = orderDoctrine(campaignId, text, unitId);
-  const fallback = movementRoutes[campaignId]?.[unitId]?.from || { x: 50, y: 50 };
-  const current = positionOf(currentState, fallback);
-  const route = routeForOrder(campaignId, { id: unitId, ...currentState, ...current }, text);
-  const target = route.at(-1) || current;
+  const current = positionOf(currentState, initialPosition(campaignId, unitId));
   const relocation = /机动|转移|前移|推进|前往|开进|撤|退|回撤/.test(text);
   const fireMission = doctrine === "fire_support" && !relocation;
-  const holding = /固守|防御|坚守|保持|待命/.test(text) && route.length === 1;
+  const holdHere = !relocation && /原地|就地|保持位置|待命/.test(text);
+  const target = holdHere ? current : targetForOrder(campaignId, unitId, text, coordinateFromOrder(text));
+  const planned = fireMission && target
+    ? { reachable: true, points: [current, target], anchorIds: [], targetAnchorId: target?.id, distance: 0 }
+    : planMapRoute(campaignId, current, target);
+  const holding = planned.reachable && /固守|防御|坚守|保持|待命/.test(text) && planned.points.length === 1;
   return {
     from: current,
-    to: target,
-    route: fireMission ? [current, target] : route,
-    label: routeLabel(campaignId, text, doctrine),
+    to: target ? { x: target.x, y: target.y } : current,
+    route: planned.points,
+    routeAnchorIds: planned.anchorIds,
+    targetAnchorId: planned.targetAnchorId || null,
+    mapVersion: MAP_VERSION,
+    routeDistance: planned.distance,
+    blocked: !planned.reachable,
+    blockedReason: planned.reason || null,
+    holdOnArrival: /固守|防御|坚守|保持/.test(text),
+    label: target?.label || routeLabel(campaignId, text, doctrine),
     kind: fireMission ? "fire_support" : doctrine === "reconnaissance" ? "reconnaissance" : doctrine === "logistics" ? "logistics" : holding ? "hold" : "order",
     confidence: "已确认",
     startedAtMinute: clockMinute,
-    durationMinutes: priority === "urgent" ? 18 : 30,
+    durationMinutes: fireMission ? (priority === "urgent" ? 12 : 20) : Math.max(6, Math.ceil(planned.distance / (priority === "urgent" ? 1.2 : 0.9))),
     progress: 0,
-    phase: fireMission ? "firing" : holding ? "halted" : /撤|退|回撤/.test(text) ? "retreating" : "moving",
+    phase: !planned.reachable ? "delayed" : fireMission ? "firing" : holding ? "halted" : /撤|退|回撤/.test(text) ? "retreating" : "moving",
     updatedAtMinute: clockMinute
   };
 }
@@ -263,35 +285,55 @@ function updateUnitMovements(campaign, state, clockMinute) {
     const movement = unitState.movement;
     if (!movement?.route?.length || typeof movement.startedAtMinute !== "number") continue;
     const duration = Math.max(1, Number(movement.durationMinutes || 30));
+    if (movement.blocked || movement.phase === "engaged" || movement.phase === "delayed") {
+      state.unitStates[unitId] = { ...unitState, movement: { ...movement, startedAtMinute: clockMinute - Number(movement.progress || 0) * duration, updatedAtMinute: clockMinute } };
+      continue;
+    }
     if (movement.kind === "fire_support" || movement.kind === "hold") {
       const progress = clamp((clockMinute - movement.startedAtMinute) / duration, 0, 1);
       const phase = movement.kind === "fire_support" && progress < 1 ? "firing" : movement.kind === "hold" ? "halted" : "completed";
-      state.unitStates[unitId] = { ...unitState, status: progress >= 1 ? completionStatus(movement) : unitState.status, movement: { ...movement, progress, phase } };
+      state.unitStates[unitId] = { ...unitState, status: progress >= 1 ? completionStatus(movement) : unitState.status, movement: { ...movement, progress, phase, updatedAtMinute: clockMinute } };
       continue;
     }
     const position = interpolateRoute(movement.route, (clockMinute - movement.startedAtMinute) / duration);
     if (!position) continue;
-    const activePhase = movement.phase === "retreating" && position.progress < 1 ? "retreating" : movement.phase === "engaged" ? "engaged" : position.progress >= 1 ? "completed" : "moving";
-    state.unitStates[unitId] = { ...unitState, x: position.x, y: position.y, status: position.progress >= 1 && movement.phase !== "engaged" ? completionStatus(movement) : unitState.status, movement: { ...movement, progress: position.progress, segment: position.segment, phase: activePhase } };
+    const justArrived = position.progress >= 1 && ["moving", "retreating"].includes(movement.phase) && !movement.arrivalReported;
+    const holdAtTarget = position.progress >= 1 && movement.holdOnArrival;
+    const activePhase = holdAtTarget ? "halted" : movement.phase === "retreating" && position.progress < 1 ? "retreating" : position.progress >= 1 ? "completed" : "moving";
+    state.unitStates[unitId] = {
+      ...unitState,
+      x: position.x,
+      y: position.y,
+      status: holdAtTarget ? "固守中" : position.progress >= 1 ? completionStatus(movement) : unitState.status,
+      movement: { ...movement, kind: holdAtTarget ? "hold" : movement.kind, progress: position.progress, segment: position.segment, phase: activePhase, arrivalReported: movement.arrivalReported || justArrived, updatedAtMinute: clockMinute }
+    };
+    if (justArrived) queueArrivalReport(campaign, state, unitId, state.unitStates[unitId].movement, Math.min(clockMinute, Math.ceil(movement.startedAtMinute + duration)));
   }
 }
 
 function movementFor(campaignId, unitId, clockMinute, enemy, currentState = {}) {
-  const route = movementRoutes[campaignId]?.[unitId];
-  if (!route) return null;
-  const current = positionOf(currentState, route.from);
-  const routePoints = [current, route.to];
+  const map = campaignMap(campaignId);
+  const target = map?.anchors.find((anchor) => anchor.id === map.defaultTargets[unitId]);
+  if (!target) return null;
+  const current = positionOf(currentState, initialPosition(campaignId, unitId));
+  const route = planMapRoute(campaignId, current, target);
   return {
     from: current,
-    to: route.to,
-    route: routePoints,
-    label: route.label,
+    to: { x: target.x, y: target.y },
+    route: route.points,
+    routeAnchorIds: route.anchorIds,
+    targetAnchorId: target.id,
+    mapVersion: MAP_VERSION,
+    routeDistance: route.distance,
+    blocked: !route.reachable,
+    blockedReason: route.reason || null,
+    label: target.label,
     kind: enemy ? "intel" : "order",
     confidence: enemy ? "推定" : "已确认",
     startedAtMinute: clockMinute,
-    durationMinutes: enemy ? 36 : 30,
+    durationMinutes: Math.max(6, Math.ceil(route.distance / (enemy ? 0.7 : 0.9))),
     progress: 0,
-    phase: "moving",
+    phase: !route.reachable ? "delayed" : route.points.length <= 1 ? "completed" : "moving",
     updatedAtMinute: clockMinute
   };
 }
@@ -304,6 +346,7 @@ export function normalizeWorldState(campaign, input = {}) {
     contacts: Array.isArray(input.contacts) ? input.contacts : [],
     messages: Array.isArray(input.messages) ? input.messages : [],
     orders: Array.isArray(input.orders) ? input.orders : [],
+    pendingMovementReports: Array.isArray(input.pendingMovementReports) ? input.pendingMovementReports : [],
     lastTickMinute,
     // objectiveProgress is a derived, player-facing overall posture.
     objectiveProgress: clamp(input.objectiveProgress ?? 30, 0, 100),
@@ -352,6 +395,18 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
   const deliveredOrderIds = [];
   const knownMessageIds = new Set(state.messages.map((message) => message.id));
 
+  // Completion can be detected while an asynchronous agent response is applied.
+  // Persist its report in the world snapshot until normal communication delivers it.
+  const arrivedReports = state.pendingMovementReports.filter((message) => message.availableAtMinute <= clockMinute);
+  state.pendingMovementReports = state.pendingMovementReports.filter((message) => message.availableAtMinute > clockMinute);
+  for (const message of arrivedReports) {
+    if (knownMessageIds.has(message.id)) continue;
+    state.messages.unshift(message);
+    knownMessageIds.add(message.id);
+    messages.push(message);
+    events.push({ type: "REPORT_RECEIVED", payload: { message } });
+  }
+
   // A local battle coordinator is created when known friendly and enemy
   // positions enter the same tactical area. It receives only the two units'
   // known state and reports an aggregated situation back through normal jobs.
@@ -377,6 +432,8 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
     if (report.availableAtMinute > clockMinute || knownMessageIds.has(report.id)) continue;
     const message = {
       ...report,
+      ...reportSnapshot(campaign, state, report.location, report.availableAtMinute, { summary: report.body }),
+      received: null,
       deliveredAtMinute: report.availableAtMinute,
       generatedBy: "scenario",
       confidence: report.type === "intel" ? "estimated" : "confirmed",
@@ -449,14 +506,16 @@ export function advanceWorld(campaign, worldState, { clockMinute, dueOrders = []
 
 export function applyAgentDecision(campaign, worldState, job, decision, clockMinute) {
   const state = normalizeWorldState(campaign, worldState);
+  updateUnitMovements(campaign, state, clockMinute);
   const startingProgress = state.objectiveProgress;
   if (job.jobType === "local_battle") {
     const friendly = job.input.participants?.find((participant) => participant.side === "friendly");
-    const battle = state.localBattles[job.input.battleId] || {};
+    const battleMinute = Number(job.input.clockMinute ?? clockMinute);
+    const supersededBattle = Number(state.unitStates[friendly?.id]?.lastOrderSentAtMinute ?? -Infinity) > battleMinute;
     // Contact is costly, but it is not a predetermined loss. The local commander
     // affects readiness and pressure at a controlled cadence; the player sees its report.
-    changeBattlefield(campaign, state, { combatPower: -1, morale: -1, enemyPressure: 1 });
-    if (friendly?.id) {
+    if (!supersededBattle) changeBattlefield(campaign, state, { combatPower: -1, morale: -1, enemyPressure: 1 });
+    if (friendly?.id && !supersededBattle) {
       const friendlyState = state.unitStates[friendly.id] || {};
       state.unitStates[friendly.id] = {
         ...friendlyState,
@@ -465,6 +524,7 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
         morale: decision.morale || friendlyState.morale,
         comms: decision.comms || friendlyState.comms,
         movement: friendlyState.movement ? { ...friendlyState.movement, phase: "engaged", updatedAtMinute: clockMinute } : friendlyState.movement,
+        updatedAtMinute: clockMinute,
         lastReportAtMinute: clockMinute
       };
     }
@@ -474,13 +534,14 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
       source: `${friendly?.name || "前沿部队"}电台`,
       subject: decision.subject,
       body: decision.body,
-      deliveredAtMinute: clockMinute,
+      deliveredAtMinute: clockMinute + 3,
       availableAtMinute: clockMinute + 3,
       location: friendly?.id,
       generatedBy: decision.provider ?? "fallback",
       confidence: "confirmed",
       expiresAtMinute: clockMinute + 90,
-      outcome: "局部战局指挥组回传",
+      outcome: supersededBattle ? "迟到的局部战况仅归档，未覆盖后续军令" : "局部战局指挥组回传",
+      ...reportSnapshot(campaign, state, friendly?.id, supersededBattle ? battleMinute : clockMinute, { updatesUnitState: !supersededBattle }),
       requiresDecision: requiresDecision(decision)
     };
     state.messages.unshift(message);
@@ -493,7 +554,7 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
   const orderResponse = job.jobType === "order_response";
   const unitId = unit.id;
   const currentState = state.unitStates[unitId] ?? {};
-  const defaultPosition = movementRoutes[campaign.id]?.[unitId]?.from || positionOf(unit);
+  const defaultPosition = initialPosition(campaign.id, unitId, positionOf(unit));
   const orderText = String(job.input.order?.text || "");
   const reportedContact = /交战|接敌|受阻|遭到射击/.test(String(decision.status || "")) || /交战|接敌|受阻|遭到射击/.test(String(decision.body || ""));
   const activeLocalBattle = Object.values(state.localBattles || {}).some((battle) =>
@@ -508,8 +569,21 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
   const supersededOrder = orderResponse && latestOrderMinute > orderMinute;
   const staleAutonomy = !orderResponse && Number(currentState.updatedAtMinute ?? -Infinity) > jobMinute;
   const preserveCommandStatus = !orderResponse && currentState.movement && currentState.movement.kind !== "intel";
+  const currentPosition = positionOf(currentState, defaultPosition);
+  let movement = currentState.movement ?? null;
+  if (orderResponse && !supersededOrder) {
+    movement = movementForOrder(campaign.id, unitId, { ...currentState, ...currentPosition }, orderText, clockMinute, job.input.order?.priority);
+    movement.orderId = job.input.order?.id || null;
+    movement.reportChannel = job.input.order?.channel || "radio";
+    const channelDelay = Number(job.input.order?.arriveAtMinute) - Number(job.input.order?.sentAtMinute);
+    movement.reportDelayMinutes = Number.isFinite(channelDelay) && channelDelay > 0 ? channelDelay : movement.reportChannel === "courier" ? 35 : 12;
+  }
+  else if (!orderResponse && !movement && !staleAutonomy) movement = movementFor(campaign.id, unitId, clockMinute, enemy, currentState);
+  if (!staleAutonomy && !supersededOrder && engaged && movement && !movement.blocked && movement.kind !== "fire_support") movement = { ...movement, phase: "engaged" };
   let changes;
-  if (enemy) {
+  if (supersededOrder || staleAutonomy || (orderResponse && movement?.blocked)) {
+    changes = {};
+  } else if (enemy) {
     changes = { objectiveControl: -1, combatPower: -1, morale: -1, enemyPressure: 2 };
   } else if (orderResponse) {
     changes = scaledOrderImpact(campaign, state, unitId, orderText, clockMinute);
@@ -520,21 +594,21 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
   changeBattlefield(campaign, state, changes);
   const appliedChanges = Object.fromEntries(Object.keys(changes).map((key) => [key, Number(state.battlefield[key] ?? 0) - Number(battlefieldBefore[key] ?? 0)]));
 
-  const currentPosition = positionOf(currentState, defaultPosition);
-  let movement = currentState.movement ?? null;
-  if (orderResponse && !supersededOrder) movement = movementForOrder(campaign.id, unitId, { ...currentState, ...currentPosition }, orderText, clockMinute, job.input.order?.priority);
-  else if (!orderResponse && !movement && !staleAutonomy) movement = movementFor(campaign.id, unitId, clockMinute, enemy, currentState);
-  if (engaged && movement && movement.kind !== "fire_support") movement = { ...movement, phase: "engaged" };
-
+  const reportAtMinute = staleAutonomy || supersededOrder ? jobMinute : clockMinute;
+  const observedPosition = reportAtMinute < clockMinute
+    ? reportSnapshot(campaign, state, unitId, reportAtMinute, { updatesUnitState: false }).reportedPosition
+    : currentPosition;
+  const observedGrid = `${Math.round(observedPosition.x)},${Math.round(observedPosition.y)}`;
+  const observedActivity = /armor|9ss/i.test(unitId) ? "履带车辆与伴随人员" : "步兵及运输车辆";
   const intelligenceReport = enemy ? {
-    subject: `${unit.name}活动情报更新`,
-    body: `战区情报官综合前沿观察与截获片段研判：${unit.name}在${movement?.label || "当前地域"}附近出现活动迹象，可能正在${unit.role || "调整部署"}。其番号、兵力、状态与真实意图尚未证实；地图位置仅为当前推定，需以后续侦察继续复核。`,
+    subject: `网格 ${observedGrid} 附近发现敌军活动`,
+    body: `前沿观察与截获片段显示：网格 ${observedGrid} 附近发现${observedActivity}的活动迹象。暂不能确认其番号、兵力、行动目标或下一步方向。地图标记仅代表本次观测形成的推定区域，需要后续侦察复核。`,
     status: "活动迹象",
-    summary: `${unit.name}的行动方向尚在研判，现有位置属于情报推定。`,
+    summary: `网格 ${observedGrid} 附近有${observedActivity}活动，目标和行动方向未确认。`,
     morale: "不明",
     comms: "情报推定"
   } : null;
-  const reportedStatus = reportedContact && !activeLocalBattle
+  const reportedStatus = movement?.blocked ? "行军暂缓，等待改令" : reportedContact && !activeLocalBattle
     ? orderResponse ? movement?.kind === "fire_support" ? "执行火力任务" : movement?.kind === "hold" ? "固守中" : "执行中" : "自主行动"
     : decision.status;
 
@@ -542,7 +616,7 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
     ...currentState,
     x: currentPosition.x,
     y: currentPosition.y,
-    status: staleAutonomy || supersededOrder || preserveCommandStatus ? currentState.status : intelligenceReport?.status || reportedStatus,
+    status: staleAutonomy || supersededOrder || preserveCommandStatus ? currentState.status : intelligenceReport?.status || reportedStatus || "已回报",
     summary: staleAutonomy || supersededOrder ? currentState.summary : intelligenceReport?.summary || decision.summary,
     morale: staleAutonomy || supersededOrder ? currentState.morale : intelligenceReport?.morale || decision.morale,
     comms: staleAutonomy || supersededOrder ? currentState.comms : intelligenceReport?.comms || decision.comms,
@@ -557,7 +631,9 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
     ? "该军令回报已被更新军令替代，未改写当前行动路线"
     : staleAutonomy
       ? "迟到的自主回报仅归档，未改写当前部队位置"
-      : orderResponse
+      : movement?.blocked && !enemy
+        ? `路线未执行 · ${movement.blockedReason}`
+        : orderResponse
         ? `${doctrineLabels[doctrine] || "军令"}已生效 · ${impactSummary(appliedChanges)}`
         : enemy ? "敌情推定，位置将随情报时效衰减" : "部队自主行动回报";
 
@@ -565,8 +641,8 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
     id: `agent-${job.id}`,
     type: enemy ? "intel" : orderResponse && job.input.order?.priority === "urgent" ? "urgent" : "normal",
     source: enemy ? "战区情报汇总" : unit.name,
-    subject: intelligenceReport?.subject || decision.subject,
-    body: intelligenceReport?.body || decision.body,
+    subject: !enemy && movement?.blocked ? "行军路线受阻，请示调整目标" : intelligenceReport?.subject || decision.subject,
+    body: !enemy && movement?.blocked ? `${movement.blockedReason}\n原回报：${decision.body || decision.summary || "部队暂留原地。"}` : intelligenceReport?.body || decision.body,
     received: null,
     deliveredAtMinute: clockMinute,
     availableAtMinute: clockMinute,
@@ -574,8 +650,9 @@ export function applyAgentDecision(campaign, worldState, job, decision, clockMin
     generatedBy: decision.provider ?? "fallback",
     orderId: job.input.order?.id ?? null,
     confidence: enemy ? "estimated" : "confirmed",
-    expiresAtMinute: clockMinute + (enemy ? 90 : 360),
+    expiresAtMinute: reportAtMinute + (enemy ? 90 : 360),
     outcome,
+    ...reportSnapshot(campaign, state, unitId, reportAtMinute, { updatesUnitState: !staleAutonomy && !supersededOrder }),
     requiresDecision: requiresDecision(decision)
   };
   state.messages.unshift(message);

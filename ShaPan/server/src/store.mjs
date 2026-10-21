@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getCampaign, getUnitProfile, listCampaigns } from "./content.mjs";
 import { applyAgentDecision, advanceWorld, createInitialWorldState, normalizeWorldState, recordOrder } from "./simulation.mjs";
+import { playerEventCursor, playerEvents, playerState } from "./player-view.mjs";
 
 const CHANNEL_DELAY = { radio: 12, phone: 5, courier: 35, underground: 240 };
 const VALID_TIME_SCALES = new Set([1, 2, 4]);
@@ -165,13 +166,17 @@ export class MemoryStore {
   async getState(userId, gameId) {
     const game = await this.getGame(userId, gameId);
     if (!game) return null;
-    return { game: gameView(game), state: { ...game.state, timeline: game.events.slice(-300) } };
+    return {
+      game: gameView(game),
+      eventCursor: playerEventCursor(game.events, game.clockMinute, game.lastSequence),
+      state: playerState(game.campaignId, game.state, game.clockMinute, game.events.slice(-300))
+    };
   }
 
   async getEvents(userId, gameId, after = 0) {
     const game = await this.getGame(userId, gameId);
     if (!game) return null;
-    return game.events.filter((event) => event.id > after);
+    return playerEvents(game.campaignId, game.events.filter((event) => event.id > after).slice(0, 200), game.clockMinute, after);
   }
 
   async createOrder(userId, gameId, input) {
@@ -348,13 +353,17 @@ export class PostgresStore {
     state.orders = orders.map(orderView);
     state.messages = messages.filter((row) => row.external_id).map((row) => reportMessageView({ id: row.external_id, source: row.source, type: row.message_type, subject: row.subject, body: row.body, deliveredAtMinute: row.delivered_at_minute, ...(row.payload || {}) }));
     const { rows: timeline } = await this.pool.query(`select sequence as id, type, clock_minute, payload, created_at from shapan.world_events where game_id = $1 order by sequence desc limit 300`, [gameId]);
-    state.timeline = timeline.reverse();
-    return { game: gameView(game), state };
+    const visibleTimeline = timeline.reverse().map((row) => eventView(row));
+    const { rows: pending } = await this.pool.query(`select min(sequence) as first_pending from shapan.world_events where game_id = $1 and payload ? 'message' and coalesce((payload #>> '{message,availableAtMinute}')::numeric, (payload #>> '{message,deliveredAtMinute}')::numeric, clock_minute) > $2`, [gameId, game.clockMinute]);
+    const firstPending = pending[0]?.first_pending;
+    const eventCursor = firstPending === null || firstPending === undefined ? Number(game.lastSequence) : Math.min(Number(game.lastSequence), Number(firstPending) - 1);
+    return { game: gameView(game), eventCursor, state: playerState(game.campaignId, state, Number(game.clockMinute), visibleTimeline) };
   }
   async getEvents(userId, gameId, after = 0) {
-    if (!await this.getGame(userId, gameId)) return null;
+    const game = await this.getGame(userId, gameId);
+    if (!game) return null;
     const { rows } = await this.pool.query(`select sequence, game_id, type, clock_minute, payload, created_at from shapan.world_events where game_id = $1 and sequence > $2 order by sequence asc limit 200`, [gameId, after]);
-    return rows.map(eventView);
+    return playerEvents(game.campaignId, rows.map(eventView), Number(game.clockMinute), after);
   }
   async createOrder(userId, gameId, input) {
     const channel = input.channel || "radio";

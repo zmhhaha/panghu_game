@@ -29,6 +29,8 @@ import {
 import { TacticalMap, type MapLayers, type TacticalUnit } from "./tactical-map";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
+import { anchorsForCampaign } from "../lib/map-anchors";
+import { initialPositionForCampaign } from "../lib/map-definition";
 
 type Campaign = {
   id: string;
@@ -65,6 +67,7 @@ type Message = {
   expiresAtMinute?: number;
   outcome?: string;
   requiresDecision?: boolean;
+  reportedPosition?: { x: number; y: number; atMinute: number };
 };
 
 type GameSummary = {
@@ -73,6 +76,7 @@ type GameSummary = {
   status: "running" | "paused" | "won" | "lost" | "finished";
   clockMinute: number;
   timeScale: number;
+  eventSequence?: number;
   startedAt?: string | null;
   updatedAt?: string;
 };
@@ -194,34 +198,11 @@ function battlefieldRisk(field: BattlefieldState) {
   return "当前态势具备守住目标的条件";
 }
 
-const operationalLocations: Record<string, Array<{ name: string; x: number; y: number }>> = {
-  taierzhuang: [
-    { name: "台儿庄核心阵地", x: 52, y: 49 },
-    { name: "东门阵地", x: 67, y: 36 },
-    { name: "西北外围", x: 34, y: 43 },
-    { name: "运河南岸", x: 43, y: 64 },
-    { name: "台枣支线", x: 77, y: 25 },
-    { name: "城南运河", x: 29, y: 78 }
-  ],
-  arnhem: [
-    { name: "阿纳姆公路桥", x: 75, y: 68 },
-    { name: "公路桥南侧", x: 75, y: 76 },
-    { name: "桥区北侧", x: 75, y: 60 },
-    { name: "北侧道路", x: 66, y: 38 },
-    { name: "奥斯特贝克东侧", x: 42, y: 57 },
-    { name: "公路桥西侧引道", x: 58, y: 67 },
-    { name: "乌得勒支公路", x: 49, y: 55 },
-    { name: "DZ X着陆区", x: 20, y: 72 },
-    { name: "着陆地域", x: 17, y: 39 },
-    { name: "撤收地域", x: 30, y: 68 }
-  ]
-};
-
 function unitLocationLabel(campaignId: string, unit: TacticalUnit) {
-  const locations = operationalLocations[campaignId] || [];
+  const locations = anchorsForCampaign(campaignId);
   const nearest = locations.reduce<{ name: string; distance: number } | null>((best, location) => {
     const distance = Math.hypot(unit.x - location.x, unit.y - location.y);
-    return !best || distance < best.distance ? { name: location.name, distance } : best;
+    return !best || distance < best.distance ? { name: location.label, distance } : best;
   }, null);
   return nearest?.name || unit.detail.split("·")[0].trim();
 }
@@ -229,6 +210,18 @@ function unitLocationLabel(campaignId: string, unit: TacticalUnit) {
 function unitReportClock(unit: TacticalUnit) {
   const minute = unit.lastReportAtMinute ?? unit.updatedAtMinute;
   return typeof minute === "number" ? formatClock(minute) : unit.detail.split("·").at(-1)?.trim() || "--:--";
+}
+
+function mergeReportedUnits(current: Record<string, Partial<TacticalUnit>>, incoming: Record<string, Partial<TacticalUnit>>) {
+  const next = { ...current };
+  for (const [unitId, report] of Object.entries(incoming)) {
+    const previous = current[unitId];
+    const previousAt = previous?.reportedPosition?.atMinute ?? previous?.lastReportAtMinute ?? previous?.updatedAtMinute ?? -Infinity;
+    const reportedAt = report.reportedPosition?.atMinute ?? report.lastReportAtMinute ?? report.updatedAtMinute ?? -Infinity;
+    if (previous && previousAt > reportedAt) continue;
+    next[unitId] = report;
+  }
+  return next;
 }
 
 function serverMessage(raw: Partial<Message> & { deliveredAtMinute?: number | null; message_type?: string }): Message {
@@ -247,13 +240,14 @@ function serverMessage(raw: Partial<Message> & { deliveredAtMinute?: number | nu
     ,confidence: raw.confidence as Message["confidence"] | undefined,
     expiresAtMinute: raw.expiresAtMinute,
     outcome: raw.outcome,
-    requiresDecision: raw.requiresDecision
+    requiresDecision: raw.requiresDecision,
+    reportedPosition: raw.reportedPosition
   };
 }
 
 function orderMessage(order: { id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; deliveredAtMinute?: number | null; status: Message["orderStatus"] }, recipientName: string): Message {
   const channelName = order.channel === "radio" ? "无线电报" : order.channel === "phone" ? "野战电话" : order.channel === "courier" ? "通信员" : "地下交通线";
-  const deliveryDelay = order.channel === "radio" ? 8 : order.channel === "phone" ? 5 : 25;
+  const deliveryDelay = order.channel === "radio" ? 12 : order.channel === "phone" ? 5 : order.channel === "underground" ? 240 : 35;
   return {
     id: `order-${order.id}`,
     type: "sent",
@@ -284,7 +278,8 @@ function messageKind(message: Message) {
   return "常规";
 }
 
-function displayUnitStatus(status: string) {
+function displayUnitStatus(status?: string) {
+  if (!status) return "等待报告";
   const labels: Record<string, string> = {
     in_progress: "执行中",
     waiting: "待命",
@@ -471,6 +466,7 @@ export function WarRoom() {
   const [objectiveSignal, setObjectiveSignal] = useState("等待战场回报 · 达标线 50%");
   const [serverUnitStates, setServerUnitStates] = useState<Record<string, Partial<TacticalUnit>>>({});
   const [selectedUnitId, setSelectedUnitId] = useState("cn31");
+  const [mapSelectionRevision, setMapSelectionRevision] = useState(0);
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
   const [messageDetailExpanded, setMessageDetailExpanded] = useState(false);
   const [resolvedIntelIds, setResolvedIntelIds] = useState<Set<string>>(new Set());
@@ -478,6 +474,7 @@ export function WarRoom() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [afterActionOpen, setAfterActionOpen] = useState(false);
+  const [mapFocused, setMapFocused] = useState(false);
   const [mapLayers, setMapLayers] = useState<MapLayers>({ units: true, intel: true, orders: true, grid: true });
   const [channel, setChannel] = useState("radio");
   const [recipient, setRecipient] = useState("cn31");
@@ -490,11 +487,14 @@ export function WarRoom() {
   const [notice, setNotice] = useState("尚未建立服务器战局");
   const knownOrderIds = useRef(new Set<string>());
   const pendingOrderUpdates = useRef(new Map<string, { status?: Message["orderStatus"]; deliveredAtMinute?: number }>());
+  const activeServerGameId = useRef<string | null>(null);
+  const latestServerSequence = useRef(0);
+  const latestServerMinute = useRef(campaign.startMinute);
 
   const units = useMemo(() => baseUnits.map((unit) => {
-    const merged = { ...unit, ...(serverUnitStates[unit.id] || {}) };
+    const merged = { ...unit, ...initialPositionForCampaign(campaign.id, unit.id), ...(serverUnitStates[unit.id] || {}) };
     return { ...merged, status: displayUnitStatus(merged.status) };
-  }), [baseUnits, serverUnitStates]);
+  }), [baseUnits, campaign.id, serverUnitStates]);
   const selectedUnit = units.find((unit) => unit.id === selectedUnitId) || units[0];
   const visibleMessages = messages.filter((message) => message.type === "sent" || message.availableAtMinute === undefined || clockMinute >= message.availableAtMinute);
   const filteredMessages = visibleMessages.filter((message) => messageFilter === "all" || message.type === messageFilter);
@@ -506,16 +506,21 @@ export function WarRoom() {
   });
   const decisionMessages = [...latestDecisionBySource.values()].filter((message) => !resolvedIntelIds.has(message.id));
   const actionableDecisionIds = new Set(decisionMessages.map((message) => message.id));
-  const revealedUnitIds = new Set<string>(visibleMessages.flatMap((message) => {
-    if (message.type === "sent" || !message.location) return [];
-    if (typeof message.expiresAtMinute === "number" && clockMinute > message.expiresAtMinute) return [];
-    return [message.location];
+  const revealedUnitIds = new Set<string>(Object.entries(serverUnitStates).flatMap(([unitId, state]) => {
+    if (!state.reportedPosition) return [];
+    const enemy = baseUnits.find((unit) => unit.id === unitId)?.side === "enemy";
+    if (enemy && typeof state.expiresAtMinute === "number" && clockMinute > state.expiresAtMinute) return [];
+    return [unitId];
   }));
   const arrived = visibleMessages.filter((message) => message.type !== "sent").length;
   const sentMessages = visibleMessages.filter((message) => message.type === "sent");
   const friendlyUnits = units.filter((unit) => unit.side === "friendly");
   const currentRecipient = useMemo(() => units.find((unit) => unit.id === recipient), [recipient, units]);
   const selectedMessageBody = visibleMessages.find((message) => message.id === selectedMessage);
+  const reportPosition = selectedMessageBody?.reportedPosition;
+  const focusedReport = selectedMessageBody?.location && reportPosition && [reportPosition.x, reportPosition.y, reportPosition.atMinute].every(Number.isFinite)
+    ? { id: selectedMessageBody.id, unitId: selectedMessageBody.location, ...reportPosition, source: selectedMessageBody.source, confidence: selectedMessageBody.confidence }
+    : null;
   const deliveredOrders = sentMessages.filter((message) => message.orderStatus === "delivered").length;
   const respondedOrderIds = new Set(visibleMessages.filter((message) => message.type !== "sent" && message.orderId).map((message) => message.orderId as string));
   const battleEnded = ["won", "lost", "finished"].includes(gameStatus);
@@ -541,30 +546,34 @@ export function WarRoom() {
 
   useEffect(() => {
     if (!gameId) return;
+    let active = true;
     const source = new EventSource(`/api/v1/games/${gameId}/events`);
     source.addEventListener("snapshot", (event) => {
+      if (!active || activeServerGameId.current !== gameId) return;
       const data = JSON.parse((event as MessageEvent).data);
-      setTimeline((items) => [...items, data].slice(-300));
-      if (typeof data.game?.clockMinute === "number") setClockMinute(data.game.clockMinute);
-      if (typeof data.game?.timeScale === "number") setSpeed(data.game.timeScale);
-      const status = data.game?.status;
-      setGameStatus(status || "paused");
-      setBattleStarted(Boolean(data.game?.startedAt) || status === "running");
-      setPaused(status !== "running");
       hydrateState(data);
     });
     source.addEventListener("world_event", (event) => {
+      if (!active || activeServerGameId.current !== gameId) return;
       const data = JSON.parse((event as MessageEvent).data);
+      const reportEvent = data.type === "REPORT_RECEIVED" || data.type === "AGENT_REPORT" || data.type === "ENEMY_ACTION";
+      const sequence = Number(data.id);
+      const olderEvent = Number.isFinite(sequence) && sequence < latestServerSequence.current;
+      // Reports can be delivered after a newer snapshot; only their own position snapshot may update a unit.
+      if (olderEvent && !reportEvent) return;
+      if (Number.isFinite(sequence)) latestServerSequence.current = Math.max(latestServerSequence.current, sequence);
       if (data.type === "TIME_TICK") {
-        setClockMinute(data.clockMinute);
+        latestServerMinute.current = Math.max(latestServerMinute.current, Number(data.clockMinute));
+        setClockMinute(latestServerMinute.current);
         if (typeof data.payload?.timeScale === "number") setSpeed(data.payload.timeScale);
       }
       if (data.type === "GAME_STARTED") {
+        setGameStatus("running");
         setBattleStarted(true);
         setPaused(false);
       }
-      if (data.type === "GAME_PAUSED") setPaused(true);
-      if (data.type === "GAME_RESUMED") setPaused(false);
+      if (data.type === "GAME_PAUSED") { setGameStatus("paused"); setPaused(true); }
+      if (data.type === "GAME_RESUMED") { setGameStatus("running"); setPaused(false); }
       if (data.type === "GAME_SPEED_CHANGED" && typeof data.payload?.timeScale === "number") setSpeed(data.payload.timeScale);
       if (data.type === "GAME_FINISHED") {
         setGameStatus("finished");
@@ -572,14 +581,14 @@ export function WarRoom() {
         setAfterActionOpen(true);
         setNotice("当前战局已被新建战局替代，作战时钟已停止");
       }
-      if (data.type === "REPORT_RECEIVED" || data.type === "AGENT_REPORT" || data.type === "ENEMY_ACTION") {
+      if (reportEvent) {
         const message = data.payload?.message;
         if (message) {
           const nextMessage = serverMessage(message);
           setMessages((items) => [nextMessage, ...items.filter((item) => item.id !== message.id)]);
           if (nextMessage.orderId) updateOrderMessage({ id: nextMessage.orderId, status: "delivered", deliveredAtMinute: nextMessage.availableAtMinute });
         }
-        if (data.payload?.unitState && message?.location) setServerUnitStates((items) => ({ ...items, [message.location]: data.payload.unitState }));
+        if (data.payload?.unitState && message?.location && message.updatesUnitState !== false) setServerUnitStates((items) => mergeReportedUnits(items, { [message.location]: data.payload.unitState }));
       }
       if (data.type === "ORDER_DELIVERED") updateOrderMessage(data.payload?.order);
       if (data.type === "OBJECTIVE_UPDATED") {
@@ -601,8 +610,8 @@ export function WarRoom() {
         setObjectiveSignal(nextStatus === "won" ? "最终守备态势达到达标线" : "最终守备态势低于达标线");
       }
     });
-    source.onerror = () => setNotice("服务器通信暂时中断 · 正在等待重新连接");
-    return () => source.close();
+    source.onerror = () => { if (active) setNotice("服务器通信暂时中断 · 正在等待重新连接"); };
+    return () => { active = false; source.close(); };
   }, [gameId]);
 
   useEffect(() => {
@@ -633,9 +642,33 @@ export function WarRoom() {
 
   function prepareReply(message: Message) {
     if (battleEnded) return;
-    if (message.location) selectUnit(message.location);
+    if (message.location) selectUnit(message.location, true);
     setDraft(`关于“${message.subject}”：`);
     resolveDecision(message.id);
+  }
+
+  function focusMessage(message: Message) {
+    setSelectedMessage(message.id);
+    if (message.location) selectUnit(message.location, true);
+    if (message.type !== "sent" && !message.reportedPosition) setNotice("该战报没有位置记录，地图仅聚焦该部队最后已知位置。");
+  }
+
+  function pickMapTarget(target: { x: number; y: number; label: string }) {
+    if (orderControlsDisabled) {
+      setNotice(battleEnded ? "战役已结束，不能准备新军令。" : "开始战役后可选取地图目标并准备军令。");
+      return;
+    }
+    const coordinate = `${Number(target.x.toFixed(1))},${Number(target.y.toFixed(1))}`;
+    const targetLine = `地图目标：${target.label}，坐标 ${coordinate}。`;
+    const existing = draft.replace(/(?:^|\n)地图目标：[^\n]*(?:\n|$)/g, "\n").trim();
+    if (existing.length + targetLine.length + (existing ? 1 : 0) > 420) {
+      setNotice("军令草稿空间不足，请精简正文后重新选择地图目标；原草稿已保留。");
+      setMapFocused(false);
+      return;
+    }
+    setDraft([existing, targetLine].filter(Boolean).join("\n"));
+    setMapFocused(false);
+    setNotice(`已将${target.label}（${coordinate}）填入草稿，军令尚未发送。`);
   }
 
   // SSE is the fast path, but a reconnect or a proxy buffering event-stream
@@ -650,13 +683,6 @@ export function WarRoom() {
         if (!response.ok || !active) return;
         const data = await response.json();
         if (!active) return;
-        if (typeof data.game?.clockMinute === "number") setClockMinute(data.game.clockMinute);
-        if (typeof data.game?.timeScale === "number") setSpeed(data.game.timeScale);
-        if (data.game?.status) {
-          setGameStatus(data.game.status);
-          setPaused(data.game.status !== "running");
-          setBattleStarted(Boolean(data.game.startedAt) || ["running", "won", "lost", "finished"].includes(data.game.status));
-        }
         hydrateState(data);
       } catch {
         // The SSE connection continues to provide updates; reconciliation is best effort.
@@ -666,9 +692,24 @@ export function WarRoom() {
     return () => { active = false; window.clearInterval(timer); };
   }, [gameId]);
 
+  function applyGameSummary(game?: GameSummary) {
+    if (!game || activeServerGameId.current !== game.id) return false;
+    const sequence = game.eventSequence;
+    if (typeof sequence === "number" && sequence < latestServerSequence.current) return false;
+    if (game.clockMinute < latestServerMinute.current) return false;
+    if (typeof sequence === "number") latestServerSequence.current = Math.max(latestServerSequence.current, sequence);
+    latestServerMinute.current = Math.max(latestServerMinute.current, game.clockMinute);
+    setClockMinute(latestServerMinute.current);
+    setSpeed(game.timeScale);
+    setGameStatus(game.status);
+    setPaused(game.status !== "running");
+    setBattleStarted(Boolean(game.startedAt) || ["running", "won", "lost", "finished"].includes(game.status));
+    return true;
+  }
+
   function hydrateState(data: { game?: GameSummary; state?: { messages?: Message[]; timeline?: TimelineEvent[]; orders?: Array<{ id: string; recipientId: string; channel: string; priority?: string; text: string; sentAtMinute: number; deliveredAtMinute?: number | null; status: Message["orderStatus"] }>; unitStates?: Record<string, Partial<TacticalUnit>>; objectiveProgress?: number; battlefield?: BattlefieldState } }, sourceCampaignId = campaignId) {
     const state = data.state;
-    if (!state) return;
+    if (!state || !applyGameSummary(data.game)) return;
     const restoredReports = (state.messages || []).map(serverMessage).sort((a, b) => (b.deliveredAtMinute ?? b.availableAtMinute ?? -1) - (a.deliveredAtMinute ?? a.availableAtMinute ?? -1));
     const restoredOrders = (state.orders || []).map((order) => orderMessage(order, unitsByCampaign[sourceCampaignId].find((unit) => unit.id === order.recipientId)?.name || order.recipientId));
     const reportedOrderIds = new Set(restoredReports.map((message) => message.orderId).filter((orderId): orderId is string => Boolean(orderId)));
@@ -680,7 +721,7 @@ export function WarRoom() {
     const restoredMessages = [...restoredOrders, ...restoredReports.filter((message) => !restoredOrders.some((order) => order.id === message.id))]
       .sort((a, b) => Number(b.deliveredAtMinute ?? b.availableAtMinute ?? -1) - Number(a.deliveredAtMinute ?? a.availableAtMinute ?? -1));
     setMessages(restoredMessages);
-    setServerUnitStates(state.unitStates || {});
+    setServerUnitStates((items) => mergeReportedUnits(items, state.unitStates || {}));
     setTimeline((state.timeline || []).map((event) => ({ ...event, clockMinute: event.clockMinute ?? (event as { clock_minute?: number }).clock_minute ?? (event.payload as { clockMinute?: number } | undefined)?.clockMinute })));
     if (typeof state.objectiveProgress === "number") setObjectiveProgress(state.objectiveProgress);
     if (state.battlefield) setBattlefield(state.battlefield);
@@ -695,6 +736,9 @@ export function WarRoom() {
   function resetBattleView(nextCampaignId: string) {
     const next = campaigns.find((item) => item.id === nextCampaignId) || campaigns[0];
     const defaultUnit = next.id === "taierzhuang" ? "cn31" : "uk2para";
+    activeServerGameId.current = null;
+    latestServerSequence.current = 0;
+    latestServerMinute.current = next.startMinute;
     setCampaignId(next.id);
     setClockMinute(next.startMinute);
     setSpeed(1);
@@ -712,6 +756,7 @@ export function WarRoom() {
     setMessageDetailExpanded(false);
     setResolvedIntelIds(new Set());
     setAfterActionOpen(false);
+    setMapFocused(false);
     setDraft("");
     setMessageFilter("all");
     setBattleStarted(false);
@@ -729,9 +774,9 @@ export function WarRoom() {
       if (!response.ok) throw new Error("无法建立服务器战局，请稍后重试");
       const data = await response.json();
       resetBattleView(nextCampaign.id);
+      activeServerGameId.current = data.game.id;
       setGameId(data.game.id);
-      setClockMinute(data.game.clockMinute);
-      setSpeed(data.game.timeScale ?? 1);
+      applyGameSummary(data.game);
       setNotice("战前待命 · 作战时钟尚未启动");
       setScreen("war-room");
     } catch (error) {
@@ -751,12 +796,8 @@ export function WarRoom() {
       if (!response.ok) throw new Error("无法恢复已有战局");
       const data = await response.json();
       resetBattleView(nextCampaign.id);
+      activeServerGameId.current = existing.id;
       setGameId(existing.id);
-      setClockMinute(data.game.clockMinute);
-      setSpeed(data.game.timeScale ?? 1);
-      setGameStatus(data.game.status);
-      setBattleStarted(Boolean(data.game.startedAt) || data.game.status === "running");
-      setPaused(data.game.status !== "running");
       hydrateState(data, nextCampaign.id);
       setAfterActionOpen(["won", "lost", "finished"].includes(data.game.status));
       setObjectiveSignal(data.game.status === "won" ? "最终守备态势达到达标线" : data.game.status === "lost" ? "最终守备态势低于达标线" : "等待战场回报 · 达标线 50%");
@@ -770,6 +811,7 @@ export function WarRoom() {
   }
 
   function returnToArchive() {
+    activeServerGameId.current = null;
     setPaused(true);
     setBattleStarted(false);
     setGameId(null);
@@ -784,11 +826,7 @@ export function WarRoom() {
       const response = await fetch(`/api/v1/games/${gameId}/start`, { method: "POST" });
       if (!response.ok) throw new Error("开战令未能送达服务器");
       const data = await response.json();
-      setClockMinute(data.game.clockMinute);
-      setSpeed(data.game.timeScale ?? 1);
-      setGameStatus(data.game.status);
-      setBattleStarted(true);
-      setPaused(false);
+      if (!applyGameSummary(data.game)) return;
       setObjectiveSignal("战役时钟已启动 · 等待首批回报");
       setNotice("战役已经开始 · 等待各部队回传情报");
     } catch (error) {
@@ -811,9 +849,7 @@ export function WarRoom() {
         throw new Error(details?.requestId ? `${fallback} · 请求 ${details.requestId}` : fallback);
       }
       const data = await response.json();
-      setGameStatus(data.game.status);
-      setPaused(data.game.status !== "running");
-      setSpeed(data.game.timeScale ?? speed);
+      if (!applyGameSummary(data.game)) return;
       setNotice(action === "pause" ? "战役已暂停 · 可继续阅读情报并下达军令" : action === "resume" ? "战役继续推进" : `战役速度已调整为 ${data.game.timeScale}×`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "战役时钟控制失败");
@@ -822,7 +858,11 @@ export function WarRoom() {
     }
   }
 
-  function selectUnit(unitId: string) {
+  function selectUnit(unitId: string, keepReportFocus = false) {
+    if (!keepReportFocus) {
+      setSelectedMessage(null);
+      setMapSelectionRevision((revision) => revision + 1);
+    }
     setSelectedUnitId(unitId);
     const unit = units.find((item) => item.id === unitId);
     if (unit?.side === "friendly") setRecipient(unitId);
@@ -886,16 +926,16 @@ export function WarRoom() {
         </div>
       </header>
 
-      <div className="war-console-body grid bg-line min-[900px]:h-[calc(100vh-74px)] min-[900px]:grid-cols-[260px_minmax(0,1fr)_300px] min-[900px]:gap-px">
-        <aside className="relative order-2 flex min-h-[620px] min-w-0 flex-col bg-panel min-[900px]:order-1 min-[900px]:min-h-0">
+      <div className={cn("war-console-body grid bg-line min-[900px]:h-[calc(100vh-74px)] min-[900px]:gap-px", mapFocused ? "grid-cols-1" : "min-[900px]:grid-cols-[260px_minmax(0,1fr)_300px]")}>
+        <aside className={cn("relative order-2 flex min-h-[620px] min-w-0 flex-col bg-panel min-[900px]:order-1 min-[900px]:min-h-0", mapFocused && "hidden")}>
           <div className="flex h-[66px] shrink-0 items-center justify-between border-b border-line px-4"><div><p className="text-[9px] text-muted">SIGNALS / 通信</p><h2 className="mt-1 font-serif text-lg font-bold">收件台</h2></div><span className="border border-copper/45 bg-copper/10 px-2 py-1 text-[10px] text-paper">{arrived} 已达</span></div>
           <div className="grid h-10 shrink-0 grid-cols-4 border-b border-line p-1.5">
             {messageFilters.map((filter) => <button key={filter.id} type="button" onClick={() => setMessageFilter(filter.id)} className={cn("border-r border-line text-[11px] last:border-r-0", messageFilter === filter.id ? "bg-field/30 text-paper" : "text-muted hover:text-paper")}>{filter.label}</button>)}
           </div>
-          {decisionMessages.length ? <button type="button" onClick={() => { setMessageFilter("all"); setSelectedMessage(decisionMessages[0].id); if (decisionMessages[0].location) selectUnit(decisionMessages[0].location); }} className="flex shrink-0 items-center gap-2 border-b border-alert/40 bg-alert/10 px-3 py-2 text-left text-[10px] text-alert"><AlertTriangle size={13} /><span className="min-w-0 flex-1 truncate"><b>{decisionMessages.length} 个情报源待研判</b> · {decisionMessages[0].subject}</span><ArrowRight size={12} /></button> : null}
+          {decisionMessages.length ? <button type="button" onClick={() => { setMessageFilter("all"); focusMessage(decisionMessages[0]); }} className="flex shrink-0 items-center gap-2 border-b border-alert/40 bg-alert/10 px-3 py-2 text-left text-[10px] text-alert"><AlertTriangle size={13} /><span className="min-w-0 flex-1 truncate"><b>{decisionMessages.length} 个情报源待研判</b> · {decisionMessages[0].subject}</span><ArrowRight size={12} /></button> : null}
           <div className="command-scroll min-h-[220px] flex-1 divide-y divide-line/70 overflow-y-auto">
             {displayedMessages.length ? displayedMessages.map((message) => (
-              <button key={message.id} type="button" onClick={() => { setSelectedMessage(message.id); if (message.location) selectUnit(message.location); }} className={cn("block w-full border-l-[3px] px-3 py-3 text-left transition hover:bg-white/[.035]", message.type === "urgent" ? "border-alert" : message.type === "intel" ? "border-copper" : message.type === "sent" ? "border-blueMark" : "border-transparent", selectedMessage === message.id && "bg-white/[.045]")}>
+              <button key={message.id} type="button" onClick={() => focusMessage(message)} className={cn("block w-full border-l-[3px] px-3 py-3 text-left transition hover:bg-white/[.035]", message.type === "urgent" ? "border-alert" : message.type === "intel" ? "border-copper" : message.type === "sent" ? "border-blueMark" : "border-transparent", selectedMessage === message.id && "bg-white/[.045]")}>
                 <div className="flex items-center justify-between gap-2"><span className={cn("min-w-0 truncate text-[9px]", message.type === "urgent" ? "text-alert" : message.type === "intel" ? "text-copper" : message.type === "sent" ? "text-blueMark" : "text-muted")}>{message.source} · {messageKind(message)}</span><div className="flex shrink-0 items-center gap-2"><time className="font-mono text-[9px] text-muted">{message.received}</time>{actionableDecisionIds.has(message.id) ? <span className="border border-alert/50 px-1 text-[8px] text-alert">待研判</span> : null}</div></div>
                 <p className="mt-1.5 line-clamp-2 text-xs font-semibold leading-5 text-paper">{message.subject}</p>
               </button>
@@ -903,16 +943,18 @@ export function WarRoom() {
             {filteredMessages.length > displayedMessages.length ? <p className="border-t border-line px-3 py-2 text-center text-[9px] text-muted">已显示最新 {displayedMessages.length} 条，旧情报保留在战役复盘时间线。</p> : null}
           </div>
           <div className={cn("command-scroll shrink-0 overflow-y-auto border-t border-line bg-panel p-4", messageDetailExpanded ? "absolute inset-x-0 bottom-0 z-30 max-h-[72%] min-h-[360px] shadow-2xl" : "max-h-[300px] min-h-[220px]")}>
+            {selectedMessageBody && selectedMessageBody.type !== "sent" ? <p className="mb-2 border-l-2 border-blueMark/60 pl-2 text-[10px] leading-4 text-muted">{focusedReport ? `报告位置 ${focusedReport.x.toFixed(1)},${focusedReport.y.toFixed(1)} · 观测于 ${formatClock(focusedReport.atMinute)}` : "本报无位置记录；地图仅聚焦该部队最后已知位置。"}</p> : null}
             {selectedMessageBody ? <><div className="flex items-center justify-between gap-3"><span className="text-[10px] text-copper">通信原文</span><div className="flex items-center gap-2"><time className="font-mono text-[10px] text-muted">{selectedMessageBody.received}</time><button type="button" onClick={() => setMessageDetailExpanded((expanded) => !expanded)} className="flex h-7 w-7 items-center justify-center border border-line text-muted hover:border-copper hover:text-paper" title={messageDetailExpanded ? "收起通信原文" : "展开通信原文"}>{messageDetailExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}</button></div></div><p className="mt-2 text-xs font-bold">{selectedMessageBody.subject}</p><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-muted">{selectedMessageBody.body}</p>{selectedMessageBody.outcome ? <p className="mt-2 border-l-2 border-copper/70 pl-2 text-[10px] text-copper">行动结果 · {selectedMessageBody.outcome}</p> : null}{selectedMessageBody.type === "sent" ? <p className="mt-2 text-[10px] text-muted">军令状态 · {orderQueueLabel(selectedMessageBody, clockMinute, gameStatus, Boolean(selectedMessageBody.orderId && respondedOrderIds.has(selectedMessageBody.orderId)))}</p> : null}{!battleEnded && selectedMessageBody.type !== "sent" && actionableDecisionIds.has(selectedMessageBody.id) ? <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" className="border border-blueMark/60 px-2 py-1 text-[9px] text-blueMark" onClick={() => selectedMessageBody.type === "intel" ? resolveDecision(selectedMessageBody.id) : prepareReply(selectedMessageBody)}>{selectedMessageBody.type === "intel" ? "确认情报" : "准备回复"}</button><button type="button" className="border border-line px-2 py-1 text-[9px] text-muted" onClick={() => resolveDecision(selectedMessageBody.id)}>{selectedMessageBody.type === "intel" ? "标记低可信" : "仅标记已阅"}</button></div> : null}</> : <div className="flex h-full flex-col items-center justify-center text-muted"><Inbox size={17} /><p className="mt-3 text-xs">请选择一份通信记录</p></div>}
           </div>
         </aside>
 
         <section className="relative order-1 flex min-h-[650px] min-w-0 flex-col bg-[#2a332b] min-[900px]:order-2 min-[900px]:min-h-0">
-          <div className="flex h-[60px] shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-4">
+          <div className="flex min-h-[60px] shrink-0 flex-wrap items-center justify-between gap-2 border-b border-line bg-panel px-4 py-2">
             <div className="min-w-0"><p className="truncate text-[9px] text-muted">{campaign.mapSubtitle}</p><h2 className="truncate font-serif text-lg font-bold">{campaign.mapTitle}</h2></div>
             <div className="flex shrink-0 items-center border border-line bg-ink/35">
               <span className="hidden h-7 items-center border-r border-line px-2 text-muted sm:flex"><Layers3 size={13} /></span>
               {layerLabels.map((layer) => <button key={layer.id} type="button" onClick={() => setMapLayers((value) => ({ ...value, [layer.id]: !value[layer.id] }))} className={cn("h-7 border-r border-line px-2.5 text-[10px] last:border-r-0", mapLayers[layer.id] ? "bg-field/35 text-paper" : "text-muted hover:text-paper")}>{layer.label}</button>)}
+              <button type="button" onClick={() => setMapFocused((value) => !value)} aria-pressed={mapFocused} className="flex h-7 items-center gap-1 border-l border-line px-2 text-[10px] text-copper hover:text-paper" title={mapFocused ? "恢复通信与指挥面板" : "收起两侧面板，专注地图"}>{mapFocused ? <Minimize2 size={12} /> : <Maximize2 size={12} />}{mapFocused ? "恢复面板" : "地图专注"}</button>
             </div>
           </div>
           <TacticalMap
@@ -920,17 +962,21 @@ export function WarRoom() {
             battleStarted={battleStarted}
             paused={paused}
             battleEnded={battleEnded}
+            clockMinute={clockMinute}
             canStart={Boolean(gameId)}
             layers={mapLayers}
             units={units}
             revealedUnitIds={revealedUnitIds}
             selectedUnit={selectedUnit}
+            selectionRevision={mapSelectionRevision}
             focusedUnitId={selectedMessageBody?.location ?? null}
+            focusedReport={focusedReport}
             visibleReportCount={arrived}
             onSelectUnit={selectUnit}
             onClearFocus={() => setSelectedMessage(null)}
-            onSetRecipient={selectUnit}
+            onSetRecipient={(unitId) => { selectUnit(unitId); setMapFocused(false); }}
             onStartBattle={startBattle}
+            onPickTarget={pickMapTarget}
           />
           {["won", "lost"].includes(gameStatus) ? (
             <div className={cn("absolute inset-x-3 bottom-[52px] z-40 border border-copper/70 bg-[#111713] text-paper shadow-2xl", afterActionOpen && "top-3 flex flex-col overflow-hidden")}>
@@ -970,17 +1016,17 @@ export function WarRoom() {
             <span className="flex items-center gap-1"><CloudSun size={12} />天气 <b className="text-paper">{campaign.weather} · 能见度 {campaign.visibility}</b></span>
             <span className="flex items-center gap-1"><Sunset size={12} />日落 <b className="text-paper">{campaign.sunset}</b></span>
             <span className="col-span-2 flex items-center gap-1 sm:col-span-1"><Wifi size={12} />通信态势 <b className="text-copper">{campaign.communications}</b></span>
-            <span className="hidden items-center gap-2 font-bold text-paper xl:flex"><i className="block h-2 w-14 border-x border-b border-paper/70" />2 KM</span>
+            <span className="hidden text-[9px] text-muted xl:block">示意作战图 · 坐标 0–100</span>
           </div>
         </section>
 
-        <aside className="command-scroll order-3 flex min-h-[760px] min-w-0 flex-col bg-panel min-[900px]:min-h-0 min-[900px]:overflow-y-auto">
+        <aside className={cn("command-scroll order-3 flex min-h-[760px] min-w-0 flex-col bg-panel min-[900px]:min-h-0 min-[900px]:overflow-y-auto", mapFocused && "hidden")}>
           <div className="shrink-0 border-b border-line">
             <div className="flex h-[54px] items-center justify-between px-4"><div><p className="text-[9px] text-muted">COMMAND / 指挥</p><h2 className="mt-0.5 font-serif text-lg font-bold">部队态势</h2></div><span className="border border-field/70 bg-field/15 px-2 py-1 text-[10px] text-paper">{friendlyUnits.filter((unit) => revealedUnitIds.has(unit.id)).length} / {friendlyUnits.length} 已获报告</span></div>
             <div className="divide-y divide-line/60 border-t border-line/70 px-3">
               {friendlyUnits.map((unit) => {
                 const known = revealedUnitIds.has(unit.id);
-                return <button key={unit.id} type="button" onClick={() => selectUnit(unit.id)} className={cn("flex h-[38px] w-full items-center gap-2 text-left", selectedUnitId === unit.id && "bg-white/[.035]")}><span className={cn("flex h-5 w-7 shrink-0 items-center justify-center border text-[9px] font-bold", campaign.id === "taierzhuang" ? "border-alert text-alert" : "border-blueMark text-blueMark")}>{unitGlyph(unit)}</span><span className="min-w-0 flex-1 truncate text-[11px] font-semibold">{unit.name}<small className="ml-1 font-normal text-muted">{known ? `${unitLocationLabel(campaign.id, unit)} · ${unitReportClock(unit)}` : "等待报告"}</small></span><i className={cn("h-1.5 w-1.5 shrink-0 rounded-full", known ? unit.status.includes("断") || unit.status.includes("失联") ? "bg-copper" : "bg-[#74a879]" : "bg-line")} /><span className="w-[82px] shrink-0 truncate whitespace-nowrap text-right text-[9px] text-muted">{known ? unit.status : "未联络"}</span></button>;
+                return <button key={unit.id} type="button" onClick={() => selectUnit(unit.id)} className={cn("flex h-[38px] w-full items-center gap-2 text-left", selectedUnitId === unit.id && "bg-white/[.035]")}><span className="flex h-5 w-7 shrink-0 items-center justify-center border border-blueMark text-[9px] font-bold text-blueMark">{unitGlyph(unit)}</span><span className="min-w-0 flex-1 truncate text-[11px] font-semibold">{unit.name}<small className="ml-1 font-normal text-muted">{known ? `${unitLocationLabel(campaign.id, unit)} · ${unitReportClock(unit)}` : "等待报告"}</small></span><i className={cn("h-1.5 w-1.5 shrink-0 rounded-full", known ? unit.status.includes("断") || unit.status.includes("失联") ? "bg-copper" : "bg-[#74a879]" : "bg-line")} /><span className="w-[82px] shrink-0 truncate whitespace-nowrap text-right text-[9px] text-muted">{known ? unit.status : "未联络"}</span></button>;
               })}
             </div>
           </div>
@@ -992,14 +1038,14 @@ export function WarRoom() {
             <p className="mb-1 text-[10px] text-muted">通信方式</p>
             <div className="mb-2 grid grid-cols-3 border border-line">
               {[
-                { id: "radio", label: "无线电报", delay: "约 8 分钟" },
+                { id: "radio", label: "无线电报", delay: "约 12 分钟" },
                 { id: "phone", label: "野战电话", delay: "约 5 分钟" },
-                { id: "courier", label: "通信员", delay: "约 25 分钟" }
+                { id: "courier", label: "通信员", delay: "约 35 分钟" }
               ].map((item) => <button key={item.id} type="button" disabled={orderControlsDisabled} onClick={() => setChannel(item.id)} className={cn("h-11 border-r border-line text-[10px] last:border-r-0 disabled:opacity-40", channel === item.id ? "bg-field/30 text-paper" : "text-muted hover:text-paper")}><b className="block text-[11px]">{item.label}</b><span>{item.delay}</span></button>)}
             </div>
             <label className="mb-1 text-[10px] text-muted" htmlFor="order-text">命令正文</label>
             <textarea id="order-text" maxLength={420} disabled={orderControlsDisabled} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={battleEnded ? "战役已结束，未发送草稿已清除" : battleStarted ? `致${currentRecipient?.name ?? "下级部队"}：写明任务、意图、时限与限制……` : "开始战役后才能发布军令"} className="min-h-[116px] flex-1 resize-none border border-line bg-ink p-3 text-xs leading-5 text-paper outline-none placeholder:text-muted/55 focus:border-copper disabled:opacity-50" />
-            <div className="mt-1 flex items-center justify-between text-[9px] text-muted"><span>{draft.length} / 420</span><span>{battleEnded ? "战役已结束" : `预计 ${formatClock(clockMinute + (channel === "radio" ? 8 : channel === "phone" ? 5 : 25))} 送达`}</span></div>
+            <div className="mt-1 flex items-center justify-between text-[9px] text-muted"><span>{draft.length} / 420</span><span>{battleEnded ? "战役已结束" : `预计 ${formatClock(clockMinute + (channel === "radio" ? 12 : channel === "phone" ? 5 : 35))} 送达`}</span></div>
             <div className="mt-2 flex items-center gap-2"><label className="text-[10px] text-muted" htmlFor="priority">优先级</label><select id="priority" disabled={orderControlsDisabled} value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 border border-line bg-ink px-2 text-[10px] text-paper disabled:opacity-45"><option value="normal">常规</option><option value="urgent">紧急</option></select><span className="ml-auto flex items-center gap-1 text-[9px] text-copper"><i className="h-1.5 w-1.5 rounded-full bg-copper" />截获风险：{channel === "radio" ? "中高" : channel === "phone" ? "低" : "中等"}</span></div>
             <Button className="relative z-40 mt-2 w-full rounded-none" variant="copper" disabled={orderControlsDisabled || sendingOrder || draft.trim().length < 2} onClick={sendOrder}><Send size={14} />{battleEnded ? "战役已结束" : sendingOrder ? "正在编码…" : "编码并发送"}</Button>
           </div>

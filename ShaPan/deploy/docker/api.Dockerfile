@@ -30,5 +30,6 @@ RUN npm config set registry "${NPM_REGISTRY}" \
   && npm install --omit=dev --ignore-scripts \
   && npm cache clean --force
 COPY server ./server
+COPY shared ./shared
 EXPOSE 3001
 CMD ["node", "server/src/index.mjs"]
