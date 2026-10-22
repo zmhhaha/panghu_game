@@ -19,6 +19,43 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 const key = () => crypto.randomUUID();
 
+export interface CommentSubmission {
+  idempotencyKey: string;
+  contentId: string;
+  text: string;
+  parentCommentId?: string;
+  targetAccountId?: string;
+  citedContentIds?: string[];
+  /** Client-only baseline, used to recognize a newly committed reply after reconnecting. */
+  previousCommentIds?: string[];
+}
+
+export interface ReportSubmission {
+  idempotencyKey: string;
+  text: string;
+}
+
+export interface ReportInterpretation {
+  summary: string;
+  parseConfidence: number;
+  claims: Array<{
+    statement: string;
+    quote: string;
+    judgment: "true" | "false" | "partial" | "unknown";
+    confidence: number | null;
+    confidenceQuote: string | null;
+    citedContentIds: string[];
+    reasoning: "observation" | "mechanism" | "temporal_only" | "none";
+    reasoningQuote: string | null;
+    counterContentIds: string[];
+    counterQuote: string | null;
+    sourceRelation: "independent" | "shared" | "unspecified";
+    sourceQuote: string | null;
+  }>;
+  unresolvedQuestions: string[];
+  unmappedClaims: string[];
+}
+
 export const api = {
   me: () => request<{ id: string; username: string }>("/api/v1/auth/me"),
   cases: () => request<{ cases: PublicCaseSummary[] }>("/api/v1/cases"),
@@ -32,9 +69,12 @@ export const api = {
   timeScale: (id: string, timeScale: 1 | 10 | 100) => request<{ state: PublicGameState }>(`/api/v1/games/${id}/time-scale`, { method: "POST", body: JSON.stringify({ idempotencyKey: key(), timeScale }) }),
   saveContent: (id: string, contentId: string) => request<{ state: PublicGameState }>(`/api/v1/games/${id}/save-content`, { method: "POST", body: JSON.stringify({ idempotencyKey: key(), contentId }) }),
   engage: (id: string, contentId: string, action: "like" | "repost") => request<{ state: PublicGameState }>(`/api/v1/games/${id}/engagement`, { method: "POST", body: JSON.stringify({ idempotencyKey: key(), contentId, action }) }),
-  comment: (id: string, contentId: string, text: string, confirmationToken?: string) => request<{ state: PublicGameState; comment: PublicGameState["comments"][number] }>(`/api/v1/games/${id}/comments`, { method: "POST", body: JSON.stringify({ idempotencyKey: key(), contentId, text, confirmationToken }) }),
+  comment: (id: string, { previousCommentIds: _previousCommentIds, ...submission }: CommentSubmission, confirmationToken?: string) => request<{ state: PublicGameState; comment?: PublicGameState["comments"][number] }>(`/api/v1/games/${id}/comments`, { method: "POST", body: JSON.stringify({ ...submission, confirmationToken }) }),
+  retry: (id: string, idempotencyKey: string) => request<{ state: PublicGameState }>(`/api/v1/games/${id}/retry`, { method: "POST", body: JSON.stringify({ idempotencyKey }) }),
+  cancelComment: (id: string) => request<{ state: PublicGameState }>(`/api/v1/games/${id}/cancel-comment`, { method: "POST", body: JSON.stringify({ idempotencyKey: key() }) }),
+  cancelReport: (id: string, expectedActionKey: string) => request<{ state: PublicGameState }>(`/api/v1/games/${id}/cancel-report`, { method: "POST", body: JSON.stringify({ idempotencyKey: key(), expectedActionKey }) }),
   evidence: (id: string, entry: EvidenceEntry) => request<{ state: PublicGameState }>(`/api/v1/games/${id}/evidence`, { method: "PUT", body: JSON.stringify({ idempotencyKey: key(), entry }) }),
   createNote: (id: string, text: string, linkedContentIds: string[]) => request<{ state: PublicGameState }>(`/api/v1/games/${id}/notes`, { method: "POST", body: JSON.stringify({ idempotencyKey: key(), text, linkedContentIds }) }),
   deleteNote: (id: string, noteId: string) => request<{ state: PublicGameState }>(`/api/v1/games/${id}/notes/${noteId}`, { method: "DELETE", body: JSON.stringify({ idempotencyKey: key() }) }),
-  report: (id: string, text: string) => request<{ state: PublicGameState }>(`/api/v1/games/${id}/report`, { method: "POST", body: JSON.stringify({ idempotencyKey: key(), text }) }),
+  report: (id: string, submission: ReportSubmission, confirmationToken?: string) => request<{ state: PublicGameState }>(`/api/v1/games/${id}/report`, { method: "POST", body: JSON.stringify({ ...submission, confirmationToken }) }),
 };

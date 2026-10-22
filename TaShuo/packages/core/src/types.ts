@@ -51,6 +51,109 @@ export interface ContentDefinition {
   misleadingTechniques: MisleadingTechnique[];
   commentsEnabled: boolean;
   trafficWeight: number;
+  editorial?: { materialIds: string[]; instructions: string };
+  evidenceOriginIds?: string[];
+}
+
+export interface SourceMaterial {
+  id: string;
+  title: string;
+  text: string;
+  availableAtMinute: number;
+  sourceIds: string[];
+  originId: string;
+}
+
+export interface AccountDefinition {
+  id: string;
+  displayName: string;
+  sourceId?: string;
+  description: string;
+  knownMaterialIds: string[];
+  initialComments: Array<{ id: string; contentId: string; text: string; publishedAtMinute: number }>;
+}
+
+export interface PublicLeadDefinition {
+  id: string;
+  contentId: string;
+  accountId: string;
+  question: string;
+  responseGuidance: string;
+  responseMaterialIds: string[];
+  unlockContentIds: string[];
+  requiresLeadIds: string[];
+  availableAtMinute: number;
+  expiresAtMinute?: number;
+}
+
+export interface PublicationRecord {
+  id: string;
+  contentId: string;
+  caseVersion: string;
+  title: string;
+  body: string;
+  materialIds: string[];
+  generatedAt: string;
+  provider: string;
+  model: string;
+  promptVersion: string;
+}
+
+export interface PublicThreadComment {
+  id: string;
+  contentId: string;
+  parentCommentId: string | null;
+  accountId: string;
+  displayName: string;
+  text: string;
+  publishedAtMinute: number;
+  role: "player" | "account" | "crowd";
+  triggeredByCommentId?: string;
+}
+
+export interface AccountResponse {
+  accountId: string;
+  text: string;
+  leadId: string | null;
+  materialIds: string[];
+}
+
+export interface PublicDiscovery {
+  id: string;
+  commentId: string;
+  responseCommentId: string;
+  contentIds: string[];
+  discoveredAtMinute: number;
+}
+
+export interface CommentInput {
+  contentId: string;
+  text: string;
+  parentCommentId?: string;
+  targetAccountId?: string;
+  citedContentIds?: string[];
+}
+
+/** Server-only resumable work. Never project inputs or role memory to a client. */
+export interface PendingAgentTask {
+  id: string;
+  operation: "publication" | "comment" | "report";
+  actionKey: string;
+  action: Record<string, unknown>;
+  resumeStatus: "active" | "paused" | "awaiting_report";
+  leaseUntil: string;
+  confirmationVersion?: number;
+  confirmed?: boolean;
+  commentId?: string;
+  failure?: string;
+  progress?: { speech?: SpeechFeatures; reactions?: GroupReaction[]; response?: AccountResponse | null; report?: ReportAnalysis;
+    snapshot?: ReportAssessmentSnapshot; reportScore?: ScoreBreakdown; reportFeedback?: string };
+}
+
+export interface GenerationFailure {
+  message: string;
+  operation: "publication" | "comment" | "report";
+  retryKey: string;
 }
 
 export interface GroupDefinition {
@@ -78,6 +181,18 @@ export interface CaseDefinition {
   sources: SourceDefinition[];
   contents: ContentDefinition[];
   groups: GroupDefinition[];
+  materials?: SourceMaterial[];
+  accounts?: AccountDefinition[];
+  publicLeads?: PublicLeadDefinition[];
+  reportRubric?: FactAssessmentRule[];
+}
+
+export interface FactAssessmentRule {
+  factId: string;
+  kind: "observation" | "causal" | "source";
+  evidence: Array<{ contentId: string; originIds: string[]; role: "record" | "context" | "claim"; supportsJudgments?: Array<"true" | "false" | "partial"> }>;
+  routes: Array<{ id: string; contentIds: string[]; acceptedJudgments: Array<"true" | "false" | "partial">; confidenceRange: [number, number]; explanation: string }>;
+  counterContentIds?: string[];
 }
 
 export interface SpeechFeatures {
@@ -121,6 +236,9 @@ export interface PlayerComment {
   exposureGain: number;
   controversyGain: number;
   harassmentGain: number;
+  parentCommentId?: string;
+  targetAccountId?: string;
+  citedContentIds?: string[];
 }
 
 export interface EvidenceEntry {
@@ -148,21 +266,87 @@ export interface PlatformEngagement {
 export interface ReportAnalysisClaim {
   factId: string;
   judgment: EvidenceEntry["judgment"];
-  confidence: number;
+  confidence: number | null;
+  confidenceQuote: string | null;
   citedContentIds: string[];
+  quote: string;
+  reasoning: "observation" | "mechanism" | "temporal_only" | "none";
+  reasoningQuote: string | null;
+  counterContentIds: string[];
+  counterQuote: string | null;
+  sourceRelation: "independent" | "shared" | "unspecified";
+  sourceQuote: string | null;
 }
 
 export interface ReportAnalysis {
   summary: string;
   claims: ReportAnalysisClaim[];
   unresolvedQuestions: string[];
+  parseConfidence: number;
+  unmappedClaims: string[];
+}
+
+export interface ReportSnapshotMetadata {
+  id: string;
+  caseId: string;
+  caseVersion: string;
+  ruleVersion: string;
+  worldMinute: number;
+  stateVersion: number;
+  capturedAt: string;
+  evidenceVersions: Array<{ id: string; versionId: string }>;
+}
+
+export interface ReportEvidenceSnapshot {
+  id: string;
+  contentId: string;
+  kind: "content" | "reply";
+  versionId: string;
+  title: string;
+  text: string;
+  sourceId: string | null;
+  publishedAtMinute: number;
+  originIds: string[];
+  acquired: boolean;
+}
+
+/** Private scoring inputs, frozen when report processing starts. Never return rules to clients. */
+export interface ReportAssessmentSnapshot extends ReportSnapshotMetadata {
+  evidence: ReportEvidenceSnapshot[];
+  rules: Array<FactAssessmentRule & { statement: string }>;
+}
+
+export interface ReportCoverage {
+  availableQuestions: number;
+  addressedQuestions: number;
+  supportedConclusions: number;
+  reservedQuestions: number;
+  unexaminedQuestions: number;
+  percentage: number;
+}
+
+export interface ReportClaimFeedback {
+  factId: string | null;
+  statement: string;
+  quote: string;
+  verdict: "supported" | "unsupported" | "contradicted" | "reserved" | "unassessable" | "duplicate";
+  citedContentIds: string[];
+  independentOriginCount: number;
+  confidenceRange: [number, number] | null;
+  reasons: Array<{ code: string; message: string; contentIds: string[] }>;
 }
 
 export interface ScoreBreakdown {
-  factAccuracy: number;
-  evidenceQuality: number;
-  confidenceCalibration: number;
-  total: number;
+  factAccuracy: number | null;
+  evidenceQuality: number | null;
+  timelineCausality: number | null;
+  contradictionHandling: number | null;
+  confidenceCalibration: number | null;
+  sourceAnalysis: number | null;
+  total: number | null;
+  ruleVersion: string;
+  coverage: ReportCoverage;
+  feedback: ReportClaimFeedback[];
 }
 
 export interface FinalReport {
@@ -170,12 +354,14 @@ export interface FinalReport {
   analysis: ReportAnalysis;
   score: ScoreBreakdown;
   submittedAt: string;
+  snapshot: ReportSnapshotMetadata;
+  feedback?: string;
 }
 
 export interface GameEvent {
   id: string;
   sequence: number;
-  type: "content_revealed" | "paused" | "resumed" | "time_scale_changed" | "comment_published" | "content_liked" | "content_reposted" | "evidence_updated" | "note_created" | "note_deleted" | "report_submitted";
+  type: "content_revealed" | "paused" | "resumed" | "time_scale_changed" | "comment_published" | "content_liked" | "content_reposted" | "evidence_updated" | "note_created" | "note_deleted" | "report_submitted" | "public_response";
   gameMinute: number;
   payload: Record<string, unknown>;
 }
@@ -203,7 +389,13 @@ export interface GameState {
   evidence: EvidenceEntry[];
   investigationNotes: InvestigationNote[];
   report: FinalReport | null;
+  /** Server-only frozen evidence and rules, retained after the pending report task ends. */
+  reportAssessmentSnapshot: ReportAssessmentSnapshot | null;
   events: GameEvent[];
+  publications?: PublicationRecord[];
+  accountReplies?: Array<PublicThreadComment & { materialIds: string[]; leadId: string | null }>;
+  discoveries?: Array<PublicDiscovery & { leadId: string }>;
+  pendingAgentTask?: PendingAgentTask | null;
 }
 
 export interface PublicCaseSummary {
@@ -214,9 +406,16 @@ export interface PublicCaseSummary {
   durationMinutes: number;
 }
 
-export interface PublicGameState extends Omit<GameState, "groupStates" | "events" | "evidence"> {
+export type PublicContent = Pick<ContentDefinition, "id" | "sourceId" | "kind" | "publishedAtMinute" | "title" | "body" | "commentsEnabled"> & { versionId: string };
+
+export interface PublicGameState extends Omit<GameState, "groupStates" | "events" | "evidence" | "publications" | "accountReplies" | "discoveries" | "pendingAgentTask" | "reportAssessmentSnapshot" | "comments"> {
+  comments: Array<Omit<PlayerComment, "speechFeatures" | "groupReactions">>;
+  threadComments: PublicThreadComment[];
+  discoveries: PublicDiscovery[];
+  generationFailure: GenerationFailure | null;
+  agentBusy: boolean;
   durationMinutes: number;
   currentStage: CaseStage;
-  visibleContents: ContentDefinition[];
+  visibleContents: PublicContent[];
   sources: Array<Pick<SourceDefinition, "id" | "name" | "kind" | "publicDescription">>;
 }

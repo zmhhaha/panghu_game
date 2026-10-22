@@ -9,6 +9,6 @@ export * from "./validation.js";
 export const CASES = [assertValidCase(LOST_CONTROL_DEMO), assertValidCase(BLUE_RIVER)] as const;
 
 export function getCase(caseId: string, version?: string): CaseDefinition | null {
-  return CASES.find((item) => item.id === caseId && (!version || item.version === version)) ?? null;
+  return CASES.find((item) => item.id === caseId && (version === undefined || item.version === version)) ?? null;
 }
 

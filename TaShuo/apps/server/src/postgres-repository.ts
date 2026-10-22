@@ -1,10 +1,11 @@
-import type { GameState } from "@tashuo/core";
+import type { GameState, PublicationRecord } from "@tashuo/core";
 import { Pool } from "pg";
 import type { AuthUser } from "./middleware/auth.js";
-import type { GameRepository, SaveGameInput, SaveGameResult, UserRecord } from "./repository.js";
-import { StateConflictError } from "./repository.js";
+import type { GameRepository, PublicationKey, SaveGameInput, SaveGameResult, StoredAction, UserRecord } from "./repository.js";
+import { assertPublicationMatchesKey, assertSameAction, normalizeAction, publicationCacheKey, StateConflictError } from "./repository.js";
 
 interface GameRow { state: GameState }
+interface ActionRow { action_type: string; action: Record<string, unknown> }
 
 const mapUser = (row: Record<string, string>): UserRecord => ({
   id: row.id,
@@ -58,8 +59,51 @@ export class PostgresGameRepository implements GameRepository {
     return result.rows[0]?.state ?? null;
   }
 
+  async findAction(gameInstanceId: string, ownerUserId: string, idempotencyKey: string): Promise<StoredAction | null> {
+    const result = await this.pool.query<ActionRow>(
+      `SELECT actions.action_type, actions.action FROM game_actions actions
+       JOIN game_instances games ON games.id = actions.game_instance_id
+       WHERE games.id = $1 AND games.owner_user_id = $2 AND actions.idempotency_key = $3`,
+      [gameInstanceId, ownerUserId, idempotencyKey],
+    );
+    const row = result.rows[0];
+    return row ? { actionType: row.action_type, action: row.action } : null;
+  }
+
+  async getOrCreatePublication(key: PublicationKey, generate: () => Promise<PublicationRecord>): Promise<PublicationRecord> {
+    const client = await this.pool.connect();
+    let releaseError: Error | undefined;
+    try {
+      await client.query("BEGIN");
+      // This transaction-scoped lock also serializes generation across API processes.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`tashuo:publication:${publicationCacheKey(key)}`]);
+      const parameters = [key.caseId, key.caseVersion, key.contentId, key.promptVersion];
+      const existing = await client.query<{ publication: PublicationRecord }>(
+        "SELECT publication FROM publications WHERE case_id = $1 AND case_version = $2 AND content_id = $3 AND prompt_version = $4",
+        parameters,
+      );
+      let publication = existing.rows[0]?.publication;
+      if (!publication) {
+        publication = await generate();
+        assertPublicationMatchesKey(key, publication);
+        await client.query(
+          "INSERT INTO publications (case_id, case_version, content_id, prompt_version, publication) VALUES ($1, $2, $3, $4, $5)",
+          [...parameters, publication],
+        );
+      }
+      assertPublicationMatchesKey(key, publication);
+      await client.query("COMMIT");
+      return structuredClone(publication);
+    } catch (error) {
+      try { await client.query("ROLLBACK"); }
+      catch (rollbackError) { releaseError = rollbackError instanceof Error ? rollbackError : new Error("数据库事务回滚失败"); }
+      throw error;
+    } finally { client.release(releaseError); }
+  }
+
   async saveGame(input: SaveGameInput): Promise<SaveGameResult | null> {
     const client = await this.pool.connect();
+    let releaseError: Error | undefined;
     try {
       await client.query("BEGIN");
       const locked = await client.query<GameRow>(
@@ -68,17 +112,22 @@ export class PostgresGameRepository implements GameRepository {
       );
       const current = locked.rows[0]?.state;
       if (!current) { await client.query("ROLLBACK"); return null; }
-      const duplicate = await client.query(
-        "SELECT 1 FROM game_actions WHERE game_instance_id = $1 AND idempotency_key = $2",
+      const duplicate = await client.query<ActionRow>(
+        "SELECT action_type, action FROM game_actions WHERE game_instance_id = $1 AND idempotency_key = $2",
         [input.gameInstanceId, input.idempotencyKey],
       );
-      if (duplicate.rowCount) { await client.query("COMMIT"); return { state: current, duplicate: true }; }
+      const previous = duplicate.rows[0];
+      if (previous) {
+        assertSameAction({ actionType: previous.action_type, action: previous.action }, input.actionType, input.action);
+        await client.query("COMMIT");
+        return { state: current, duplicate: true };
+      }
       if (current.stateVersion !== input.expectedStateVersion) throw new StateConflictError();
       if (input.nextState.ownerUserId !== input.ownerUserId || input.nextState.id !== input.gameInstanceId) throw new Error("禁止跨实例写入状态");
       await client.query(
         `INSERT INTO game_actions (game_instance_id, idempotency_key, action_type, action, resulting_state_version)
          VALUES ($1, $2, $3, $4, $5)`,
-        [input.gameInstanceId, input.idempotencyKey, input.actionType, input.action, input.nextState.stateVersion],
+        [input.gameInstanceId, input.idempotencyKey, input.actionType, normalizeAction(input.action), input.nextState.stateVersion],
       );
       await client.query(
         `UPDATE game_instances SET status = $3, state_version = $4, state = $5, updated_at = now(),
@@ -89,9 +138,10 @@ export class PostgresGameRepository implements GameRepository {
       await client.query("COMMIT");
       return { state: structuredClone(input.nextState), duplicate: false };
     } catch (error) {
-      await client.query("ROLLBACK");
+      try { await client.query("ROLLBACK"); }
+      catch (rollbackError) { releaseError = rollbackError instanceof Error ? rollbackError : new Error("数据库事务回滚失败"); }
       throw error;
-    } finally { client.release(); }
+    } finally { client.release(releaseError); }
   }
 
   async deleteGame(gameInstanceId: string, ownerUserId: string): Promise<boolean> {

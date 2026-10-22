@@ -1,13 +1,15 @@
-import type { GameState } from "@tashuo/core";
+import type { GameState, PublicationRecord } from "@tashuo/core";
 import type { AuthUser } from "./middleware/auth.js";
-import type { GameRepository, SaveGameInput, SaveGameResult, UserRecord } from "./repository.js";
-import { StateConflictError } from "./repository.js";
+import type { GameRepository, PublicationKey, SaveGameInput, SaveGameResult, StoredAction, UserRecord } from "./repository.js";
+import { assertPublicationMatchesKey, assertSameAction, normalizeAction, publicationCacheKey, StateConflictError } from "./repository.js";
 
-interface StoredGame { state: GameState; idempotencyKeys: Set<string> }
+interface StoredGame { state: GameState; actions: Map<string, StoredAction> }
 
 export class InMemoryGameRepository implements GameRepository {
   private readonly users = new Map<string, UserRecord>();
   private readonly games = new Map<string, StoredGame>();
+  private readonly publications = new Map<string, PublicationRecord>();
+  private readonly pendingPublications = new Map<string, Promise<PublicationRecord>>();
 
   async ensureUser(user: AuthUser): Promise<UserRecord> {
     const now = new Date().toISOString();
@@ -21,7 +23,7 @@ export class InMemoryGameRepository implements GameRepository {
 
   async createGame(ownerUserId: string, state: GameState): Promise<GameState> {
     if (state.ownerUserId !== ownerUserId) throw new Error("游戏所有者不匹配");
-    this.games.set(state.id, { state: structuredClone(state), idempotencyKeys: new Set() });
+    this.games.set(state.id, { state: structuredClone(state), actions: new Map() });
     return structuredClone(state);
   }
 
@@ -35,14 +37,46 @@ export class InMemoryGameRepository implements GameRepository {
     return structuredClone(stored.state);
   }
 
+  async findAction(gameInstanceId: string, ownerUserId: string, idempotencyKey: string): Promise<StoredAction | null> {
+    const stored = this.games.get(gameInstanceId);
+    if (!stored || stored.state.ownerUserId !== ownerUserId) return null;
+    const action = stored.actions.get(idempotencyKey);
+    return action ? structuredClone(action) : null;
+  }
+
+  async getOrCreatePublication(key: PublicationKey, generate: () => Promise<PublicationRecord>): Promise<PublicationRecord> {
+    const cacheKey = publicationCacheKey(key);
+    const stored = this.publications.get(cacheKey);
+    if (stored) {
+      assertPublicationMatchesKey(key, stored);
+      return structuredClone(stored);
+    }
+    let pending = this.pendingPublications.get(cacheKey);
+    if (!pending) {
+      pending = Promise.resolve().then(generate).then((publication) => {
+        assertPublicationMatchesKey(key, publication);
+        const saved = structuredClone(publication);
+        this.publications.set(cacheKey, saved);
+        return saved;
+      }).finally(() => { this.pendingPublications.delete(cacheKey); });
+      this.pendingPublications.set(cacheKey, pending);
+    }
+    return structuredClone(await pending);
+  }
+
   async saveGame(input: SaveGameInput): Promise<SaveGameResult | null> {
     const stored = this.games.get(input.gameInstanceId);
     if (!stored || stored.state.ownerUserId !== input.ownerUserId) return null;
-    if (stored.idempotencyKeys.has(input.idempotencyKey)) return { state: structuredClone(stored.state), duplicate: true };
+    const previous = stored.actions.get(input.idempotencyKey);
+    if (previous) {
+      assertSameAction(previous, input.actionType, input.action);
+      return { state: structuredClone(stored.state), duplicate: true };
+    }
     if (stored.state.stateVersion !== input.expectedStateVersion) throw new StateConflictError();
     if (input.nextState.ownerUserId !== input.ownerUserId || input.nextState.id !== input.gameInstanceId) throw new Error("禁止跨实例写入状态");
+    const action = normalizeAction(input.action);
     stored.state = structuredClone(input.nextState);
-    stored.idempotencyKeys.add(input.idempotencyKey);
+    stored.actions.set(input.idempotencyKey, { actionType: input.actionType, action });
     return { state: structuredClone(stored.state), duplicate: false };
   }
 
